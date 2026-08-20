@@ -5,6 +5,7 @@ from google import genai
 # Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+# API 키가 잘 로드되는지 안전하게 전달
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
