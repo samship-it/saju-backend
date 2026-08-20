@@ -1,14 +1,15 @@
 # main.py
 
+import os
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
-from datetime import datetime
 from saju_engine import SajuEngine
 from ai_service import get_ai_fortune_interpretation
 
 app = FastAPI(title="Saju Engine API with Gemini AI", version="1.0.0")
+
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Saju Engine API Server is running!"}
 
 # --- CORS 설정 추가 ---
 # Lovable, 로컬 개발 환경, 개발용 도메인 전체 요청 허용
