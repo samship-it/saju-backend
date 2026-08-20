@@ -1,5 +1,6 @@
 # ai_service.py
 
+import os
 from google import genai
 
 # Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
