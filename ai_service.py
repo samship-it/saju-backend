@@ -2,7 +2,8 @@
 
 from google import genai
 
-GOOGLE_API_KEY = "AQ.Ab8RN6Js0Db450XNUcTeGZG5fwnGQCJ0rRbRMiPz9Nn9FbJB-Q"
+# Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
