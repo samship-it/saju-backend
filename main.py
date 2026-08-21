@@ -1,6 +1,6 @@
 # main.py
 
-iimport os
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel  # <--- 이 줄을 추가해 주세요!
