@@ -27,7 +27,7 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
 """
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=prompt,
         )
         return response.text
