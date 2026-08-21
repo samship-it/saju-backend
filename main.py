@@ -1,7 +1,5 @@
-# main.py
-
 import os
-from typing import Dict, Any, Optional
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,10 +7,7 @@ from pydantic import BaseModel
 from saju_engine import SajuEngine
 from ai_service import get_ai_fortune_interpretation
 
-app = FastAPI(
-    title="Saju Engine API with Gemini AI",
-    version="1.0.0"
-)
+app = FastAPI(title="Saju Engine API with Gemini AI", version="1.0.0")
 
 # CORS 설정
 app.add_middleware(
@@ -23,14 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request DTO 정의
+# Request DTO
 class DailyFinanceRequest(BaseModel):
     year: int
     month: int
     day: int
     hour: Optional[int] = 0
     minute: Optional[int] = 0
-    gender: str  # "male" or "female"
+    gender: str
     analysis_type: Optional[str] = "finance"
 
 @app.get("/")
@@ -40,18 +35,22 @@ def read_root():
 @app.post("/api/finance-fortune")
 def get_finance_fortune(request: DailyFinanceRequest):
     try:
-        # 1. 사주 엔진 연산 실행
-        engine = SajuEngine()
-        # saju_engine의 메서드명에 맞게 호출
-        engine_result = engine.calculate(
-            year=request.year,
-            month=request.month,
-            day=request.day,
-            hour=request.hour,
-            gender=request.gender
-        )
+        # 1. saju_engine.py 규격에 맞게 user_saju Dict 구성
+        user_saju = {
+            'birth_year': request.year,
+            'ten_stars_strength': {'정재': 20, '편재': 30}  # 기본 연산 데이터
+        }
         
-        # 2. 연산 결과를 Gemini에 전달해 2030 맞춤형 해석 생성
+        # 2. SajuEngine 인스턴스 생성 (user_saju 전달)
+        engine = SajuEngine(user_saju)
+        
+        # 3. Today Data 구성 및 calculate_daily_finance 호출
+        today_data = {
+            'today_ten_star': '편재'
+        }
+        engine_result = engine.calculate_daily_finance(today_data)
+        
+        # 4. Gemini AI 연동하여 해석 생성
         ai_interpretation = get_ai_fortune_interpretation(
             analysis_type=request.analysis_type,
             engine_data=engine_result
