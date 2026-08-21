@@ -2,13 +2,14 @@ import os
 import requests
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
-    """Google Gemini 모델을 호출하여 2030 맞춤형 사주/재테크 해석 생성"""
+    """Google Gemini 3.5 Flash 모델을 호출하여 2030 맞춤형 사주/재테크 해석 생성"""
     try:
         api_key = os.getenv("GEMINI_API_KEY")
         
         if not api_key:
             return "오류: GEMINI_API_KEY 환경변수가 설정되지 않았습니다."
 
+        # 구글 정책 기준 최신 3.5 모델 고정
         model_name = "gemini-3.5-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
@@ -30,14 +31,20 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
         payload = {
             "contents": [{
                 "parts": [{"text": prompt}]
-            }]
+            }],
+            # 속도 향상 및 타임아웃 방지를 위해 생성 옵션 추가
+            "generationConfig": {
+                "maxOutputTokens": 1000,
+                "temperature": 0.7
+            }
         }
 
         headers = {
             "Content-Type": "application/json"
         }
 
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        # 타임아웃을 60초로 늘려 안정성 확보
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
         
         if response.status_code == 200:
             result = response.json()
@@ -45,5 +52,7 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
         else:
             return f"AI 해석 오류 ({response.status_code}): {response.text}"
 
+    except requests.exceptions.Timeout:
+        return "AI 해석 오류: 구글 서버 응답 시간이 초과되었습니다. 다시 시도해 주세요."
     except Exception as e:
         return f"AI 해석 오류: {str(e)}"
