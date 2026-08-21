@@ -3,15 +3,15 @@
 import os
 from google import genai
 
-# Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
-# API 키가 잘 로드되는지 안전하게 전달
-client = genai.Client(api_key=GOOGLE_API_KEY)
-
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini 3.5 Flash에 보내 2030 맞춤형 해석 생성"""
-    
+
+    # Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+    # API 키가 잘 로드되는지 안전하게 전달 (함수 내부로 들여쓰기)
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+
     prompt = f"""
     당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
     아래의 사주 엔진 연산 결과 데이터를 바탕으로, 사용자에게 직관적이고 세련된 분석과 액션 플랜을 전달하세요.
