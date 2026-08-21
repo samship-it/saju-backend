@@ -1,17 +1,18 @@
-# ai_service.py
 import os
 import requests
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
-    """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
+    """Google Gemini 3.5 모델을 호출하여 2030 맞춤형 사주/재테크 해석 생성"""
     try:
-        # Vercel 환경변수에서 GEMINI_API_KEY(AQ. 키)를 불러옵니다.
+        # Vercel 환경변수에서 GEMINI_API_KEY 불러오기
         api_key = os.getenv("GEMINI_API_KEY")
         
         if not api_key:
             return "오류: GEMINI_API_KEY 환경변수가 설정되지 않았습니다."
 
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        # 구글 Gemini 3.5 Flash 엔드포인트
+        model_name = "gemini-3.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         prompt = f"""
 당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
@@ -32,18 +33,12 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
             }]
         }
 
-        # AQ. 서비스 계정 키를 Bearer OAuth 토큰 및 Key 파라미터로 이중 전달
+        # Google AI Studio 키 사용 시 Content-Type만 지정 (Authorization 헤더 제거)
         headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Content-Type": "application/json"
         }
 
-        response = requests.post(
-            f"{url}?key={api_key}", 
-            json=payload, 
-            headers=headers, 
-            timeout=30
-        )
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         
         if response.status_code == 200:
             result = response.json()
@@ -52,4 +47,4 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
             return f"AI 해석 오류 ({response.status_code}): {response.text}"
 
     except Exception as e:
-        return f"AI 해석을 불러오는 중 오류가 발생했습니다: {str(e)}"
+        return f"AI 해석 오류: {str(e)}"
