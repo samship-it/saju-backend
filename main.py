@@ -22,6 +22,7 @@ class FortuneRequest(BaseModel):
     day: int
     hour: Optional[int] = None
     gender: str  # "male" or "female"
+    category: Optional[str] = "general"
 
 @app.get("/")
 def read_root():
@@ -51,10 +52,21 @@ def generate_fortune(request: FortuneRequest):
             }
         }
 
-        # 2. 검증된 Gemini 3.5 API 호출로 AI 해석 생성
+        # 2. 카테고리별 Gemini 프롬프트 분기
+        category_prompts = {
+        "financial": "재테크, 주식, 자산 관리 및 지출 컨트롤 관점에서 운세를 해석해줘.",
+        "travel": "이동운, 여행하기 좋은 방향 및 기운이 좋은 장소 관점에서 해석해줘.",
+        "love": "연애운, 매력 지수, 사람과의 관계 형성 관점에서 해석해줘.",
+        "general": "오늘의 전체적인 종합 총운 및 흐름 관점에서 해석해줘."
+    }
+    
+    # 전달받은 category에 맞는 지침 선택 (없으면 general)
+    selected_instruction = category_prompts.get(req.category, category_prompts["general"])
+        
+        # 3. 검증된 Gemini 3.5 API 호출로 AI 해석 생성
         ai_interpretation = get_ai_fortune_interpretation("wealth", engine_data)
 
-        # 3. Lovable에서 사용하기 편하도록 최종 구조화된 데이터 반환
+        # 4. Lovable에서 사용하기 편하도록 최종 구조화된 데이터 반환
         return {
             "status": "success",
             "user_info": {
