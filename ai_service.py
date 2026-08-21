@@ -1,7 +1,7 @@
 # ai_service.py
 
 import os
-import google.generativeai as genai
+import requests
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
@@ -10,8 +10,8 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
         if not api_key:
             return "AI 해석 오류: GOOGLE_API_KEY 환경변수가 설정되지 않았습니다."
 
-        # 구형/표준 SDK 키 설정 방식 (Query Parameter 방식 전달로 OAuth 오인식 방지)
-        genai.configure(api_key=api_key)
+        # REST API 엔드포인트 (gemini-3.5-flash 모델 적용)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
 
         prompt = f"""
 당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
@@ -26,10 +26,23 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
 3. 2030 트렌드 용어(리밸런싱, 추격매수 등)를 자연스럽게 활용할 것
 """
 
-        model = genai.GenerativeModel('gemini-3.5-flash')
-        response = model.generate_content(prompt)
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
+        }
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         
-        return response.text
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"AI 해석을 불러오는 중 오류가 발생했습니다: {response.status_code} {response.text}"
 
     except Exception as e:
         return f"AI 해석을 불러오는 중 오류가 발생했습니다: {str(e)}"
