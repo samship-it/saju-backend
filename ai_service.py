@@ -2,15 +2,13 @@ import os
 import requests
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
-    """Google Gemini 3.5 모델을 호출하여 2030 맞춤형 사주/재테크 해석 생성"""
+    """Google Gemini 모델을 호출하여 2030 맞춤형 사주/재테크 해석 생성"""
     try:
-        # Vercel 환경변수에서 GEMINI_API_KEY 불러오기
         api_key = os.getenv("GEMINI_API_KEY")
         
         if not api_key:
             return "오류: GEMINI_API_KEY 환경변수가 설정되지 않았습니다."
 
-        # 구글 Gemini 3.5 Flash 엔드포인트
         model_name = "gemini-3.5-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
@@ -22,9 +20,11 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
 {engine_data}
 
 [작성 가이드]
-1. 투자/소비 성향을 직관적으로 짚어줄 것
-2. 추천 행동과 주의할 점을 명확히 제시할 것
-3. 2030 트렌드 용어(리밸런싱, 추격매수 등)를 자연스럽게 활용할 것
+1. "안녕", "AI 스페셜리스트입니다" 같은 자기소개 및 서두 인사말을 절대 작성하지 마세요.
+2. 첫 문장부터 바로 핵심 사주/재테크 분석 결과로 즉시 시작하세요.
+3. 투자/소비 성향을 직관적으로 짚어줄 것
+4. 추천 행동과 주의할 점을 명확히 제시할 것
+5. 2030 트렌드 용어(리밸런싱, 추격매수 등)를 자연스럽게 활용할 것
 """
 
         payload = {
@@ -33,7 +33,6 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
             }]
         }
 
-        # Google AI Studio 키 사용 시 Content-Type만 지정 (Authorization 헤더 제거)
         headers = {
             "Content-Type": "application/json"
         }
