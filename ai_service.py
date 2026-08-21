@@ -4,34 +4,29 @@ import os
 from google import genai
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
-    """SajuEngine 연산 결과 데이터를 Gemini 3.5 Flash에 보내 2030 맞춤형 해석 생성"""
-
-    # Render Environment Variables에 등록한 GOOGLE_API_KEY를 안전하게 가져옵니다.
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
-    # API 키가 잘 로드되는지 안전하게 전달 (함수 내부로 들여쓰기)
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-
-    prompt = f"""
-    당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
-    아래의 사주 엔진 연산 결과 데이터를 바탕으로, 사용자에게 직관적이고 세련된 분석과 액션 플랜을 전달하세요.
-
-    [분석 종류]: {analysis_type}
-    [엔진 연산 데이터]: {engine_data}
-
-    [필수 작성 규칙]:
-    1. "안녕하세요", "병오년의 기운을 받아" 같은 진부한 서두 인사나 템플릿형 인삿말은 절대로 쓰지 마세요.
-    2. 시작부터 바로 본론으로 들어가 첫 문장에서 핵심 요약 및 핵심 전략을 던지세요.
-    3. 2030 세대가 공감할 수 있는 직관적이고 감각적인 언어(포트폴리오, 리스크 해징, 멘탈 케어, 멘탈 관리, 모멘텀 등)를 적절히 활용하세요.
-    4. 한자어나 고전 명리학 용어는 지양하고, 친근하면서도 감각적인 1:1 컨설팅 톤(5~6줄 내외)으로 작성하세요.
-    5. 수치가 낮거나 부진한 구간은 무작정 우울하게 말하기보다, 무엇을 피하고 어떤 타이밍을 노려야 하는지 실질적인 가이드를 제공하세요.
-    """
-
+    """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
+        # Client 생성 시 api_key를 명시하지 않으면 시스템 환경변수(GOOGLE_API_KEY)를 자동으로 감지합니다.
+        client = genai.Client()
+
+        prompt = f"""
+당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
+아래 사주 데이터 결과를 바탕으로 2030 맞춤형 재테크 조언 및 하루 운세 해석을 다정하고 명확하게 작성해 주세요.
+
+[사주 데이터]
+{engine_data}
+
+[작성 가이드]
+1. 투자/소비 성향을 직관적으로 짚어줄 것
+2. 추천 행동과 주의할 점을 명확히 제시할 것
+3. 2030 트렌드 용어(리밸런싱, 추격매수 등)를 자연스럽게 활용할 것
+"""
+
         response = client.models.generate_content(
-            model="gemini-3.5-flash",
+            model='gemini-2.5-flash',
             contents=prompt,
         )
-        return response.text.strip()
+        return response.text
+
     except Exception as e:
         return f"AI 해석을 불러오는 중 오류가 발생했습니다: {str(e)}"
