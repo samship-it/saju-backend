@@ -2,6 +2,8 @@
 
 import os
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 from saju_engine import SajuEngine
 from ai_service import get_ai_fortune_interpretation
 
