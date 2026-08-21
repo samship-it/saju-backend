@@ -6,8 +6,12 @@ from google import genai
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
-        # Client 생성 시 api_key를 명시하지 않으면 시스템 환경변수(GOOGLE_API_KEY)를 자동으로 감지합니다.
-        client = genai.Client()
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            return "AI 해석 오류: GOOGLE_API_KEY 환경변수가 설정되지 않았습니다."
+
+        # api_key를 명시적으로 지정하여 OAuth 토큰 오인식 방지
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""
 당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
