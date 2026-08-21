@@ -6,11 +6,9 @@ import requests
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            return "AI 해석 오류: GOOGLE_API_KEY 환경변수가 설정되지 않았습니다."
+        # Render의 고장난 환경변수를 무시하고 새로 발급받은 키를 직접 사용
+        api_key = "AIzaSy..."  # <-- 여기에 새로 발급받은 AIzaSy로 시작하는 키 전체를 따옴표 안에 넣으세요.
 
-        # REST API 엔드포인트 (gemini-3.5-flash 모델 적용)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
 
         prompt = f"""
@@ -42,7 +40,7 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
             result = response.json()
             return result['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"AI 해석을 불러오는 중 오류가 발생했습니다: {response.status_code} {response.text}"
+            return f"AI 해석 오류 ({response.status_code}): {response.text}"
 
     except Exception as e:
         return f"AI 해석을 불러오는 중 오류가 발생했습니다: {str(e)}"
