@@ -1,15 +1,18 @@
 # ai_service.py
-
 import os
-import requests
+from google import genai
 
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
-        # AI Studio에서 발급받은 AQ. 키를 입력합니다.
-        api_key = "AQ.Ab8RN6Lnwdn261VS03GUXbdpvwsfT291NQlHMmat8t2_CDI50w"
+        # Vercel 환경변수에서 GEMINI_API_KEY(AQ. 키)를 불러옵니다.
+        api_key = os.getenv("GEMINI_API_KEY")
+        
+        if not api_key:
+            return "오류: GEMINI_API_KEY 환경변수가 설정되지 않았습니다."
 
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+        # 공식 Client 사용 (AQ. 인증 키 지원)
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""
 당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
@@ -24,25 +27,13 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
 3. 2030 트렌드 용어(리밸런싱, 추격매수 등)를 자연스럽게 활용할 것
 """
 
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
-        }
+        # Gemini 2.5 Flash 호출
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
 
-        # AQ. 신규 인증 키에 맞춰 x-goog-api-key 헤더 적용
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key
-        }
-
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"AI 해석 오류 ({response.status_code}): {response.text}"
+        return response.text
 
     except Exception as e:
         return f"AI 해석을 불러오는 중 오류가 발생했습니다: {str(e)}"
