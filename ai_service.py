@@ -6,10 +6,10 @@ import requests
 def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
-        # Render의 고장난 환경변수를 무시하고 새로 발급받은 키를 직접 사용
-        api_key = "AIzaSyB8GTljDxz18ZCTLChfCDYp7OKSldypmis"  
+        # AI Studio에서 발급받은 AQ. 키를 입력합니다.
+        api_key = "AQ.Ab8RN6Lnwdn261VS03GUXbdpvwsfT291NQlHMmat8t2_CDI50w"
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
 
         prompt = f"""
 당신은 2030 세대를 위한 트렌디하고 감각적인 AI 라이프/재테크 스페셜리스트입니다.
@@ -30,8 +30,10 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
             }]
         }
 
+        # AQ. 신규 인증 키에 맞춰 x-goog-api-key 헤더 적용
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key
         }
 
         response = requests.post(url, json=payload, headers=headers, timeout=30)
