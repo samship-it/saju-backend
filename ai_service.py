@@ -7,7 +7,7 @@ def get_ai_fortune_interpretation(analysis_type: str, engine_data: dict) -> str:
     """SajuEngine 연산 결과 데이터를 Gemini에 보내 2030 맞춤형 해석 생성"""
     try:
         # Render의 고장난 환경변수를 무시하고 새로 발급받은 키를 직접 사용
-        api_key = AIzaSyB8GTljDxz18ZCTLChfCDYp7OKSldypmis"  
+        api_key = "AIzaSyB8GTljDxz18ZCTLChfCDYp7OKSldypmis"  
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
 
