@@ -1,13 +1,23 @@
 # main.py
 
-import os
+iimport os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel  # <--- 이 줄을 추가해 주세요!
 
 from saju_engine import SajuEngine
 from ai_service import get_ai_fortune_interpretation
 
 app = FastAPI(title="Saju Engine API with Gemini AI", version="1.0.0")
+
+# CORS 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def read_root():
