@@ -1,14 +1,18 @@
 # main.py
 
 import os
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel  # <--- 이 줄을 추가해 주세요!
+from pydantic import BaseModel
 
 from saju_engine import SajuEngine
 from ai_service import get_ai_fortune_interpretation
 
-app = FastAPI(title="Saju Engine API with Gemini AI", version="1.0.0")
+app = FastAPI(
+    title="Saju Engine API with Gemini AI",
+    version="1.0.0"
+)
 
 # CORS 설정
 app.add_middleware(
@@ -19,88 +23,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def read_root():
-    return {"status": "online", "message": "Saju Engine API Server is running!"}
-
-# --- CORS 설정 추가 ---
-# Lovable, 로컬 개발 환경, 개발용 도메인 전체 요청 허용
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 실제 배포 시에는 특정 도메인 주소로 제한할 수 있습니다.
-    allow_credentials=True,
-    allow_methods=["*"],  # GET, POST, OPTIONS 등 모든 HTTP 메서드 허용
-    allow_headers=["*"],  # 모든 Header 허용
-)
-
-# --- Request Models ---
+# Request DTO 정의
 class DailyFinanceRequest(BaseModel):
-    user_saju: Dict[str, Any]
-    today_data: Dict[str, Any]
-
-class PersonalRequest(BaseModel):
-    user_saju: Dict[str, Any]
-    target_date: str
-    partner_saju: Optional[Dict[str, Any]] = None
-
-class YearlyRequest(BaseModel):
-    user_saju: Dict[str, Any]
-    target_year: Optional[int] = None
-
-# --- API Endpoints ---
+    year: int
+    month: int
+    day: int
+    hour: Optional[int] = 0
+    minute: Optional[int] = 0
+    gender: str  # "male" or "female"
+    analysis_type: Optional[str] = "finance"
 
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "Saju Engine API Server is running!"}
 
-# 1. 오늘의 재테크 운세 (AI)
-@app.post("/api/v1/daily-finance-ai")
-def get_daily_finance_ai(req: DailyFinanceRequest):
+@app.post("/api/finance-fortune")
+def get_finance_fortune(request: DailyFinanceRequest):
     try:
-        engine = SajuEngine(req.user_saju)
-        raw_result = engine.calculate_daily_finance(req.today_data)
-        ai_commentary = get_ai_fortune_interpretation("오늘의 재테크 운세", raw_result)
-        return {
-            "engine_data": raw_result,
-            "ai_interpretation": ai_commentary
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"엔진/AI 연산 중 오류 발생: {str(e)}")
-
-# 2. 궁합 및 인간관계 전략 (AI)
-@app.post("/api/v1/personal-ai")
-def get_personal_ai(req: PersonalRequest):
-    try:
-        engine = SajuEngine(req.user_saju)
-        raw_result = engine.calculate_personal_relationship(req.target_date, req.partner_saju)
-        ai_commentary = get_ai_fortune_interpretation("궁합 및 인간관계 전략", raw_result)
-        return {
-            "engine_data": raw_result,
-            "ai_interpretation": ai_commentary
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"엔진/AI 연산 중 오류 발생: {str(e)}")
-
-# 3. 연간 운세 및 12개월 흐름 (AI)
-@app.post("/api/v1/yearly-ai")
-def get_yearly_ai(req: YearlyRequest):
-    try:
-        engine = SajuEngine(req.user_saju)
-        year_to_calc = req.target_year if (req.target_year and req.target_year > 0) else datetime.now().year
+        # 1. 사주 엔진 연산 실행
+        engine = SajuEngine()
+        # saju_engine의 메서드명에 맞게 호출
+        engine_result = engine.calculate(
+            year=request.year,
+            month=request.month,
+            day=request.day,
+            hour=request.hour,
+            gender=request.gender
+        )
         
-        if hasattr(engine, 'calculate_yearly_trend'):
-            raw_result = engine.calculate_yearly_trend(year_to_calc)
-        elif hasattr(engine, 'calculate_yearly'):
-            raw_result = engine.calculate_yearly(year_to_calc)
-        else:
-            raw_result = {"year": year_to_calc, "status": "yearly engine logic completed"}
-
-        ai_commentary = get_ai_fortune_interpretation(f"{year_to_calc}년 연간 운세 및 월별 흐름", raw_result)
+        # 2. 연산 결과를 Gemini에 전달해 2030 맞춤형 해석 생성
+        ai_interpretation = get_ai_fortune_interpretation(
+            analysis_type=request.analysis_type,
+            engine_data=engine_result
+        )
         
         return {
-            "calculated_year": year_to_calc,
-            "engine_data": raw_result,
-            "ai_interpretation": ai_commentary
+            "status": "success",
+            "engine_data": engine_result,
+            "interpretation": ai_interpretation
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"연간 운세 처리 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
