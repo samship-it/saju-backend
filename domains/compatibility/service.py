@@ -19,13 +19,13 @@ def analyze_compatibility_report(
     saju1 = calculate_saju(
         p1_info['year'], p1_info['month'], p1_info['day'],
         p1_info.get('hour', 0), p1_info.get('minute', 0),
-        p1_info.get('gender', 'female'), p1_info.get('is_lunar', False)
+        gender=p1_info.get('gender', 'female'), is_lunar=p1_info.get('is_lunar', False)
     )
-    
+
     saju2 = calculate_saju(
         p2_info['year'], p2_info['month'], p2_info['day'],
         p2_info.get('hour', 0), p2_info.get('minute', 0),
-        p2_info.get('gender', 'male'), p2_info.get('is_lunar', False)
+        gender=p2_info.get('gender', 'male'), is_lunar=p2_info.get('is_lunar', False)
     )
 
     # 2. 사주간 합/충 명리 연산 엔진 수행

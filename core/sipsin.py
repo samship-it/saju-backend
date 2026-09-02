@@ -30,3 +30,8 @@ def calculate_sipsin(day_master: str, target_char: str, is_gan: bool = True) -> 
         "인성": ("편인" if same_yy else "정인")
     }
     return mapping[group]
+
+
+def get_sipsin(day_master: str, target_char: str, is_gan: bool = True) -> str:
+    """calculate_sipsin 의 호환용 별칭."""
+    return calculate_sipsin(day_master, target_char, is_gan=is_gan)

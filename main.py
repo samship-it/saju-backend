@@ -1,6 +1,9 @@
+import os
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # 도메인별 라우터 불러오기
 from domains.daily.router import router as daily_router
@@ -46,22 +49,15 @@ app.include_router(wealth_router, prefix='/api/v1/wealth', tags=['Wealth & Marke
 app.include_router(compatibility_router, prefix='/api/v1/compatibility', tags=['Compatibility'])
 app.include_router(tarot_router, prefix='/api/v1/tarot', tags=['Tarot Reading'])
 
+# 타로 이미지 정적 파일 서빙 (폴더가 존재할 때만 마운트)
+TAROT_IMAGE_DIR = os.environ.get(
+    'TAROT_IMAGE_DIR',
+    os.path.join(os.path.dirname(__file__), 'domains', 'tarot', '타로이미지')
+)
+if os.path.isdir(TAROT_IMAGE_DIR):
+    app.mount('/static/tarot_images', StaticFiles(directory=TAROT_IMAGE_DIR), name='tarot_images')
+
+
 @app.get('/')
 def read_root():
     return {'status': 'healthy', 'message': 'Saju Fortune Engine is fully operational.'}
-
-import os
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from domains.tarot.router import router as tarot_router
-
-app = FastAPI()
-
-# 타로 이미지 폴더가 있는 실제 경로
-TAROT_IMAGE_DIR = r"C:\운세\타로이미지"
-
-# 이미지 폴더를 /static/tarot_images 경로로 접근 가능하게 설정
-if os.path.exists(TAROT_IMAGE_DIR):
-    app.mount("/static/tarot_images", StaticFiles(directory=TAROT_IMAGE_DIR), name="tarot_images")
-
-app.include_router(tarot_router, prefix="/api/v1/tarot", tags=["Tarot"])    

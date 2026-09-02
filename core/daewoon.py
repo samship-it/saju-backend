@@ -197,3 +197,92 @@ def calculate_saju_daewoon_sewoon(
             "list": sewoon_flow
         }
     }
+
+
+# ===========================================================================
+# 한자 간지 기반 운(woon) 헬퍼 — core/saju_base.calculate_saju() 에서 사용
+# (위쪽 로직은 한글 간지, 아래는 사주 엔진 전체에서 쓰는 한자 간지 기준)
+# ===========================================================================
+GAN_H = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
+JI_H = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+GAN_YANG_H = {
+    "甲": True, "乙": False, "丙": True, "丁": False, "戊": True,
+    "己": False, "庚": True, "辛": False, "壬": True, "癸": False,
+}
+# 월두법: 연간 -> 인월(寅月) 천간 index
+_MONTH_HEAD_H = {"甲": 2, "己": 2, "乙": 4, "庚": 4, "丙": 6, "辛": 6, "丁": 8, "壬": 8, "戊": 0, "癸": 0}
+
+_MALE_TOKENS = {"male", "m", "남", "남자", "남성"}
+
+
+def _ganji_by_year(year: int) -> str:
+    return GAN_H[(year - 4) % 10] + JI_H[(year - 4) % 12]
+
+
+def calculate_daewoon_info(
+    year: int, month: int, day: int, gender: str,
+    year_pillar: str, month_pillar: str = "甲寅",
+) -> Dict[str, Any]:
+    """생년월일 + 연주/월주(한자)로 대운수·순역·10년 단위 대운 흐름을 산출한다."""
+    birth_dt = datetime(year, month, day, 12)
+    year_stem = year_pillar[0] if year_pillar else "甲"
+    is_yang = GAN_YANG_H.get(year_stem, True)
+    is_male = gender.strip().lower() in _MALE_TOKENS
+
+    # 양남음녀 순행 / 음남양녀 역행
+    is_forward = (is_male and is_yang) or (not is_male and not is_yang)
+    daewoon_num = calculate_exact_daewoon_num(birth_dt, is_forward)
+
+    m_gan = GAN_H.index(month_pillar[0]) if month_pillar and month_pillar[0] in GAN_H else 0
+    m_ji = JI_H.index(month_pillar[1]) if len(month_pillar) > 1 and month_pillar[1] in JI_H else 2
+    step = 1 if is_forward else -1
+
+    flow = []
+    gi, ji = m_gan, m_ji
+    for i in range(1, 9):
+        gi = (gi + step) % 10
+        ji = (ji + step) % 12
+        start_age = daewoon_num + (i - 1) * 10
+        ganji = GAN_H[gi] + JI_H[ji]
+        flow.append({
+            "step": i,
+            "start_age": start_age,
+            "ganji": ganji,
+            "label": f"{start_age}세 대운 ({ganji})",
+        })
+
+    return {
+        "daewoon_num": daewoon_num,
+        "direction": "순행" if is_forward else "역행",
+        "flow": flow,
+    }
+
+
+def get_seewoon_list(start_year: int, count: int = 10) -> List[Dict[str, Any]]:
+    """start_year 부터 count 년치 세운(연운) 간지 목록(한자)."""
+    return [
+        {
+            "year": start_year + i,
+            "ganji": _ganji_by_year(start_year + i),
+            "label": f"{start_year + i}년 ({_ganji_by_year(start_year + i)})",
+        }
+        for i in range(count)
+    ]
+
+
+def get_wolwoon_list(year: int) -> List[Dict[str, Any]]:
+    """해당 연도 12개월 월운 간지 목록(한자). 절기 기준 인월(寅月)=1로 본다."""
+    year_stem = GAN_H[(year - 4) % 10]
+    start_gan = _MONTH_HEAD_H[year_stem]
+    out = []
+    for m in range(12):
+        gi = (start_gan + m) % 10
+        ji = (2 + m) % 12  # 寅(2) 부터 시작
+        ganji = GAN_H[gi] + JI_H[ji]
+        out.append({
+            "month_index": m + 1,           # 인월=1 ... 축월=12
+            "solar_month_approx": ((m + 1) % 12) + 1,  # 인월≈2월
+            "ganji": ganji,
+            "label": f"{ganji}월",
+        })
+    return out

@@ -20,7 +20,9 @@ def analyze_wealth_and_market_strategy(
     사주 재물운(정재/편재) 분석 및 증시/투자 시장 결합 맞춤 전략 생성
     """
     # 1. 사주 기본 명식 연산
-    saju_data = calculate_saju(year, month, day, hour, minute, gender, is_lunar)
+    saju_data = calculate_saju(
+        year, month, day, hour, minute, gender=gender, is_lunar=is_lunar
+    )
     
     # 2. LLM 해석용 프롬프트 구성
     system_instruction = """

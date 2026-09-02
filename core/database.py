@@ -36,6 +36,12 @@ def init_db():
 # DB 세션 획득 객체
 db_session = SessionLocal()
 
+# 앱 기동 시 테이블 보장 (읽기 전용 FS 등 실패는 조용히 무시하고 런타임에서 폴백)
+try:
+    init_db()
+except Exception as _e:  # pragma: no cover
+    print(f"[database] init_db 실패 (런타임 폴백 사용): {_e}")
+
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully!")

@@ -11,14 +11,13 @@ def check_ji_interactions(ji_list: List[str]) -> List[str]:
         if count >= 2 and ji in ["辰", "午", "酉", "亥"]:
             interactions.append(f"자형({ji}-{ji})")
 
-    unique_jis = list(set(ji_list))
-    for i in range(len(unique_jis)):
-        for j in range(i + 1, len(unique_jis)):
-            pair = (unique_jis[i], unique_jis[j])
-            rev_pair = (unique_jis[j], unique_jis[i])
-            if pair in hab_pairs or rev_pair in hab_pairs:
-                interactions.append(f"육합({pair[0]}-{pair[1]})")
-            if pair in chung_pairs or rev_pair in chung_pairs:
-                interactions.append(f"충({pair[0]}-{pair[1]})")
+    # 라벨은 set 순회 순서가 아니라 참조 테이블의 정규 순서(canonical order)로 만든다.
+    present = set(ji_list)
+    for a, b in hab_pairs:
+        if a in present and b in present:
+            interactions.append(f"육합({a}-{b})")
+    for a, b in chung_pairs:
+        if a in present and b in present:
+            interactions.append(f"충({a}-{b})")
 
     return interactions

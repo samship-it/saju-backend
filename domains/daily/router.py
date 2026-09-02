@@ -6,12 +6,13 @@ from pydantic import BaseModel
 from typing import Optional
 
 from config import KST, API_SECRET_KEY
-from database import db_session, DailyFortuneCache
+from core.database import db_session, DailyFortuneCache
 from core.saju_base import calculate_saju
 from domains.daily.service import generate_daily_fortune
 from domains.market.cron_market import get_today_market_summary
 
-router = APIRouter(prefix="/api/v1/fortune/daily", tags=["Daily Fortune"])
+# prefix/tags 는 main.py 의 include_router 에서 부여한다 (다른 도메인 라우터와 일관)
+router = APIRouter()
 
 class DailyFortuneRequest(BaseModel):
     user_id: str
@@ -23,7 +24,7 @@ class DailyFortuneRequest(BaseModel):
     gender: Optional[str] = "female"
     target_date: Optional[str] = None
 
-@router.post("")
+@router.post("/fortune", summary="데일리 운세 (POST)")
 def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header(...)):
     if x_api_key != API_SECRET_KEY:
         raise HTTPException(status_code=403, detail="Invalid API Key")
@@ -44,7 +45,10 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
         if cached:
             return {"status": "success", "cached": True, "is_fallback": False, "data": cached.fortune_json}
 
-        saju_data = calculate_saju(req.year, req.month, req.day, req.hour, req.minute, req.gender or "female", t_date)
+        saju_data = calculate_saju(
+            req.year, req.month, req.day, req.hour, req.minute,
+            gender=req.gender or "female", target_date=t_date,
+        )
         market_summary = get_today_market_summary(target_date_str)
         fortune_result, is_fallback = generate_daily_fortune(saju_data, market_summary)
 

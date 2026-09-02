@@ -36,8 +36,8 @@ def calculate_daily_fortune_element(user_saju: Dict[str, Any], date_obj: datetim
     day_master = user_saju.get('day_master', '甲')
     
     # 일간 기준 오늘 일간 천간/지지의 십성 산출
-    sipsin_gan = get_sipsin(day_master, today_ganji['day_gan'])
-    sipsin_ji = get_sipsin(day_master, today_ganji['day_ji'])
+    sipsin_gan = get_sipsin(day_master, today_ganji['day_gan'], is_gan=True)
+    sipsin_ji = get_sipsin(day_master, today_ganji['day_ji'], is_gan=False)
     
     # 십성 기반 오늘의 기본 운세 점수 가공 (예시 알골리즘)
     luck_score_map = {
