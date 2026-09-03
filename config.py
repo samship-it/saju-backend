@@ -30,8 +30,11 @@ _load_dotenv()
 # 한국 표준시 타임존 설정 (KST)
 KST = ZoneInfo("Asia/Seoul")
 
-# Gemini 모델 및 API 키 설정 (모델명은 절대 변경하지 않는다)
-GEMINI_MODEL_NAME = "gemini-3.5-flash"
+# Gemini 모델 및 API 키 설정
+# gemini-3.5-flash 는 무료 등급 할당량(모델별 하루 20회)이 금방 소진돼 폴백으로 떨어진다.
+# 기본값을 할당량 여유가 있는 gemini-2.5-flash-lite 로 둔다.
+# 배포 환경변수 GEMINI_MODEL_NAME 으로 언제든 교체 가능. (예: gemini-3.5-flash-lite)
+GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # 내부 API 검증용 키
