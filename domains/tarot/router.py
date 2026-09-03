@@ -1,31 +1,35 @@
-# domains/tarot/router.py 예시
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from domains.tarot.service import generate_tarot_reading, BASE_CARDS
+
+from domains.tarot.service import generate_tarot_reading, list_cards
 
 router = APIRouter()
 
+
 class TarotReadingRequest(BaseModel):
-    question: str = Field(..., example="오늘의 운세를 알려주세요.", description="타로 질문")
-    reading_type: Optional[str] = Field("오늘의 운세", example="오늘의 재테크 운세", description="운세 유형 (오늘의 운세 / 오늘의 재테크 운세 등)")
-    selected_card_ids: Optional[List[int]] = Field(None, example=[0, 10, 21])
-    custom_orientations: Optional[List[bool]] = Field(None, example=[False, True, False])
+    question: str = Field("오늘 하루 전반", example="이직을 고민 중이에요.")
+    reading_type: str = Field("오늘의 타로", example="오늘의 타로",
+                              description="'오늘의 타로' 또는 '오늘의 재테크 타로'")
+    card_id: Optional[int] = Field(None, ge=0, le=21, description="사용자가 고른 카드. 미지정 시 랜덤")
+    is_reversed: Optional[bool] = Field(None, description="정/역방향. 미지정 시 랜덤")
 
-@router.get("/cards")
-async def get_all_tarot_cards():
-    return {"status": "success", "cards": BASE_CARDS}
 
-@router.post("/read")
-async def read_tarot(request: TarotReadingRequest):
+@router.get("/cards", summary="타로 카드 목록")
+def get_all_tarot_cards():
+    return {"status": "success", "cards": list_cards()}
+
+
+@router.post("/read", summary="타로 1장 뽑기 + 해석")
+def read_tarot(request: TarotReadingRequest):
     try:
-        result = generate_tarot_reading(
+        result, is_fallback = generate_tarot_reading(
             question=request.question,
             reading_type=request.reading_type,
-            selected_card_ids=request.selected_card_ids,
-            custom_orientations=request.custom_orientations
+            card_id=request.card_id,
+            is_reversed=request.is_reversed,
         )
-        return result
+        return {"status": "success", "is_fallback": is_fallback, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"타로 리딩 생성 실패: {str(e)}")

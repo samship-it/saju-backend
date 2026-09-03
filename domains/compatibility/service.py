@@ -1,93 +1,115 @@
-import json
-import logging
-from typing import Dict, Any
-from core.saju_base import calculate_saju
-from core.gemini_client import generate_gemini_analysis
-from domains.compatibility.engine import calculate_compatibility_interactions
+"""궁합 — 두 원국 계산 → 관계 엔진 → 세부/종합 점수 → 8단계 한줄평(자연어 레이어에서 선택) + AI 해석."""
+from typing import Dict, Any, Tuple
 
-logger = logging.getLogger(__name__)
+from core.saju_base import calculate_saju
+from core.constants import compat_band
+from domains.compatibility.engine import calculate_compatibility_interactions
+from shared.ai_client import call_gemini_json
+from shared.persona_map import persona_prompt
+from shared.fortune_cache import get_or_create
+from shared.public import person_summary
+
+_SYSTEM = (
+    "당신은 2030 세대를 위한 궁합 화자입니다. 제공된 세부 점수와 관계 요소만 근거로 해석합니다. "
+    "점수와 한줄평은 이미 정해져 있으니 바꾸지 말고, 그 방향에 맞춰 각 영역을 구체적으로 설명합니다. "
+    "사주 용어 노출 금지. 유효한 JSON 만 출력합니다."
+)
+
+_FIELDS = ["overall", "love", "communication", "conflict", "conflict_resolution", "economy", "relationship_advice"]
+
+
+def _fallback(interactions: Dict[str, Any]) -> dict:
+    return {
+        "overall": "서로의 결이 달라 보여도, 그 다름이 오히려 서로를 채워주는 조합입니다. 대화로 이견을 좁힐수록 시너지가 커집니다. 급하게 결론 내기보다 시간을 두고 맞춰가면 관계가 단단해집니다. 각자의 페이스를 존중하는 게 첫 번째 규칙이에요. 함께 있을 때 편안함을 느낀다면 그 자체가 좋은 신호입니다.",
+        "love": "감정 표현의 방식이 서로 달라서 초반에 오해가 생길 수 있어요. 한 사람은 말로, 다른 사람은 행동으로 애정을 보이는 식입니다. 상대의 언어를 배우려는 태도가 애정운을 끌어올립니다. 스킨십이나 표현을 미루지 말고 자주 확인해 주세요.",
+        "communication": "대화의 템포를 맞추는 연습이 필요합니다. 한쪽이 결론부터, 다른 쪽이 과정부터 말하는 스타일이라 답답함이 생길 수 있어요. 끝까지 듣고 요약해 되묻는 습관이 소통을 크게 개선합니다.",
+        "conflict": "부딪히는 지점은 주로 일 처리 방식과 우선순위입니다. 감정이 상했을 때 즉시 말하기보다, 한 박자 쉬고 대화하면 갈등이 커지지 않습니다.",
+        "conflict_resolution": "갈등이 생기면 '누가 맞냐'가 아니라 '무엇을 원하냐'로 질문을 바꿔보세요. 상대가 가진 보완 기질(차분함 또는 추진력)을 인정하는 순간 해결이 빨라집니다.",
+        "economy": "돈에 대한 감각이 달라서 초반 조율이 필요합니다. 공동 지출과 개인 지출의 경계를 명확히 하고, 큰 결정은 함께 검토하는 규칙을 두면 안정적입니다.",
+        "relationship_advice": "서로의 장점을 존중하고 단점을 감싸줄 때 최고의 파트너십이 됩니다. 정기적으로 관계를 점검하는 대화 시간을 만들어보세요.",
+    }
+
+
+_saju_info = person_summary
+
 
 def analyze_compatibility_report(
     p1_info: Dict[str, Any],
     p2_info: Dict[str, Any],
-    relation_type: str = "romantic"  # romantic(연인/부부), business(동업/비즈니스), friend(친구)
-) -> Dict[str, Any]:
-    """
-    두 사주 원국 연산 및 상호작용(합/충)을 바탕으로 궁합 리포트 생성
-    """
-    # 1. 두 사람의 사주 기본 명식 연산
-    saju1 = calculate_saju(
-        p1_info['year'], p1_info['month'], p1_info['day'],
-        p1_info.get('hour', 0), p1_info.get('minute', 0),
-        gender=p1_info.get('gender', 'female'), is_lunar=p1_info.get('is_lunar', False)
+    relation_type: str = "romantic",
+) -> Tuple[dict, bool]:
+    s1 = calculate_saju(
+        p1_info["year"], p1_info["month"], p1_info["day"],
+        p1_info.get("hour"), p1_info.get("minute", 0),
+        gender=p1_info.get("gender", "female"), is_lunar=p1_info.get("is_lunar", False),
     )
-
-    saju2 = calculate_saju(
-        p2_info['year'], p2_info['month'], p2_info['day'],
-        p2_info.get('hour', 0), p2_info.get('minute', 0),
-        gender=p2_info.get('gender', 'male'), is_lunar=p2_info.get('is_lunar', False)
+    s2 = calculate_saju(
+        p2_info["year"], p2_info["month"], p2_info["day"],
+        p2_info.get("hour"), p2_info.get("minute", 0),
+        gender=p2_info.get("gender", "male"), is_lunar=p2_info.get("is_lunar", False),
     )
+    interactions = calculate_compatibility_interactions(s1, s2)
+    total = interactions["total_score"]
+    band = compat_band(total)
 
-    # 2. 사주간 합/충 명리 연산 엔진 수행
-    interaction_data = calculate_compatibility_interactions(saju1, saju2)
+    def _gen():
+        prompt = f"""[본인 화자]
+{persona_prompt(s1.get('day_master'), s1.get('day_branch'))}
 
-    # 3. LLM 해석용 프롬프트 구성
-    system_instruction = """
-    당신은 정통 명리학과 관계 심리학을 결합한 궁합 컨설턴트입니다.
-    두 사람의 사주 명식과 천간/지지 합·충 결과를 바탕으로 두 사람의 궁합 지수, 시너지, 시련 극복 조언을 제시합니다.
-    반드시 유효한 JSON 형식으로만 응답해야 하며, Markdown 문법(```json 등)은 절대 사용하지 마세요.
-    """
+[관계 유형] {relation_type}
+[본인 일주] {s1.get('day_master')}{s1.get('day_branch')} / [상대 일주] {s2.get('day_master')}{s2.get('day_branch')}
+[출생시간 확인] 본인 {s1.get('birth_time_known')} / 상대 {s2.get('birth_time_known')}
 
-    prompt = f"""
-    [관계 유형]: {relation_type}
-    [본인 사주]: {saju1.get('year_ganji')}년 {saju1.get('month_ganji')}월 {saju1.get('day_ganji')}일 {saju1.get('time_ganji')}시 (일간: {saju1.get('day_master')})
-    [상대방 사주]: {saju2.get('year_ganji')}년 {saju2.get('month_ganji')}월 {saju2.get('day_ganji')}일 {saju2.get('time_ganji')}시 (일간: {saju2.get('day_master')})
-    [명리 연산 결과]:
-    - 일간 관계: {interaction_data['day_master_relation']}
-    - 일지 관계: {interaction_data['day_jiji_relation']}
+[Python 산출 세부 점수 — 이 점수 방향을 지킬 것]
+- 종합 {total} → 관계타입 "{band['relation_type']}", 한줄평 "{band['one_liner']}"
+- 전체 {interactions['sub_scores']['overall']} / 애정 {interactions['sub_scores']['love']} / 소통 {interactions['sub_scores']['communication']} / 갈등 {interactions['sub_scores']['conflict']} / 경제 {interactions['sub_scores']['economy']}
+- 일간 관계: {interactions['day_master_relation']} (합 {interactions['day_master_hap']}, 충 {interactions['day_master_chung']})
+- 일지(배우자궁) 관계: {interactions['day_ji_relation']}
+- 관계 요소 카운트: {interactions['counts']}
+- 긍정 요소: {interactions['positive_factors']}
+- 부정 요소: {interactions['negative_factors']}
 
-    위 데이터를 바탕으로 두 사람의 궁합 분석 보고서를 다음 JSON 스키마 구조로 작성해주세요:
-    {{
-        "overall_compatibility_score": 88,
-        "headline": "한 줄 궁합 총평 메시지",
-        "harmony_analysis": {{
-            "emotional_connection": "정서적/소통 궁합 분석",
-            "values_and_lifestyle": "가치관 및 라이프스타일 조화도",
-            "synergy_points": ["서로에게 도움이 되는 시너지 포인트 1", "시너지 포인트 2"]
-        }},
-        "conflict_management": {{
-            "potential_friction": "부딪힐 수 있는 갈등 요소",
-            "solution_advice": "갈등을 지혜롭게 풀어가는 구체적 조언"
-        }},
-        "relationship_roadmap": "함께 맞춰가면 좋은 향후 관계 발전 가이드"
-    }}
-    """
+[규칙] 각 영역 5줄 이상, 구체적으로. 사주 용어 금지. 점수/한줄평은 바꾸지 말 것.
 
-    try:
-        raw_response = generate_gemini_analysis(prompt, system_instruction)
-        cleaned_json = raw_response.strip().replace("```json", "").replace("```", "").strip()
-        analysis_result = json.loads(cleaned_json)
-    except Exception as e:
-        logger.error(f"Compatibility service JSON parsing error: {e}")
-        analysis_result = {
-            "overall_compatibility_score": interaction_data['compatibility_score_base'],
-            "headline": "서로의 다른 점이 서로를 더욱 빛나게 만드는 궁합입니다.",
-            "harmony_analysis": {
-                "emotional_connection": "상호보완적 기운이 강하여 깊은 유대감을 형성할 수 있습니다.",
-                "values_and_lifestyle": "대화를 통해 이견을 조율할수록 시너지가 증대됩니다.",
-                "synergy_points": ["서로의 부족한 기운을 채워주는 보완 관계", "목표 지향적 협업 능력"]
+[출력 JSON — 이 구조만]
+{{
+  "overall": "전체 궁합 설명",
+  "love": "애정 궁합 (일지+배우자성+합충+도화 반영)",
+  "communication": "소통 궁합 (식상+인성+일간 관계 반영)",
+  "conflict": "갈등 요소 (충+형+비겁+상관 반영)",
+  "conflict_resolution": "갈등 해결법 (갈등 요소 + 상대의 보완 요소 반영)",
+  "economy": "경제 궁합 (재성+비겁+양쪽 재물 구조 반영)",
+  "relationship_advice": "관계 조언 (가장 강한 긍정/부정 요소 반영)"
+}}"""
+        ai, is_fb = call_gemini_json(prompt, _fallback(interactions), system_instruction=_SYSTEM)
+        data = _fallback(interactions) if is_fb else ai
+        report = {k: str(data.get(k, "")) for k in _FIELDS}
+        return {
+            "content_type": "궁합",
+            "relation_type": relation_type,
+            "person1": _saju_info(s1),
+            "person2": _saju_info(s2),
+            "scores": {
+                "total": total,
+                **interactions["sub_scores"],
             },
-            "conflict_management": {
-                "potential_friction": "일처리 방식이나 표현 스타일의 차이로 인한 오해",
-                "solution_advice": "상대방의 입장을 한 번 더 경청하는 여유가 필요합니다."
+            "relation_type_label": band["relation_type"],
+            "one_liner": band["one_liner"],
+            "score_band": band["band"],
+            "engine_factors": {
+                "positive": interactions["positive_factors"],
+                "negative": interactions["negative_factors"],
+                "day_master_relation": interactions["day_master_relation"],
+                "day_ji_relation": interactions["day_ji_relation"],
+                "counts": interactions["counts"],
             },
-            "relationship_roadmap": "서로의 장점을 존중하고 단점을 싸안아줄 때 최고의 파트너십을 이룹니다."
-        }
+            "report": report,
+        }, is_fb
 
-    return {
-        "status": "success",
-        "person1_saju": {"day_master": saju1.get('day_master'), "ganji": saju1.get('day_ganji')},
-        "person2_saju": {"day_master": saju2.get('day_master'), "ganji": saju2.get('day_ganji')},
-        "engine_interactions": interaction_data,
-        "compatibility_report": analysis_result
+    payload = {
+        "p1": {k: p1_info.get(k) for k in ("year", "month", "day", "hour", "minute", "gender", "is_lunar")},
+        "p2": {k: p2_info.get(k) for k in ("year", "month", "day", "hour", "minute", "gender", "is_lunar")},
+        "rel": relation_type,
     }
+    data, is_fb, _ = get_or_create("compatibility", payload, _gen)
+    return data, is_fb

@@ -1,33 +1,74 @@
+"""Gemini 자연어 생성 공용 클라이언트.
+
+- 모델은 config.GEMINI_MODEL_NAME('gemini-3.5-flash')로 고정. 절대 코드에서 바꾸지 않는다.
+- 인증은 환경변수 GEMINI_API_KEY.
+- 점수 일관성을 위해 temperature=0 으로 호출한다.
+- 키 미설정/호출 실패 시 (fallback, is_fallback=True) 반환.
+"""
 import json
 import logging
-import google.generativeai as genai
-from typing import Tuple
+from typing import Tuple, Optional
+
 import config
 
-logging.basicConfig(
-    filename="app_errors.log",
-    level=logging.ERROR,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logger = logging.getLogger(__name__)
 
-def call_gemini_json(prompt: str, fallback_data: dict) -> Tuple[dict, bool]:
-    """
-    Gemini 3.5 Flash 호출 함수 (API 키 미설정 시 즉시 폴백)
-    """
-    # API 키가 없으면 대기 없이 즉시 폴백 반환
-    if not config.GEMINI_API_KEY:
-        print("[AI Client] GEMINI_API_KEY가 설정되지 않아 기본 데이터를 즉시 반환합니다.")
+try:  # google-generativeai 미설치 환경에서도 import 되도록
+    import google.generativeai as genai
+except Exception:  # pragma: no cover
+    genai = None
+
+_GENERATION_CONFIG = {
+    "response_mime_type": "application/json",
+    "temperature": 0.0,
+    "top_p": 1.0,
+}
+
+
+def _extract_json(text: str) -> dict:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned[:4].lower() == "json":
+            cleaned = cleaned[4:]
+    cleaned = cleaned.strip()
+    return json.loads(cleaned)
+
+
+def call_gemini_json(
+    prompt: str,
+    fallback_data: dict,
+    system_instruction: Optional[str] = None,
+) -> Tuple[dict, bool]:
+    """(결과 dict, is_fallback) 반환."""
+    api_key = config.GEMINI_API_KEY
+    if not api_key or genai is None:
+        logger.info("[ai_client] GEMINI_API_KEY 미설정 또는 SDK 없음 → 폴백 반환")
         return fallback_data, True
 
     try:
-        genai.configure(api_key=config.GEMINI_API_KEY)
+        genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
-            model_name=config.GEMINI_MODEL_NAME,
-            generation_config={"response_mime_type": "application/json", "temperature": 0.7}
+            model_name=config.GEMINI_MODEL_NAME,  # 'gemini-3.5-flash' 고정
+            system_instruction=system_instruction or None,
+            generation_config=_GENERATION_CONFIG,
         )
         response = model.generate_content(prompt)
-        return json.loads(response.text), False
-    except Exception as e:
-        print(f"[AI Client] Gemini API 호출 예외 발생: {e}")
-        logging.error(f"Gemini API 호출 에러: {e}")
+        return _extract_json(response.text), False
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[ai_client] Gemini 호출 실패: {e}")
         return fallback_data, True
+
+
+def generate_gemini_analysis(prompt: str, system_instruction: str = "") -> str:
+    """레거시 호환: 원문 문자열 반환. 키 미설정/실패 시 예외."""
+    api_key = config.GEMINI_API_KEY
+    if not api_key or genai is None:
+        raise RuntimeError("GEMINI_API_KEY 미설정")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name=config.GEMINI_MODEL_NAME,
+        system_instruction=system_instruction or None,
+        generation_config=_GENERATION_CONFIG,
+    )
+    return model.generate_content(prompt).text

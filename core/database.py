@@ -20,6 +20,17 @@ class DailyFortuneCache(Base):
     fortune_json = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+# 1-2. 범용 운세 캐시 (점수 일관성 보장: 같은 입력 = 같은 결과)
+class FortuneCache(Base):
+    __tablename__ = "fortune_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cache_key = Column(String(255), unique=True, index=True)  # content_type + input_hash
+    content_type = Column(String(64), index=True)
+    result_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 # 2. 시장 데이터 요약 테이블
 class MarketSummary(Base):
     __tablename__ = "market_summary"
