@@ -111,10 +111,35 @@ def test_tarot_structure(reading_type, finance):
     assert d["card"]["id"] == 3
     assert d["card"]["image_url"] == "/static/tarot_images/3.jpg"
     assert d["orientation"] == "역방향" and d["is_reversed"] is True
-    assert d["card_meaning"] and d["advice"]
+    assert d["card_meaning"] and d["advice"] and d["advice_detail"] and d["today_message"]
+    assert d["content_loaded"] is True  # docx 파싱 성공
     assert d["reading_type"] == reading_type
     if finance:
         assert d["finance_summary"]
+
+
+@pytest.mark.parametrize("finance", [False, True])
+def test_tarot_upright_vs_reversed_text_differs(finance):
+    """같은 카드라도 정/역방향은 서로 다른 원문 해석이 나와야 한다."""
+    rt = "오늘의 재테크 타로" if finance else "오늘의 타로"
+    up = client.post("/api/v1/tarot/read",
+                     json={"question": "q", "reading_type": rt, "card_id": 13, "is_reversed": False}).json()["data"]
+    rev = client.post("/api/v1/tarot/read",
+                      json={"question": "q", "reading_type": rt, "card_id": 13, "is_reversed": True}).json()["data"]
+    assert up["orientation"] == "정방향" and rev["orientation"] == "역방향"
+    assert up["card_meaning"] != rev["card_meaning"]
+    assert up["advice"] != rev["advice"]
+    assert up["advice_detail"] != rev["advice_detail"]
+
+
+def test_tarot_reversed_matches_docx_reversed():
+    """역방향 응답의 card_meaning 이 docx 역방향 원문과 일치."""
+    from domains.tarot.content import get_card_reading
+    expected = get_card_reading(13, reversed_=True, finance=False)
+    r = client.post("/api/v1/tarot/read",
+                    json={"question": "q2", "reading_type": "오늘의 타로", "card_id": 13, "is_reversed": True}).json()["data"]
+    assert r["card_meaning"] == expected["description"]
+    assert r["advice"] == expected["advice"]
 
 
 def test_tarot_cards_list():
