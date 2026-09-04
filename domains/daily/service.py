@@ -10,6 +10,7 @@ from shared.ai_client import call_gemini_json
 from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block, SCORING_RULES
 from core.constants import score_to_emoji, score_to_band
+from shared.text_format import paragraphize
 
 CONTENT_TYPE = "daily_fortune"
 
@@ -84,11 +85,11 @@ def _shape(ai: dict) -> dict:
         "score_emoji": score_to_emoji(overall),
         "score_band": score_to_band(overall),
         "summary": {
-            "overall": str(summ.get("overall", "")),
-            "money": str(summ.get("money", "")),
-            "love_single": str(summ.get("love_single", "")),
-            "love_couple": str(summ.get("love_couple", "")),
-            "work_study": str(summ.get("work_study", "")),
+            "overall": paragraphize(str(summ.get("overall", ""))),
+            "money": paragraphize(str(summ.get("money", ""))),
+            "love_single": paragraphize(str(summ.get("love_single", ""))),
+            "love_couple": paragraphize(str(summ.get("love_couple", ""))),
+            "work_study": paragraphize(str(summ.get("work_study", ""))),
         },
         "keywords": kws,
         "recommended_action": str(ai.get("recommended_action", "")),

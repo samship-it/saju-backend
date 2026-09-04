@@ -15,6 +15,7 @@ from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block, SCORING_RULES
 from shared.fortune_cache import get_or_create
 from shared.public import person_summary
+from shared.text_format import paragraphize
 
 CATEGORIES = {
     "overall": "총운",
@@ -169,11 +170,20 @@ def generate_yearly(
 
 {engine_block(saju, domains=[category if category in ('wealth','love','business','career_change','study','health','travel','hobby') else 'overall'])}
 
-{SCORING_RULES if category == 'overall' else '[규칙] 해석은 최소 5줄 이상. 사주 용어 금지.'}
+{SCORING_RULES if category == 'overall' else ''}
+[작성 규칙]
+- analysis 는 아래 4개 흐름을 순서대로 담되, 각 흐름을 하나의 문단으로 쓰고 문단 사이를 실제 줄바꿈 두 번으로 구분한다.
+  ① 올해 전체 흐름과 분위기
+  ② 상반기(1~6월) 구체적 흐름
+  ③ 하반기(7~12월) 구체적 흐름
+  ④ 이 분야에서 올해 꼭 기억할 조언
+- BEST 달·주의 달을 문장 안에서 자연스럽게 언급하고, 왜 그 시기인지 한 줄씩 근거를 준다.
+- 추상적 격언 대신 2030 세대가 실제로 겪는 상황(이직, 이사, 소개팅, 대출, 시험 등)으로 예를 든다.
+- 사주 용어 금지. 전체 12줄 이상.
 
 [출력 JSON — 이 구조만]
 {{
-{extra_schema}  "analysis": "{CATEGORIES[category]} 상세 분석 (총운은 가장 길게, 원국→대운→세운 바탕으로 '올해는 어떤 해인가')"
+{extra_schema}  "analysis": "{CATEGORIES[category]} 상세 분석 (위 작성 규칙의 문단 구성을 지킬 것. 총운은 가장 길고 깊게)"
 }}"""
         ai, is_fb = call_gemini_json(
             prompt, _fallback(category, ty, saju, monthly, best, caution), system_instruction=_SYSTEM,
@@ -187,7 +197,7 @@ def generate_yearly(
             "day_master": saju.get("day_master"),
             "birth_time_known": saju.get("birth_time_known"),
             "saju_info": person_summary(saju),
-            "analysis": str(data.get("analysis", "")),
+            "analysis": paragraphize(str(data.get("analysis", ""))),
         }
         if category == "overall":
             kws = [str(k) for k in (data.get("keywords") or [])][:3]

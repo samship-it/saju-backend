@@ -7,6 +7,7 @@ from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block
 from shared.fortune_cache import get_or_create
 from shared.public import person_summary
+from shared.text_format import paragraphize
 
 _SYSTEM = (
     "당신은 2030 세대를 위한 사주 앱 화자입니다. 제공된 원국 데이터만 근거로 성격/적성을 설명합니다. "
@@ -64,7 +65,7 @@ def analyze_character(year, month, day, hour=None, minute=0, gender="female", is
         return {
             "content_type": "나의 성격",
             "saju_info": person_summary(saju),
-            "report": {k: str(data.get(k, "")) for k in _character_fallback()},
+            "report": {k: paragraphize(str(data.get(k, ""))) for k in _character_fallback()},
         }, is_fb
 
     payload = {"y": year, "m": month, "d": day, "h": hour, "min": minute, "g": gender, "lunar": is_lunar}
@@ -96,7 +97,7 @@ def analyze_aptitude(year, month, day, hour=None, minute=0, gender="female", is_
         return {
             "content_type": "나의 적성",
             "saju_info": person_summary(saju),
-            "report": {k: str(data.get(k, "")) for k in _aptitude_fallback()},
+            "report": {k: paragraphize(str(data.get(k, ""))) for k in _aptitude_fallback()},
         }, is_fb
 
     payload = {"y": year, "m": month, "d": day, "h": hour, "min": minute, "g": gender, "lunar": is_lunar}

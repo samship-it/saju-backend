@@ -11,6 +11,7 @@ from domains.tarot.deck import BASE_CARDS, CARD_BY_ID, image_url
 from domains.tarot.content import get_card_reading, load_card_content
 from shared.ai_client import call_gemini_json
 from shared.fortune_cache import get_or_create
+from shared.text_format import paragraphize
 
 FINANCE_TYPES = {"오늘의 재테크 타로", "재테크 타로", "finance"}
 
@@ -118,7 +119,7 @@ def generate_tarot_reading(
             "card_meaning": reading.get("description", ""),
             "advice": reading.get("advice", ""),
             "advice_detail": reading.get("advice_detail", ""),
-            "today_message": str(data.get("today_message") or fb["today_message"]),
+            "today_message": paragraphize(str(data.get("today_message") or fb["today_message"])),
             "content_loaded": content_loaded,
         }
         if finance:
