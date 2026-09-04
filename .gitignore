@@ -6,3 +6,8 @@ __pycache__/
 venv/
 .DS_Store
 app_errors.log
+
+# 콘텐츠 DB 생성 스크립트 실행 로그 (transient)
+scripts/_daily_gen.log
+scripts/_daily_gen.err
+*.done

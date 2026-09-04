@@ -1,5 +1,4 @@
 import datetime
-import hashlib
 import traceback
 from typing import Optional
 
@@ -7,8 +6,8 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from config import KST, API_SECRET_KEY
-from core.database import db_session, DailyFortuneCache
 from core.saju_base import calculate_saju
+from domains.daily.content_db import make_key
 from domains.daily.service import generate_daily_fortune
 from shared.public import person_summary
 
@@ -44,6 +43,10 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
             gender=req.gender or "female", is_lunar=bool(req.is_lunar), target_date=t_date,
         )
         derived = saju_data.get("derived", {})
+
+        day_ganji = saju_data.get("day_ganji") or ""
+        iljin_ganji = (saju_data.get("today_ganji") or {}).get("day") or ""
+
         base_response = {
             "status": "success",
             "target_date": target_date_str,
@@ -51,25 +54,13 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
             "saju_info": person_summary(saju_data),
             "active_elements": derived.get("active_elements"),
             "score_components": derived.get("score_components"),
+            "combo_key": make_key(day_ganji, iljin_ganji),  # 내 일주_오늘 일진
         }
 
-        birth_str = f"{req.year}-{req.month}-{req.day}-{req.hour if req.hour is not None else 'none'}-{req.minute or 0}-{req.gender}-{req.is_lunar}"
-        birth_hash = hashlib.md5(birth_str.encode()).hexdigest()[:8]
-        cache_key = f"{req.user_id}_{target_date_str}_{birth_hash}"
-
-        cached = db_session.query(DailyFortuneCache).filter_by(cache_key=cache_key).first()
-        if cached:
-            return {**base_response, "cached": True, "is_fallback": False, "data": cached.fortune_json}
-
+        # 사전 생성 정적 DB(daily_db.json)에서 (내 일주 × 오늘 일진) 키로 즉시 조회.
         fortune_result, is_fallback = generate_daily_fortune(saju_data)
-        if not is_fallback:
-            try:
-                db_session.add(DailyFortuneCache(cache_key=cache_key, fortune_json=fortune_result))
-                db_session.commit()
-            except Exception:
-                db_session.rollback()
 
-        return {**base_response, "cached": False, "is_fallback": is_fallback, "data": fortune_result}
+        return {**base_response, "cached": not is_fallback, "is_fallback": is_fallback, "data": fortune_result}
 
     except HTTPException:
         raise

@@ -1,28 +1,19 @@
 """오늘의 운세 (DAILY_FORTUNE) — 무료 기본 운세.
 
-Python 만세력 엔진이 원국+대운+세운+일운+오행+십신+합충형파해와 '작용 강도 지표'를 산출 →
-Gemini(gemini-3.5-flash)가 이를 근거로 분야별 점수(0~100)·해석·키워드3개·추천행동 생성.
+런타임 Gemini 호출 없음. 사전 생성된 정적 DB(`domains/daily/data/daily_db.json`)에서
+(내 일주 × 오늘 일진) 키로 즉시 조회한다. DB 생성은 `scripts/generate_content_db.py` 참고.
+조합이 DB 에 없으면 사주와 무관한 고정 폴백을 반환한다(is_fallback=True).
 """
-import json
 from typing import Dict, Any, Tuple
 
-from shared.ai_client import call_gemini_json
-from shared.persona_map import persona_prompt
-from shared.saju_prompt import engine_block, SCORING_RULES
 from core.constants import score_to_emoji, score_to_band
 from shared.text_format import paragraphize
+from domains.daily.content_db import lookup
 
 CONTENT_TYPE = "daily_fortune"
 
-_SYSTEM = (
-    "당신은 2030 세대를 위한 사주 운세 앱의 화자입니다. "
-    "제공된 사주 정밀 데이터와 작용 강도 지표만 근거로 오늘의 운세를 생성합니다. "
-    "반드시 유효한 JSON 만 출력하고 Markdown 펜스는 쓰지 않습니다."
-)
-
 
 def _fallback(saju: Dict[str, Any]) -> dict:
-    dm = saju.get("day_master", "己")
     return {
         "overall_score": 60,
         "money_score": 58,
@@ -97,30 +88,14 @@ def _shape(ai: dict) -> dict:
 
 
 def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
-    prompt = f"""{persona_prompt(saju_data.get('day_master'), saju_data.get('day_branch'))}
+    """(결과 dict, is_fallback) 반환.
 
-{engine_block(saju_data, domains=['overall', 'money', 'love', 'work_study'])}
+    (내 일주 × 오늘 일진) 조합으로 사전 생성 DB 에서 조회한다. Gemini 호출 없음.
+    """
+    day_ganji = saju_data.get("day_ganji") or ""
+    iljin_ganji = (saju_data.get("today_ganji") or {}).get("day") or ""
 
-{SCORING_RULES}
-
-[출력 JSON — 이 구조만 출력]
-{{
-  "overall_score": <0-100 정수>,
-  "money_score": <0-100 정수>,
-  "love_score": <0-100 정수>,
-  "work_study_score": <0-100 정수>,
-  "summary": {{
-    "overall": "종합 상세 총평 (5줄 이상). 일간+오늘 간지+대운+세운+오행 균형+합충형파해 반영",
-    "money": "돈의 흐름과 오늘의 구체적 상황 (5줄 이상). 재성/식상생재/비겁/오늘 간지 반영",
-    "love_single": "싱글 관점 애정운 (5줄 이상). 배우자성/일지/관성·재성/합충/오늘 간지 반영",
-    "love_couple": "커플 관점 애정운 (5줄 이상)",
-    "work_study": "직장/학업운 (5줄 이상). 만 {saju_data.get('age')}세 / {saju_data.get('life_stage')} 에 맞는 현실 조언. 관성/인성/식상/오늘 간지 반영"
-  }},
-  "keywords": ["오늘 가장 강하게 작용하는 요소 기반 키워드", "", ""],
-  "recommended_action": "강하게 작용하는 오행·십신을 오늘 실제로 해볼 행동으로 변환 (2-3문장)"
-}}"""
-
-    ai, is_fallback = call_gemini_json(prompt, _fallback(saju_data), system_instruction=_SYSTEM)
-    if is_fallback:
+    entry = lookup(day_ganji, iljin_ganji)
+    if not entry:
         return _shape(_fallback(saju_data)), True
-    return _shape(ai), False
+    return _shape(entry), False
