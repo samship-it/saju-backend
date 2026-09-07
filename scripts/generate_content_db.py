@@ -64,6 +64,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config  # noqa: E402
 from core.constants import (  # noqa: E402
     GAN, JI, YUKHAP, CHUNG, PA, HAE, SANGHYEONG, SELF_HYEONG,
+    GAN_ELEM, JI_ELEM, JIJANGGAN,
 )
 from core.sipsin import calculate_sipsin  # noqa: E402
 from shared.persona_map import persona_prompt  # noqa: E402
@@ -104,10 +105,10 @@ except Exception as e:  # pragma: no cover
 
 # ─────────────────────────────────────────────────────────── 공통
 
-DAILY_DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "domains", "daily", "data", "daily_db.json",
-)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DAILY_DB_PATH = os.path.join(_ROOT, "domains", "daily", "data", "daily_db.json")
+PERSONALITY_DB_PATH = os.path.join(_ROOT, "domains", "personality", "data", "personality_db.json")
 
 _SYSTEM = (
     "당신은 2030 세대를 위한 사주 운세 앱의 화자입니다. "
@@ -117,6 +118,15 @@ _SYSTEM = (
     "반말 어미는 단 한 번도 쓰지 않습니다. "
     "반드시 아래에 지정된 키를 하나도 빠짐없이 포함한 유효한 JSON 하나만 출력하고, "
     "Markdown 펜스(```)나 그 밖의 설명 문장은 절대 쓰지 않습니다."
+)
+
+_PERSONALITY_SYSTEM = (
+    "당신은 2030 세대를 위한 사주 앱 화자입니다. 제공된 '일주(일간·일지)' 데이터만 근거로 "
+    "그 사람의 타고난 성격과 적성을 설명합니다. MBTI식 형용사 나열이 아니라 구체적인 행동·상황 "
+    "예시로 씁니다. 사주 용어(십신·오행·격국·용신 등)는 절대 노출하지 않고 태도로만 드러냅니다. "
+    "말투는 예외 없이 '친근한 존댓말'로만 씁니다('~해요/~예요/~입니다/~보세요/~편입니다'). "
+    "반말('~해', '~야', '~지', '~거야')은 한 번도 쓰지 않습니다. "
+    "지정된 키를 하나도 빠짐없이 포함한 유효한 JSON 하나만 출력하고, Markdown 펜스나 설명 문장은 쓰지 않습니다."
 )
 
 
@@ -509,7 +519,8 @@ def daily_keys(only: Optional[str]) -> List[Tuple[str, str, str]]:
 
 # ─────────────────────────────────────────────────────────── 생성 루프
 
-def make_model(model_name: str, api_key: str, max_output_tokens: Optional[int] = None):
+def make_model(model_name: str, api_key: str, max_output_tokens: Optional[int] = None,
+               system_instruction: Optional[str] = None):
     """모델별 독립 클라이언트로 생성.
 
     genai.configure() 는 프로세스 전역 싱글턴(_client_manager)을 덮어써 스레드 간
@@ -526,7 +537,7 @@ def make_model(model_name: str, api_key: str, max_output_tokens: Optional[int] =
         gen_cfg["max_output_tokens"] = max_output_tokens
     model = genai.GenerativeModel(
         model_name=model_name,
-        system_instruction=_SYSTEM,
+        system_instruction=system_instruction or _SYSTEM,
         generation_config=gen_cfg,
     )
     model._client = glm.GenerativeServiceClient(client_options={"api_key": api_key})
@@ -847,10 +858,18 @@ def _unwrap_batch_payload(raw: dict, want_keys: List[str]) -> dict:
     return raw
 
 
-def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any],
-                      out_path: str, keys: List[str]) -> None:
-    """1회 호출 = 여러 조합. 이미 있는 키는 run_daily 에서 이미 걸러진 상태."""
-    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_fn,
+                 models, max_output_tokens, total, system_instruction, banmal_fn,
+                 unit="조합", store_fn=None, count_fn=None, header="") -> None:
+    """1회 호출 = 여러 항목. 이미 있는 키는 상위 run_* 에서 이미 걸러진 상태.
+
+    daily / personality 공용. 도메인 차이는 prompt_fn·valid_fn·coerce_fn·models·
+    system_instruction·total 로 주입한다. todo/chunk 항목은 (key, ...) 튜플이며
+    이 함수는 it[0](=key)만 사용한다.
+
+    store_fn(db, key, entry, model_name): 저장 방식(기본: db[key]=entry + _model).
+    count_fn(db): 진행률 표시용 완료 수(기본: len(db)).
+    """
     batch_size = max(1, args.batch)
     if args.limit:
         todo = todo[: args.limit]
@@ -858,8 +877,20 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
         print("생성할 항목이 없습니다. (모두 완료)")
         return
 
+    def _mk(mi_: int, ki_: int):
+        return make_model(models[mi_], keys[ki_], max_output_tokens, system_instruction)
+
+    if store_fn is None:
+        def store_fn(_db, _key, _entry, _model):
+            _entry["_model"] = _model
+            _db[_key] = _entry
+    if count_fn is None:
+        count_fn = len
+
     n_calls = (len(todo) + batch_size - 1) // batch_size
-    print(f"배치 모드: {len(todo)}개 조합 · {batch_size}개/호출 ≈ {n_calls}회 호출")
+    if header:
+        print(header)
+    print(f"배치 모드: {len(todo)}개 {unit} · {batch_size}개/호출 ≈ {n_calls}회 호출")
     print(f"모델 우선순위: {', '.join(models)}   ·   API 키 {len(keys)}개")
     print(f"PerDay(일일 한도) 소진 시: 다음 키로 → 모든 키 소진 시 태평양시 자정까지 "
           f"대기 후 자동 재개 (최대 {args.max_days}일)\n")
@@ -869,22 +900,20 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
     made, day_waits = 0, 0
     failed: List[str] = []
     banmal: List[str] = []
-    attempts: Dict[str, int] = {}   # 조합 키별 시도 횟수 (누락/불량 재시도 상한)
+    attempts: Dict[str, int] = {}   # 키별 시도 횟수 (누락/불량 재시도 상한)
     t0 = time.time()
 
-    model = make_model(models[mi], keys[ki], DAILY_BATCH_MAX_OUTPUT_TOKENS)
+    model = _mk(mi, ki)
 
     from collections import deque
-    work: "deque[List[Tuple[str, str, str]]]" = deque(
-        todo[i:i + batch_size] for i in range(0, len(todo), batch_size)
-    )
+    work = deque(todo[i:i + batch_size] for i in range(0, len(todo), batch_size))
     done_calls = 0
     try:
         while work:
             chunk = work.popleft()
-            chunk_keys = [k for k, _, _ in chunk]
+            chunk_keys = [it[0] for it in chunk]
             try:
-                raw = generate_one(model, daily_batch_prompt(chunk),
+                raw = generate_one(model, prompt_fn(chunk),
                                    args.max_retries, args.delay, timeout=300)
             except CreditsDepleted as e:
                 print(f"\n[전체중단] 결제 프리페이 크레딧 소진 — 대기·재시도 무의미: {str(e)[:200]}")
@@ -899,7 +928,7 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
                 nxt = _next_alive_key(ki, len(keys), dead_keys)
                 if nxt is not None:
                     ki = nxt
-                    model = make_model(models[mi], keys[ki], DAILY_BATCH_MAX_OUTPUT_TOKENS)
+                    model = _mk(mi, ki)
                     work.appendleft(chunk)
                     continue
                 # 모든 키 소진 → 자정까지 대기
@@ -918,14 +947,14 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
                 time.sleep(wait_s)
                 dead_keys.clear()
                 ki = 0
-                model = make_model(models[mi], keys[ki], DAILY_BATCH_MAX_OUTPUT_TOKENS)
+                model = _mk(mi, ki)
                 work.appendleft(chunk)
                 continue
             except ModelUnavailable as e:
                 if mi + 1 < len(models):
                     print(f"    ⚠ 모델 {models[mi]} 사용불가 → {models[mi + 1]} 전환: {str(e)[:120]}")
                     mi += 1
-                    model = make_model(models[mi], keys[ki], DAILY_BATCH_MAX_OUTPUT_TOKENS)
+                    model = _mk(mi, ki)
                     work.appendleft(chunk)
                     continue
                 print(f"\n[중단] 사용 가능한 배치 모델이 없습니다: {str(e)[:160]}")
@@ -940,7 +969,7 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
                     work.appendleft(chunk)
                     break
                 ki = nxt
-                model = make_model(models[mi], keys[ki], DAILY_BATCH_MAX_OUTPUT_TOKENS)
+                model = _mk(mi, ki)
                 work.appendleft(chunk)
                 continue
             except RateLimited as e:
@@ -955,7 +984,7 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
                 retriable = [it for it in chunk if attempts.get(it[0], 0) < 2]
                 for it in retriable:
                     attempts[it[0]] = attempts.get(it[0], 0) + 1
-                giveup = [k for k, _, _ in chunk if attempts.get(k, 0) >= 2]
+                giveup = [it[0] for it in chunk if attempts.get(it[0], 0) >= 2]
                 failed.extend(giveup)
                 print(f"[{done_calls}] {chunk_keys[0]}…({len(chunk)})  ✗ 호출/파싱 실패: {str(e)[:130]}")
                 if retriable:
@@ -967,17 +996,17 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
             done_calls += 1
             payload = _unwrap_batch_payload(raw, chunk_keys)
             got, miss, bad = 0, [], []
-            for (key, d, i) in chunk:
+            for it in chunk:
+                key = it[0]
                 entry = payload.get(key) if isinstance(payload, dict) else None
                 if not isinstance(entry, dict):
-                    miss.append((key, d, i)); continue
-                entry = coerce_daily_entry(entry)
-                if not daily_valid(entry):
-                    bad.append((key, d, i)); continue
-                entry["_model"] = models[mi]
-                db[key] = entry
+                    miss.append(it); continue
+                entry = coerce_fn(entry)
+                if not valid_fn(entry):
+                    bad.append(it); continue
+                store_fn(db, key, entry, models[mi])
                 got += 1
-                if _has_banmal(entry):
+                if banmal_fn and banmal_fn(entry):
                     banmal.append(key)
             if got:
                 _atomic_write_json(out_path, db)
@@ -994,29 +1023,30 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
             if requeue:
                 work.append(requeue)
 
-            msg = (f"[{done_calls}] {chunk_keys[0]}…({len(chunk)})  ✓ {got}개"
-                   + (f" · 누락 {len(miss)}" if miss else "")
-                   + (f" · 불량 {len(bad)}" if bad else "")
-                   + f"   DB {len(db)}/3600")
-            print(msg)
+            cnt = count_fn(db)
+            print(f"[{done_calls}] {chunk_keys[0]}…({len(chunk)})  ✓ {got}개"
+                  + (f" · 누락 {len(miss)}" if miss else "")
+                  + (f" · 불량 {len(bad)}" if bad else "")
+                  + f"   완료 {cnt}/{total}")
             if made and done_calls % 10 == 0:
                 elapsed = time.time() - t0
                 rate = elapsed / max(made, 1)
-                remain = (3600 - len(db)) * rate
-                print(f"  ── 진행: DB {len(db)}/3600 · 이번 실행 {made}개 "
-                      f"· 평균 {rate:.1f}s/조합 · 남은 예상 {remain / 3600:.1f}h ──")
+                remain = (total - cnt) * rate
+                print(f"  ── 진행: {cnt}/{total} · 이번 실행 {made}개 "
+                      f"· 평균 {rate:.1f}s/{unit} · 남은 예상 {remain / 3600:.1f}h ──")
             time.sleep(args.delay)
     except KeyboardInterrupt:
         print("\n[중단] Ctrl-C — 여기까지 저장됨. 같은 명령으로 이어서 진행합니다.")
 
     dt = time.time() - t0
     uniq_fail = sorted(set(failed))
+    final_cnt = count_fn(db)
     print(f"\n{'=' * 60}")
     print(f"이번 실행: {made}개 생성 · 미완료(재실행 시 자동 재시도) {len(uniq_fail)}개 "
           f"· 반말 의심 {len(set(banmal))}개 · {dt:.0f}s 소요 · 대기 {day_waits}일")
-    print(f"DB 총 {len(db)}/3600  ({100 * len(db) / 3600:.1f}%)  → {out_path}")
-    if len(db) >= 3600:
-        print("상태: 전체 3600개 생성 완료 🎉")
+    print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+    if final_cnt >= total:
+        print(f"상태: 전체 {total}개 생성 완료 🎉")
     else:
         print("상태: 아직 미완료. 같은 명령을 다시 실행하면 이어서 진행합니다.")
     if uniq_fail:
@@ -1025,6 +1055,203 @@ def run_daily_batched(args, todo: List[Tuple[str, str, str]], db: Dict[str, Any]
         b = sorted(set(banmal))
         print(f"반말 의심 키(검토 후 --overwrite --only 로 재생성): "
               + ", ".join(b[:30]) + (" ..." if len(b) > 30 else ""))
+
+
+def run_daily_batched(args, todo, db, out_path, keys) -> None:
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+    _run_batched(args, todo, db, out_path, keys,
+                 prompt_fn=daily_batch_prompt, valid_fn=daily_valid,
+                 coerce_fn=coerce_daily_entry, models=models,
+                 max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=3600,
+                 system_instruction=None, banmal_fn=_has_banmal, unit="조합")
+
+
+# ─────────────────────────────────────────────── PERSONALITY (나의 성격/적성)
+
+# 일주(일간·일지) 60가지만으로 생성. 오늘 일진·대운·원국 나머지는 반영 안 함(daily 와 동일 트레이드오프).
+# 키 = 일주 간지 한자 2자(예 "戊辰"). 값 = {"character": {6필드}, "aptitude": {6필드},
+#   "_model_character": ..., "_model_aptitude": ...}. 성격/적성은 각각 별도 호출로 생성한다.
+PERSONALITY_BATCH_MAX_OUTPUT_TOKENS = 65536
+_PERSONALITY_CHAR_KEYS = ("base_nature", "strengths", "weaknesses",
+                          "supplement", "relationships", "work_style")
+_PERSONALITY_APT_KEYS = ("fit_task", "fit_field", "good_env",
+                         "org_style", "tiring_env", "favorable_direction")
+
+
+def _personality_item_block(ganji: str) -> str:
+    dm, db = ganji[0], ganji[1]
+    dm_elem = GAN_ELEM.get(dm, "?")
+    db_elem = JI_ELEM.get(db, "?")
+    ji_sipsin = calculate_sipsin(dm, db, is_gan=False)
+    jjg = JIJANGGAN.get(db, []) or []
+    jjg_desc = ", ".join(f"{c}({calculate_sipsin(dm, c, is_gan=True)})" for c, _ in jjg) or "-"
+    return (
+        f"── 일주 키: {ganji} ──\n"
+        f"{persona_prompt(dm, db)}\n"
+        f"- 일간(타고난 기질의 축): {dm} · 오행 {dm_elem}\n"
+        f"- 일지(받쳐주는 성향): {db} · 오행 {db_elem} · 일간과의 관계 {ji_sipsin}\n"
+        f"- 일지 속 숨은 기운: {jjg_desc}"
+    )
+
+
+# 두 개의 독립 결과물: 성격(character) 6필드 · 적성/직업운(aptitude) 6필드.
+# 유저 화면에서 각각 풍성하게 보여야 하므로 한 번의 호출에 섞지 않고 그룹별로 따로 생성한다.
+_PERSONALITY_GROUPS = {
+    "character": {
+        "keys": _PERSONALITY_CHAR_KEYS,
+        "title": "타고난 '성격'",
+        "focus": "이 사람이 '어떤 사람인지' — 기질, 강점, 약점, 인간관계, 일하는 태도",
+        "schema": [
+            ("base_nature", "타고난 기본 성향 — 이 사람을 한마디로 어떤 사람이라 부를 수 있는지"),
+            ("strengths", "성격적 강점 — 어떤 상황에서 이 사람의 진가가 드러나는지"),
+            ("weaknesses", "성격적 약점·주의점 — 어떤 상황에서 손해를 보거나 부딪히는지"),
+            ("supplement", "그 약점을 보완하는 구체적인 습관·행동"),
+            ("relationships", "친구·연인·동료 관계에서 실제로 드러나는 모습"),
+            ("work_style", "일할 때의 태도 — 어떤 방식으로 일할 때 성과가 나는지"),
+        ],
+    },
+    "aptitude": {
+        "keys": _PERSONALITY_APT_KEYS,
+        "title": "타고난 '적성·직업운'",
+        "focus": "이 사람에게 '어떤 일·분야·환경이 맞는지' — 구체적인 직무·업종·조직 환경",
+        "schema": [
+            ("fit_task", "잘 맞는 업무 유형과 그 이유 (구체적인 직무 활동 예시 포함)"),
+            ("fit_field", "잘 맞는 분야·업종 (실제 직업·산업 이름을 몇 개 들어 설명)"),
+            ("good_env", "능력이 크게 자라는 조직·환경 조건"),
+            ("org_style", "조직 안에서 맡으면 잘하는 역할·포지션"),
+            ("tiring_env", "빨리 지치고 성과가 안 나는 환경 — 피해야 할 조건"),
+            ("favorable_direction", "적성을 살리기 위해 커리어에서 잡으면 좋은 방향·전략"),
+        ],
+    },
+}
+
+
+def _personality_group_prompt(group: str, items: List[Tuple[str, str]]) -> str:
+    g = _PERSONALITY_GROUPS[group]
+    keys = [k for k, _ in items]
+    blocks = "\n\n".join(_personality_item_block(gj) for _, gj in items)
+    schema_lines = ",\n    ".join(
+        f'"{k}": "{desc} (친근한 존댓말, 5~7문장으로 풍성하게)"' for k, desc in g["schema"]
+    )
+    return f"""아래 {len(items)}개 일주(일간·일지) 각각에 대해, 그 사람의 {g['title']}을 씁니다.
+초점: {g['focus']}.
+각 일주는 완전히 독립입니다. 한 일주의 내용을 다른 일주에 복사하지 말고 근거에 맞춰 개별적으로 씁니다.
+이건 '오늘의 운세'가 아니라 타고난 원판(기질) 설명이므로 날짜·시기·"오늘"·"요즘" 같은 표현을 쓰지 않습니다.
+
+[말투 규칙 — 최우선, 예외 없음]
+- 모든 문장을 친근한 존댓말로만 씁니다('~해요 / ~예요 / ~입니다 / ~보세요 / ~편입니다').
+- 반말('~해', '~야', '~지', '~거야', '~더라')은 전체 출력에서 한 번도 쓰지 않습니다.
+- 각 일주 [화자 캐릭터]의 성격·에너지는 어휘 선택으로만 드러내고 존댓말은 그대로 유지합니다.
+
+[내용 규칙]
+- 각 항목은 **5~7문장으로 충분히 풍성하게** 씁니다. 한두 문장으로 짧게 끝내지 않습니다.
+- 형용사 나열이 아니라 구체적인 행동·상황·직무 예시를 넣습니다.
+- 사주 용어(십신·오행·격국·용신·지장간 등)는 절대 노출하지 않고 태도로만 드러냅니다.
+- 2030 세대가 공감할 현실 언어로 씁니다. 같은 일주는 늘 같은 캐릭터를 유지합니다.
+
+[생성할 일주 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스(```)나 설명 문장 없이]
+- 최상위 key 는 위 '일주 키'(한자 2자)를 그대로 사용합니다: {', '.join(keys)}
+- 각 일주 값은 정확히 아래 {len(g['keys'])}개 키만 가지는 평평한 객체입니다(중첩 금지). 모든 값은 비어 있으면 안 됩니다.
+
+{{
+  "{keys[0]}": {{
+    {schema_lines}
+  }},
+  "{keys[1] if len(keys) > 1 else '일주2'}": {{ "...위와 동일한 {len(g['keys'])}개 키..." }}
+}}"""
+
+
+def _personality_group_coerce(entry: Any, field_keys: Tuple[str, ...]) -> Any:
+    """그룹(6필드) 응답 정규화. 모델이 한 겹 더 감쌌으면(예: {"character": {...}}) 벗겨내고 공백 정리."""
+    if isinstance(entry, dict) and len(entry) == 1:
+        inner = next(iter(entry.values()))
+        if isinstance(inner, dict) and any(k in inner for k in field_keys):
+            entry = inner
+    if not isinstance(entry, dict):
+        return entry
+    return {k: (re.sub(r"\s+", " ", v).strip() if isinstance(v, str) else v)
+            for k, v in entry.items()}
+
+
+def _personality_group_valid(entry: Any, field_keys: Tuple[str, ...]) -> bool:
+    return isinstance(entry, dict) and all(str(entry.get(k, "")).strip() for k in field_keys)
+
+
+def _banmal_in_texts(texts) -> bool:
+    hits = 0
+    for blob in texts:
+        for sent in _SENT_SPLIT.split(str(blob)):
+            s = sent.strip().strip("\"'“”‘’()[]")
+            if len(s) < 3 or _JONDAE_END.search(s):
+                continue
+            if _BANMAL_END.search(s):
+                hits += 1
+    return hits >= 2
+
+
+def run_personality(args) -> None:
+    out_path = args.out or PERSONALITY_DB_PATH
+    db = _load_json(out_path)
+    gapja = sixty_gapja()
+    if args.only:
+        if args.only not in gapja:
+            print(f"[에러] --only 값이 60갑자가 아닙니다: {args.only!r}")
+            sys.exit(2)
+        gapja = [args.only]
+
+    print(f"DB: {out_path}")
+    print(f"기존 항목: {len(db)}개 / 목표 60 (일주별 character + aptitude 따로 생성)")
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    if args.dry_run:
+        for group in ("character", "aptitude"):
+            need = [g for g in gapja
+                    if args.overwrite or not _personality_group_valid(
+                        db.get(g, {}).get(group), _PERSONALITY_GROUPS[group]["keys"])]
+            print(f"[{group}] 대상 {len(need)}개: " + ", ".join(need[:20]) + (" ..." if len(need) > 20 else ""))
+        print("dry-run 종료.")
+        return
+
+    keys = load_api_keys()
+    if not keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    for group in ("character", "aptitude"):
+        gconf = _PERSONALITY_GROUPS[group]
+        fkeys = gconf["keys"]
+        todo = [(g, g) for g in gapja
+                if args.overwrite or not _personality_group_valid(db.get(g, {}).get(group), fkeys)]
+        if not todo:
+            print(f"\n[{group}] 생성할 항목 없음 (모두 완료)")
+            continue
+
+        def _store(_db, _key, _entry, _model, _grp=group):
+            slot = _db.setdefault(_key, {})
+            slot[_grp] = _entry
+            slot[f"_model_{_grp}"] = _model
+
+        def _count(_db, _grp=group, _fk=fkeys):
+            return sum(1 for v in _db.values() if _personality_group_valid(v.get(_grp), _fk))
+
+        _run_batched(
+            args, todo, db, out_path, keys,
+            prompt_fn=(lambda items, _grp=group: _personality_group_prompt(_grp, items)),
+            valid_fn=(lambda e, _fk=fkeys: _personality_group_valid(e, _fk)),
+            coerce_fn=(lambda e, _fk=fkeys: _personality_group_coerce(e, _fk)),
+            models=models, max_output_tokens=PERSONALITY_BATCH_MAX_OUTPUT_TOKENS, total=60,
+            system_instruction=_PERSONALITY_SYSTEM,
+            banmal_fn=(lambda e: _banmal_in_texts(e.values()) if isinstance(e, dict) else False),
+            unit="일주", store_fn=_store, count_fn=_count,
+            header=f"\n{'━' * 60}\n[{group}] {gconf['title']} — 대상 {len(todo)}개",
+        )
 
 
 def run_daily(args) -> None:
@@ -1228,9 +1455,11 @@ def run_daily(args) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
-    p.add_argument("--domain", choices=["daily"], default="daily", help="생성 도메인 (기본: daily)")
+    p.add_argument("--domain", choices=["daily", "personality"], default="daily",
+                   help="생성 도메인 (기본: daily). personality = 일주 60가지 성격/적성")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
-    p.add_argument("--only", type=str, default=None, help="특정 키만 생성 (예: 戊辰_乙巳)")
+    p.add_argument("--only", type=str, default=None,
+                   help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
     p.add_argument("--overwrite", action="store_true", help="이미 있는 키도 다시 생성")
     p.add_argument("--delay", type=float, default=1.0, help="호출 간 대기 초 (기본 1.0)")
     p.add_argument("--max-retries", type=int, default=5, help="호출당 최대 재시도 횟수 (기본 5)")
@@ -1256,6 +1485,8 @@ def main() -> None:
 
     if args.domain == "daily":
         run_daily(args)
+    elif args.domain == "personality":
+        run_personality(args)
 
 
 if __name__ == "__main__":
