@@ -126,6 +126,7 @@ _PERSONALITY_SYSTEM = (
     "예시로 씁니다. 사주 용어(십신·오행·격국·용신 등)는 절대 노출하지 않고 태도로만 드러냅니다. "
     "말투는 예외 없이 '친근한 존댓말'로만 씁니다('~해요/~예요/~입니다/~보세요/~편입니다'). "
     "반말('~해', '~야', '~지', '~거야')은 한 번도 쓰지 않습니다. "
+    "각 값은 번호·순번·목록 기호(1., 1), 1/6, [1], ①, 문장 앞의 '-' 등)를 붙이지 않고 서술형 문장으로만 씁니다. "
     "지정된 키를 하나도 빠짐없이 포함한 유효한 JSON 하나만 출력하고, Markdown 펜스나 설명 문장은 쓰지 않습니다."
 )
 
@@ -335,6 +336,28 @@ _SENT_SPLIT = re.compile(r"[.!?…\n]+")
 _JONDAE_END = re.compile(r"(?:요|죠|음|까|오|쥬)['\"”’]?$")
 _BANMAL_END = re.compile(r"(?:거야|잖아|더라|구나|는데|은데|[가-힣](?:야|해|봐|줘|어|아|지|자))['\"”’]?$")
 
+# 번호·순번·목록 기호 제거용. 자연어 숫자("5분", "100점", "웹3", "9시부터 6시")는 건드리지 않도록
+# '열거 문맥'(문두 / 개행 뒤 / 문장부호 뒤 / 공백으로 둘러싸인 괄호숫자)에서만 매치한다.
+_ENUM_MARKERS = [
+    re.compile(r"(?m)^[ \t]*[\(\[]?\s*\d{1,2}\s*/\s*\d{1,2}\s*[\)\]]?[.):]?[ \t]+"),  # "1/6 ", "(1/6) "
+    re.compile(r"(?m)^[ \t]*[\(\[]?\s*\d{1,2}\s*[\)\].:]\s+"),                          # "1. ", "1) ", "(1) ", "[1] ", "1: "
+    re.compile(r"(?m)^[ \t]*[①-⑳➀-➉❶-❿]\s*[.):]?\s+"),                                   # "① ", "①. "
+    re.compile(r"(?<=[\s。.!?…])[\(\[]\s*\d{1,2}\s*[\)\]]\s*"),                          # 문장 중간의 " (1) " / " [2] "
+    re.compile(r"(?<=[\s。.!?…])\d{1,2}\s*/\s*\d{1,2}(?=[\s:)]| )"),                      # 문장 중간의 " 1/6 "
+    re.compile(r"[①-⑳➀-➉❶-❿]"),                                                          # 남은 동그라미 숫자
+]
+
+
+def strip_enumeration(s: Any) -> Any:
+    """열거 번호 표기(1. / 1) / 1/6 / [1] / ① 등)를 제거하고 공백을 정리한다."""
+    if not isinstance(s, str):
+        return s
+    out = s
+    for rx in _ENUM_MARKERS:
+        out = rx.sub(" ", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out
+
 
 def _has_banmal(entry: Dict[str, Any]) -> bool:
     """문장 종결부만 검사해 반말 어미를 대략 탐지 (경고용, 저장은 막지 않음)."""
@@ -465,15 +488,13 @@ def coerce_daily_entry(entry: Any) -> Any:
             if isinstance(entry.get(k), str):   # 텍스트 형제 키만 제거(_score 는 int 라 보존)
                 entry.pop(k, None)
 
-    # 공백 정규화: 일부 응답이 문장마다 \n 을 넣는다 → 한 줄 흐름으로 통일(런타임 paragraphize 가 처리)
-    def _flat(s: Any) -> Any:
-        return re.sub(r"\s+", " ", s).strip() if isinstance(s, str) else s
+    # 공백 정규화(문장마다 \n 넣는 응답 → 한 줄) + 번호/순번 표기 제거
     if isinstance(entry.get("summary"), dict):
-        entry["summary"] = {k: _flat(v) for k, v in entry["summary"].items()}
+        entry["summary"] = {k: strip_enumeration(v) for k, v in entry["summary"].items()}
     if isinstance(entry.get("recommended_action"), str):
-        entry["recommended_action"] = _flat(entry["recommended_action"])
+        entry["recommended_action"] = strip_enumeration(entry["recommended_action"])
     if isinstance(entry.get("keywords"), list):
-        entry["keywords"] = [_flat(k) for k in entry["keywords"]]
+        entry["keywords"] = [strip_enumeration(k) for k in entry["keywords"]]
     return entry
 
 
@@ -1145,6 +1166,7 @@ def _personality_group_prompt(group: str, items: List[Tuple[str, str]]) -> str:
 
 [내용 규칙]
 - 각 항목은 **5~7문장으로 충분히 풍성하게** 씁니다. 한두 문장으로 짧게 끝내지 않습니다.
+- 각 값은 번호·순번·목록 기호(예: "1.", "1)", "1/6", "[1]", "①", 문장 앞의 "-")를 붙이지 않고, 자연스럽게 이어지는 서술형 문장으로만 씁니다.
 - 형용사 나열이 아니라 구체적인 행동·상황·직무 예시를 넣습니다.
 - 사주 용어(십신·오행·격국·용신·지장간 등)는 절대 노출하지 않고 태도로만 드러냅니다.
 - 2030 세대가 공감할 현실 언어로 씁니다. 같은 일주는 늘 같은 캐릭터를 유지합니다.
@@ -1166,15 +1188,15 @@ def _personality_group_prompt(group: str, items: List[Tuple[str, str]]) -> str:
 
 
 def _personality_group_coerce(entry: Any, field_keys: Tuple[str, ...]) -> Any:
-    """그룹(6필드) 응답 정규화. 모델이 한 겹 더 감쌌으면(예: {"character": {...}}) 벗겨내고 공백 정리."""
+    """그룹(6필드) 응답 정규화. 모델이 한 겹 더 감쌌으면(예: {"character": {...}}) 벗겨내고,
+    공백 정리 + 번호/순번 표기 제거."""
     if isinstance(entry, dict) and len(entry) == 1:
         inner = next(iter(entry.values()))
         if isinstance(inner, dict) and any(k in inner for k in field_keys):
             entry = inner
     if not isinstance(entry, dict):
         return entry
-    return {k: (re.sub(r"\s+", " ", v).strip() if isinstance(v, str) else v)
-            for k, v in entry.items()}
+    return {k: strip_enumeration(v) for k, v in entry.items()}
 
 
 def _personality_group_valid(entry: Any, field_keys: Tuple[str, ...]) -> bool:
