@@ -26,34 +26,40 @@ for _s in (sys.stdout, sys.stderr):
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.generate_content_db import (  # noqa: E402
-    strip_enumeration, _atomic_write_json, DAILY_DB_PATH, PERSONALITY_DB_PATH,
+    strip_enumeration, apply_text_fixups, _atomic_write_json,
+    DAILY_DB_PATH, PERSONALITY_DB_PATH, RELATIONSHIP_DB_PATH,
 )
 
-_META_KEYS = {"_model", "_model_character", "_model_aptitude"}
+_META_PREFIX = "_model"          # _model, _model_character, _model_aptitude ...
+_STRIP_TIME = {"relationship"}   # 시점 단어("오늘"/"요즘")까지 제거하는 도메인
 
 
-def _walk(node, path=""):
-    """(경로, 원본문자열, 정규화문자열) 중 바뀐 것만 yield. dict 는 제자리 수정."""
+def _norm(v: str, strip_time: bool) -> str:
+    return strip_enumeration(apply_text_fixups(v, strip_time_words=strip_time))
+
+
+def _walk(node, strip_time, path=""):
+    """(경로, 원본, 정규화) 중 바뀐 것만 yield. dict/list 는 제자리 수정."""
     if isinstance(node, dict):
         for k, v in list(node.items()):
-            if k in _META_KEYS:
+            if isinstance(k, str) and k.startswith(_META_PREFIX):
                 continue
             if isinstance(v, str):
-                nv = strip_enumeration(v)
+                nv = _norm(v, strip_time)
                 if nv != v:
                     node[k] = nv
                     yield (f"{path}.{k}" if path else k, v, nv)
             else:
-                yield from _walk(v, f"{path}.{k}" if path else str(k))
+                yield from _walk(v, strip_time, f"{path}.{k}" if path else str(k))
     elif isinstance(node, list):
         for i, v in enumerate(node):
             if isinstance(v, str):
-                nv = strip_enumeration(v)
+                nv = _norm(v, strip_time)
                 if nv != v:
                     node[i] = nv
                     yield (f"{path}[{i}]", v, nv)
             else:
-                yield from _walk(v, f"{path}[{i}]")
+                yield from _walk(v, strip_time, f"{path}[{i}]")
 
 
 def _diff_snippet(before: str, after: str) -> str:
@@ -64,22 +70,24 @@ def _diff_snippet(before: str, after: str) -> str:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="콘텐츠 DB 텍스트 번호표기 정규화")
-    p.add_argument("--domain", choices=["daily", "personality"])
+    p = argparse.ArgumentParser(description="콘텐츠 DB 텍스트 정규화(번호표기 제거 + 오타 교정 + 시점단어)")
+    p.add_argument("--domain", choices=["daily", "personality", "relationship"])
     p.add_argument("--path", type=str, help="직접 JSON 경로 지정 (--domain 대신)")
     p.add_argument("--apply", action="store_true", help="실제로 파일에 저장 (없으면 미리보기)")
     args = p.parse_args()
 
-    path = args.path or {"daily": DAILY_DB_PATH, "personality": PERSONALITY_DB_PATH}.get(args.domain)
+    path = args.path or {"daily": DAILY_DB_PATH, "personality": PERSONALITY_DB_PATH,
+                         "relationship": RELATIONSHIP_DB_PATH}.get(args.domain)
     if not path:
         p.error("--domain 또는 --path 중 하나는 필요합니다.")
+    strip_time = args.domain in _STRIP_TIME
     with open(path, "r", encoding="utf-8") as f:
         db = json.load(f)
 
-    changes = list(_walk(db))
-    print(f"DB: {path}")
+    changes = list(_walk(db, strip_time))
+    print(f"DB: {path}  (시점단어 제거: {'예' if strip_time else '아니오'})")
     print(f"검사한 최상위 항목: {len(db)}개")
-    print(f"번호표기가 발견되어 정규화한 필드: {len(changes)}개\n")
+    print(f"정규화한 필드: {len(changes)}개\n")
     for loc, before, after in changes[:200]:
         print(f"  [{loc}]  {_diff_snippet(before, after)}")
     if len(changes) > 200:

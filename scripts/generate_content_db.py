@@ -359,6 +359,29 @@ def strip_enumeration(s: Any) -> Any:
     return out
 
 
+# 모델이 가끔 만드는 글자 깨짐 오타. (검수에서 발견되는 대로 추가)
+_TYPO_FIXUPS = {
+    "천섀기": "천천히",
+    "여미까": "여기니까",
+}
+# '타고난 흐름' 설명에 부적합한 시점 단어 제거(relationship 등에서 strip_time_words=True 로 사용).
+_TIME_WORD_LEAD = re.compile(r"(?:^|(?<=[.!?…]\s)|(?<=[\s,]))(?:오늘|요즘)[,\s]+")
+
+
+def apply_text_fixups(s: Any, strip_time_words: bool = False) -> Any:
+    """오타 교정(+선택적으로 시점 단어 제거). strip_enumeration 과 함께 쓴다."""
+    if not isinstance(s, str):
+        return s
+    for bad, good in _TYPO_FIXUPS.items():
+        if bad in s:
+            s = s.replace(bad, good)
+    if strip_time_words:
+        s = s.replace("오늘이라도", "지금이라도").replace("오늘 당장", "당장")
+        s = _TIME_WORD_LEAD.sub("", s)
+        s = re.sub(r"\s{2,}", " ", s).strip()
+    return s
+
+
 def _has_banmal(entry: Dict[str, Any]) -> bool:
     """문장 종결부만 검사해 반말 어미를 대략 탐지 (경고용, 저장은 막지 않음)."""
     parts = list((entry.get("summary") or {}).values()) + [entry.get("recommended_action", "")]
@@ -488,13 +511,14 @@ def coerce_daily_entry(entry: Any) -> Any:
             if isinstance(entry.get(k), str):   # 텍스트 형제 키만 제거(_score 는 int 라 보존)
                 entry.pop(k, None)
 
-    # 공백 정규화(문장마다 \n 넣는 응답 → 한 줄) + 번호/순번 표기 제거
+    # 공백 정규화(문장마다 \n 넣는 응답 → 한 줄) + 번호/순번 표기 제거 + 오타 교정
+    _c = lambda v: strip_enumeration(apply_text_fixups(v))
     if isinstance(entry.get("summary"), dict):
-        entry["summary"] = {k: strip_enumeration(v) for k, v in entry["summary"].items()}
+        entry["summary"] = {k: _c(v) for k, v in entry["summary"].items()}
     if isinstance(entry.get("recommended_action"), str):
-        entry["recommended_action"] = strip_enumeration(entry["recommended_action"])
+        entry["recommended_action"] = _c(entry["recommended_action"])
     if isinstance(entry.get("keywords"), list):
-        entry["keywords"] = [strip_enumeration(k) for k in entry["keywords"]]
+        entry["keywords"] = [_c(k) for k in entry["keywords"]]
     return entry
 
 
@@ -1076,6 +1100,7 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
         b = sorted(set(banmal))
         print(f"반말 의심 키(검토 후 --overwrite --only 로 재생성): "
               + ", ".join(b[:30]) + (" ..." if len(b) > 30 else ""))
+    return made
 
 
 def run_daily_batched(args, todo, db, out_path, keys) -> None:
@@ -1196,7 +1221,7 @@ def _personality_group_coerce(entry: Any, field_keys: Tuple[str, ...]) -> Any:
             entry = inner
     if not isinstance(entry, dict):
         return entry
-    return {k: strip_enumeration(v) for k, v in entry.items()}
+    return {k: strip_enumeration(apply_text_fixups(v)) for k, v in entry.items()}
 
 
 def _personality_group_valid(entry: Any, field_keys: Tuple[str, ...]) -> bool:
@@ -1274,6 +1299,270 @@ def run_personality(args) -> None:
             unit="일주", store_fn=_store, count_fn=_count,
             header=f"\n{'━' * 60}\n[{group}] {gconf['title']} — 대상 {len(todo)}개",
         )
+
+
+# ─────────────────────────────── RELATIONSHIP (재회/짝사랑/결혼운)
+#
+# 조합: 60 일주(본인) × {상대 없음 | 60 일주(상대)} × 3 유형(reunion/crush/marriage)
+#   = 상대 없음  60 × 3          = 180
+#   + 상대 있음  60 × 60 × 3     = 10,800
+#   = 총 10,980
+# 키: "<본인>_<유형>"            (상대 없음, 예 "甲子_reunion")
+#     "<본인>_<상대>_<유형>"     (상대 있음, 예 "甲子_乙丑_marriage")
+# 날짜 의존 수치(3개월 실제 월, 결혼 10년 강도 창)는 런타임 엔진이 계산.
+# 여기서는 AI 서술만 미리 생성한다. 3개월 전략은 "1/2/3개월차" 상대 순번으로.
+RELATIONSHIP_DB_PATH = os.path.join(_ROOT, "domains", "relationship", "data", "relationship_db.json")
+RELATIONSHIP_BATCH_MAX_OUTPUT_TOKENS = 65536
+_REL_TYPES = ("reunion", "crush", "marriage")
+_REL_TYPE_KO = {"reunion": "재회운", "crush": "짝사랑운", "marriage": "결혼운"}
+_REL_FOCUS = {
+    "reunion": "과거 인연이 다시 떠오르거나 연락이 닿을 흐름, 미련과 애정의 구분, 새 인연과의 비교, 먼저 움직여야 할지 관찰해야 할지",
+    "crush": "상대에게 다가가는 방식, 고백·표현의 타이밍, 밀당보다 진심, 관계가 흐지부지되지 않게 하는 태도",
+    "marriage": "결혼을 매듭짓기 좋은 시기의 '특징'(구체적 연도·나이는 말하지 않음), 그 전까지 관계 기반을 다지는 법, 서두름과 준비의 균형",
+}
+
+_RELATIONSHIP_SYSTEM = (
+    "당신은 2030 세대를 위한 연애·결혼운 화자입니다. 제공된 '내 일주'(그리고 있으면 '상대 일주') "
+    "데이터만 근거로 해석합니다. 사주 용어(십신·오행·합충·배우자성·도화 등)는 절대 노출하지 않고 "
+    "상황·태도로만 드러냅니다. 말투는 예외 없이 친근한 존댓말('~해요/~예요/~입니다/~보세요/~편입니다'). "
+    "반말·번호표기·목록기호는 쓰지 않습니다. 특정 날짜·연도·나이를 단정하지 않습니다. "
+    "지정된 키를 모두 포함한 유효한 JSON 하나만 출력하고, Markdown 펜스나 설명 문장은 쓰지 않습니다."
+)
+
+
+def _rel_parse(key: str) -> Tuple[str, Optional[str], str]:
+    """key -> (본인 일주, 상대 일주 or None, 유형)."""
+    p = key.split("_")
+    return (p[0], None, p[1]) if len(p) == 2 else (p[0], p[1], p[2])
+
+
+def relationship_all_keys() -> List[str]:
+    g = sixty_gapja()
+    keys: List[str] = []
+    for t in _REL_TYPES:                       # 상대 없음 (유형별 60)
+        keys += [f"{a}_{t}" for a in g]
+    offsets = list(range(1, 60)) + [0]         # 1..59, 0 (같은 일주 커플은 맨 뒤)
+    for t in _REL_TYPES:                       # 상대 있음 (유형별 3600, offset·i 순)
+        for off in offsets:
+            for i in range(60):
+                keys.append(f"{g[i]}_{g[(i + off) % 60]}_{t}")
+    return keys
+
+
+def _rel_item_block(key: str) -> str:
+    a, b, t = _rel_parse(key)
+    dm, dbc = a[0], a[1]
+    lines = [
+        f"── 키: {key} ──",
+        persona_prompt(dm, dbc),
+        f"- 내 일주: {a}  (일간 {dm}/{GAN_ELEM.get(dm)}, 일지 {dbc}/{JI_ELEM.get(dbc)})",
+    ]
+    if b:
+        pm, pb = b[0], b[1]
+        lines += [
+            f"- 상대 일주: {b}  (일간 {pm}/{GAN_ELEM.get(pm)}, 일지 {pb}/{JI_ELEM.get(pb)})",
+            f"- 두 사람 일지 관계: {branch_relation(dbc, pb)}",
+            f"- 상대 일간이 나에게 주는 기운: {calculate_sipsin(dm, pm, is_gan=True)}",
+            f"- 상대 일지가 나에게 주는 기운: {calculate_sipsin(dm, pb, is_gan=False)}",
+        ]
+    return "\n".join(lines)
+
+
+def _rel_segment_prompt(mode: str, rtype: str, items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_rel_item_block(k) for k in keys)
+    ko = _REL_TYPE_KO[rtype]
+    who = "내 일주 하나" if mode == "solo" else "나와 상대, 두 사람의 일주"
+    if mode == "couple" and rtype in ("reunion", "crush"):
+        schema_body = """{
+    "overall": "두 사람 관점의 종합 흐름 (친근한 존댓말, 8~12문장). 서로의 결이 어떻게 맞고 어긋나는지, 관계가 나아갈 방향",
+    "strategy_3months": [
+      "1개월차에 취하면 좋은 구체적 행동 전략 (한 문단)",
+      "2개월차 — 1개월차와 다른 전략 (한 문단)",
+      "3개월차 — 또 다른 전략, 관계를 매듭짓거나 다음 단계로 (한 문단)"
+    ]
+  }"""
+        extra = "- strategy_3months 는 정확히 3개, 각 달마다 서로 다른 행동 전략입니다. 특정 월 이름은 쓰지 마세요('1개월차'처럼 순번으로)."
+    elif mode == "couple" and rtype == "marriage":
+        schema_body = """{
+    "overall": "나 개인 관점의 결혼 시기 흐름 (친근한 존댓말, 8~12문장). 어떤 시기 특징에서 결혼을 매듭짓기 좋은지, 그 전까지 할 일",
+    "couple_overall": "두 사람을 함께 봤을 때의 결혼 흐름 (친근한 존댓말, 6~10문장). 서로의 준비 상태와 관계 안정감이 언제 잘 맞는지"
+  }"""
+        extra = "- 구체적 연도·나이는 절대 단정하지 마세요. '어떤 시기의 특징'으로만 서술합니다."
+    else:  # solo, 모든 유형
+        schema_body = """{
+    "overall": "종합 흐름과 조언 (친근한 존댓말, 8~12문장)"
+  }"""
+        extra = "- 상대가 없는 1인 기준입니다. 구체적 날짜·연도는 단정하지 마세요."
+
+    return f"""아래 {len(items)}개 항목 각각에 대해 {ko}({who} 기준)를 씁니다.
+각 항목은 완전히 독립입니다. 한 항목 내용을 다른 항목에 복사하지 말고 근거에 맞춰 개별적으로 씁니다.
+
+[이 유형이 다루는 것] {_REL_FOCUS[rtype]}
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요/~편입니다'). 반말 금지.
+- 번호·순번·목록 기호("1.", "1)", "1/6", "[1]", "①", 문장 앞 "-")를 붙이지 않고 서술형 문장으로만 씁니다.
+- 사주 용어 노출 금지: 십신·오행·합충·배우자성·도화는 물론, "일주"·"갑자일주"·"을축"·"간지"·"천간"·"지지" 같은 말도 쓰지 않습니다. 그냥 "나"와 "상대"로만 지칭하고, 성격은 태도·행동·감정으로만 묘사합니다.
+- 특정 날짜·연도·나이를 단정하지 않고, "오늘"·"요즘"·"이번 주"·"지금 이 시기" 같은 시점 표현도 쓰지 않습니다(타고난 흐름 설명이므로).
+{extra}
+
+[생성할 항목 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열을 그대로 사용합니다: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {schema_body},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
+}}"""
+
+
+def _rel_clean(s: Any) -> Any:
+    return strip_enumeration(apply_text_fixups(s, strip_time_words=True))
+
+
+def _rel_coerce(entry: Any, mode: str, rtype: str) -> Any:
+    if isinstance(entry, dict) and len(entry) == 1:
+        inner = next(iter(entry.values()))
+        if isinstance(inner, dict) and ("overall" in inner):
+            entry = inner
+    if not isinstance(entry, dict):
+        return entry
+    if isinstance(entry.get("overall"), str):
+        entry["overall"] = _rel_clean(entry["overall"])
+    if isinstance(entry.get("couple_overall"), str):
+        entry["couple_overall"] = _rel_clean(entry["couple_overall"])
+    s = entry.get("strategy_3months")
+    if isinstance(s, dict):                       # {"1개월차": "..."} → 리스트
+        s = [s[k] for k in sorted(s)]
+    if isinstance(s, list):
+        entry["strategy_3months"] = [_rel_clean(str(x)) for x in s if str(x).strip()]
+    return entry
+
+
+def _rel_valid(entry: Any, mode: str, rtype: str) -> bool:
+    if not isinstance(entry, dict) or not str(entry.get("overall", "")).strip():
+        return False
+    if mode == "couple" and rtype in ("reunion", "crush"):
+        s = entry.get("strategy_3months")
+        if not (isinstance(s, list) and len([x for x in s if str(x).strip()]) >= 3):
+            return False
+    if mode == "couple" and rtype == "marriage":
+        if not str(entry.get("couple_overall", "")).strip():
+            return False
+    return True
+
+
+def _rel_texts(entry: Any) -> List[str]:
+    if not isinstance(entry, dict):
+        return []
+    out = [str(entry.get("overall", "")), str(entry.get("couple_overall", ""))]
+    s = entry.get("strategy_3months")
+    if isinstance(s, list):
+        out += [str(x) for x in s]
+    return out
+
+
+def _rel_mode_type(key: str) -> Tuple[str, str]:
+    a, b, t = _rel_parse(key)
+    return ("solo" if b is None else "couple"), t
+
+
+def _rel_done_count(db: Dict[str, Any], all_keys: List[str]) -> int:
+    return sum(1 for k in all_keys if _rel_valid(db.get(k), *_rel_mode_type(k)))
+
+
+def run_relationship(args) -> None:
+    out_path = args.out or RELATIONSHIP_DB_PATH
+    db = _load_json(out_path)
+    all_keys = relationship_all_keys()
+    total = len(all_keys)                 # 10,980
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    done = _rel_done_count(db, all_keys)
+    print(f"DB: {out_path}")
+    print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+    budget = args.limit or len(all_keys)
+    print(f"이번 청크 상한: {budget}개" + (f"  (--limit {args.limit})" if args.limit else ""))
+
+    def _pending(mode: str, rtype: str) -> List[str]:
+        return [k for k in all_keys
+                if _rel_mode_type(k) == (mode, rtype)
+                and (args.overwrite or not _rel_valid(db.get(k), mode, rtype))]
+
+    # 이번 청크에서 처리할 (mode,rtype,keys) 슬라이스 목록. solo 3개 먼저, 그다음 couple 3유형 라운드로빈.
+    plan: List[Tuple[str, str, List[str]]] = []
+    left = budget
+    for rtype in _REL_TYPES:
+        p = _pending("solo", rtype)[:left]
+        if p:
+            plan.append(("solo", rtype, p)); left -= len(p)
+    couple_pending = {rt: _pending("couple", rt) for rt in _REL_TYPES}
+    while left > 0 and any(couple_pending.values()):
+        progressed = False
+        for rtype in _REL_TYPES:
+            if left <= 0:
+                break
+            take = min(60, left, len(couple_pending[rtype]))   # 한 유형 최대 60개(=6배치)씩 라운드로빈
+            if take <= 0:
+                continue
+            plan.append(("couple", rtype, couple_pending[rtype][:take]))
+            couple_pending[rtype] = couple_pending[rtype][take:]
+            left -= take
+            progressed = True
+        if not progressed:
+            break
+
+    if args.dry_run:
+        from collections import Counter
+        c = Counter((m, t) for m, t, ks in plan for _ in ks)
+        print(f"이번 청크 대상 {sum(len(ks) for _, _, ks in plan)}개 구성: {dict(c)}")
+        for m, t, ks in plan:
+            print(f"  [{m} · {_REL_TYPE_KO[t]}] {len(ks)}개  예: {', '.join(ks[:4])}")
+        print("dry-run 종료.")
+        return
+    if not plan:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+    t0 = time.time()
+    initial = len(db)
+
+    for mode, rtype, seg in plan:
+        todo = [(k,) for k in seg]
+        sub = argparse.Namespace(**vars(args))
+        sub.limit = 0     # plan 에서 이미 잘랐으므로 세그먼트 내부 제한 없음
+        _run_batched(
+            sub, todo, db, out_path, api_keys,
+            prompt_fn=(lambda items, _m=mode, _t=rtype: _rel_segment_prompt(_m, _t, items)),
+            valid_fn=(lambda e, _m=mode, _t=rtype: _rel_valid(e, _m, _t)),
+            coerce_fn=(lambda e, _m=mode, _t=rtype: _rel_coerce(e, _m, _t)),
+            models=models, max_output_tokens=RELATIONSHIP_BATCH_MAX_OUTPUT_TOKENS,
+            total=total, system_instruction=_RELATIONSHIP_SYSTEM,
+            banmal_fn=(lambda e: _banmal_in_texts(_rel_texts(e))),
+            unit="조합", count_fn=(lambda d: _rel_done_count(d, all_keys)),
+            header=f"\n{'━' * 60}\n[{mode} · {_REL_TYPE_KO[rtype]}] 대상 {len(todo)}개",
+        )
+
+    final_done = _rel_done_count(db, all_keys)
+    made = len(db) - initial
+    dt = time.time() - t0
+    print(f"\n{'=' * 60}")
+    print(f"이번 청크: {made}개 생성 · {dt:.0f}s 소요 · 개당 평균 {dt / max(made, 1):.1f}s")
+    print(f"전체 진행: {final_done}/{total}  ({100 * final_done / total:.1f}%)  · 남음 {total - final_done}")
 
 
 def run_daily(args) -> None:
@@ -1477,8 +1766,9 @@ def run_daily(args) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
-    p.add_argument("--domain", choices=["daily", "personality"], default="daily",
-                   help="생성 도메인 (기본: daily). personality = 일주 60가지 성격/적성")
+    p.add_argument("--domain", choices=["daily", "personality", "relationship"], default="daily",
+                   help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
+                        "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행)")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
     p.add_argument("--only", type=str, default=None,
                    help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
@@ -1509,6 +1799,8 @@ def main() -> None:
         run_daily(args)
     elif args.domain == "personality":
         run_personality(args)
+    elif args.domain == "relationship":
+        run_relationship(args)
 
 
 if __name__ == "__main__":

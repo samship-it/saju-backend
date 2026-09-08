@@ -7,7 +7,8 @@ venv/
 .DS_Store
 app_errors.log
 
-# 콘텐츠 DB 생성 스크립트 실행 로그 (transient)
+# 콘텐츠 DB 생성 스크립트 실행 로그·미리보기 (transient)
 scripts/_*.log
 scripts/_*.err
+scripts/_*.txt
 *.done
