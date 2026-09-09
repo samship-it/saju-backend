@@ -27,11 +27,11 @@ for _s in (sys.stdout, sys.stderr):
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.generate_content_db import (  # noqa: E402
     strip_enumeration, apply_text_fixups, _atomic_write_json,
-    DAILY_DB_PATH, PERSONALITY_DB_PATH, RELATIONSHIP_DB_PATH,
+    DAILY_DB_PATH, PERSONALITY_DB_PATH, RELATIONSHIP_DB_PATH, COMPATIBILITY_DB_PATH,
 )
 
-_META_PREFIX = "_model"          # _model, _model_character, _model_aptitude ...
-_STRIP_TIME = {"relationship"}   # 시점 단어("오늘"/"요즘")까지 제거하는 도메인
+_META_PREFIX = "_model"                        # _model, _model_character, _model_aptitude ...
+_STRIP_TIME = {"relationship", "compatibility"}  # 시점 단어("오늘"/"요즘")까지 제거하는 도메인
 
 
 def _norm(v: str, strip_time: bool) -> str:
@@ -71,13 +71,14 @@ def _diff_snippet(before: str, after: str) -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="콘텐츠 DB 텍스트 정규화(번호표기 제거 + 오타 교정 + 시점단어)")
-    p.add_argument("--domain", choices=["daily", "personality", "relationship"])
+    p.add_argument("--domain", choices=["daily", "personality", "relationship", "compatibility"])
     p.add_argument("--path", type=str, help="직접 JSON 경로 지정 (--domain 대신)")
     p.add_argument("--apply", action="store_true", help="실제로 파일에 저장 (없으면 미리보기)")
     args = p.parse_args()
 
     path = args.path or {"daily": DAILY_DB_PATH, "personality": PERSONALITY_DB_PATH,
-                         "relationship": RELATIONSHIP_DB_PATH}.get(args.domain)
+                         "relationship": RELATIONSHIP_DB_PATH,
+                         "compatibility": COMPATIBILITY_DB_PATH}.get(args.domain)
     if not path:
         p.error("--domain 또는 --path 중 하나는 필요합니다.")
     strip_time = args.domain in _STRIP_TIME

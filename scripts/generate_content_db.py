@@ -64,10 +64,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config  # noqa: E402
 from core.constants import (  # noqa: E402
     GAN, JI, YUKHAP, CHUNG, PA, HAE, SANGHYEONG, SELF_HYEONG,
-    GAN_ELEM, JI_ELEM, JIJANGGAN,
+    GAN_ELEM, JI_ELEM, JIJANGGAN, SHENG, KE,
 )
-from core.sipsin import calculate_sipsin  # noqa: E402
-from shared.persona_map import persona_prompt  # noqa: E402
+from core.sipsin import calculate_sipsin, sipsin_group  # noqa: E402
+from shared.persona_map import persona_prompt, GAN_PERSONA, JI_PERSONA  # noqa: E402
 from shared.ai_client import _extract_json as _extract_json_strict, _is_rate_limited, _retry_delay_sec  # noqa: E402
 
 
@@ -1476,6 +1476,244 @@ def _rel_done_count(db: Dict[str, Any], all_keys: List[str]) -> int:
     return sum(1 for k in all_keys if _rel_valid(db.get(k), *_rel_mode_type(k)))
 
 
+# ─────────────────────────────── COMPATIBILITY (궁합)
+#
+# 조합: 60 일주(본인) × 60 일주(상대) = 3,600  (relation_type=romantic 고정 — 프론트가 항상 romantic 만 전송)
+# 키: "<본인 일주>_<상대 일주>"  예) "甲子_乙丑"
+# 점수·한줄평·관계요소는 런타임 엔진(calculate_compatibility_interactions)이 전체 사주로 계산.
+# 여기서는 일주쌍 기준의 AI 서술(report 7필드)만 미리 생성한다. (daily/personality 와 동일한 '일주 중심' 트레이드오프)
+COMPATIBILITY_DB_PATH = os.path.join(_ROOT, "domains", "compatibility", "data", "compatibility_db.json")
+COMPATIBILITY_BATCH_MAX_OUTPUT_TOKENS = 65536
+_COMPAT_FIELDS = ("overall", "love", "communication", "conflict",
+                  "conflict_resolution", "economy", "relationship_advice")
+
+_COMPATIBILITY_SYSTEM = (
+    "당신은 2030 세대를 위한 궁합 화자입니다. 제공된 두 사람의 관계 데이터만 근거로 해석합니다. "
+    "사주 용어(십신·오행·합충·배우자성·도화 등)는 물론 '일주'·'천간'·'지지'·'간지'·'갑자'·'을축' 같은 말도 "
+    "절대 쓰지 않고, 그냥 '나'와 '상대'로만 지칭하며 성격은 태도·행동·감정으로만 묘사합니다. "
+    "말투는 예외 없이 친근한 존댓말('~해요/~예요/~입니다/~보세요/~편입니다'). 반말·번호표기·목록기호는 쓰지 않습니다. "
+    "특정 날짜·나이·점수 숫자는 언급하지 않습니다. 지정된 키를 모두 포함한 유효한 JSON 하나만 출력하고, "
+    "Markdown 펜스나 설명 문장은 쓰지 않습니다."
+)
+
+_CG_HAP = {frozenset(x) for x in (("甲", "己"), ("乙", "庚"), ("丙", "辛"), ("丁", "壬"), ("戊", "癸"))}
+_CG_CHUNG = {frozenset(x) for x in (("甲", "庚"), ("乙", "辛"), ("丙", "壬"), ("丁", "癸"))}
+
+
+def _compat_gan_relation(a_gan: str, b_gan: str) -> str:
+    """두 일간의 관계를 사주 용어 없이 한국어로."""
+    ea, eb = GAN_ELEM.get(a_gan, ""), GAN_ELEM.get(b_gan, "")
+    tags: List[str] = []
+    if frozenset((a_gan, b_gan)) in _CG_HAP:
+        tags.append("서로 자연스레 끌어당기는 짝")
+    if frozenset((a_gan, b_gan)) in _CG_CHUNG:
+        tags.append("정면으로 부딪치기 쉬운 기질")
+    if ea and eb:
+        if ea == eb:
+            tags.append("성향의 결이 비슷함")
+        elif SHENG.get(ea) == eb or SHENG.get(eb) == ea:
+            tags.append("한쪽이 다른 쪽을 북돋아 주는 흐름")
+        elif KE.get(ea) == eb or KE.get(eb) == ea:
+            tags.append("한쪽이 다른 쪽을 눌러 긴장이 생기는 흐름")
+        else:
+            tags.append("무난한 중립")
+    return ", ".join(tags) or "중립"
+
+
+def compat_all_keys() -> List[str]:
+    """3,600개 (본인 일주 × 상대 일주) 순서쌍. 같은 일주 커플은 맨 뒤."""
+    g = sixty_gapja()
+    offsets = list(range(1, 60)) + [0]
+    keys: List[str] = []
+    for off in offsets:
+        for i in range(60):
+            keys.append(f"{g[i]}_{g[(i + off) % 60]}")
+    return keys
+
+
+def _compat_persona(gan: str, ji: str) -> str:
+    """일간·일지 페르소나를 동물 비유·'일주' 표기 없이 한 줄로."""
+    g = GAN_PERSONA.get(gan)
+    j = JI_PERSONA.get(ji)
+    if not g:
+        return "존댓말 기본의 다정하고 현실적인 2030 감성"
+    base = f"{g['페르소나']} ({g['말투']})"
+    return f"{base}, {j['보정']}" if j else base
+
+
+# 오행·십신·지지관계를 사주 용어 없이 '짧은 키워드'로만 준다.
+# 서술구로 주면 flash-lite 가 그대로 문장에 붙여넣으므로(항목 나열식 recitation),
+# 모델이 반드시 자기 문장으로 풀어 쓸 수밖에 없도록 최소 힌트만 남긴다.
+_COMPAT_ELEM_TAG = {"목": "성장형", "화": "열정형", "토": "안정형",
+                    "금": "결단형", "수": "유연형"}
+_COMPAT_INFLUENCE_TAG = {
+    "비겁": "승부욕 자극", "식상": "표현을 이끎", "재성": "성취욕 자극",
+    "관성": "책임감 요구", "인성": "안정감을 줌",
+}
+_COMPAT_TOGETHER_TAG = {
+    "복음": "리듬이 똑같아 편하나 새로움 부족", "육합": "손발이 잘 맞음",
+    "충": "부딪침·변화 잦음", "파": "사소하게 삐걱댐",
+    "해": "오해·뒷말로 꼬이기 쉬움", "형": "부대끼며 맞춰가야 함",
+}
+
+
+def _compat_together(aj: str, bj: str) -> str:
+    raw = branch_relation(aj, bj)          # "육합(협력·인연)" / "복음(같은 지지) · 자형" / "무관" ...
+    m = re.match(r"([가-힣]+)", raw)
+    tag = _COMPAT_TOGETHER_TAG.get(m.group(1) if m else "", "끌림도 갈등도 약한 담백함")
+    if "자형" in raw:
+        tag += ", 닮아서 같은 약점 자극"
+    return tag
+
+
+def _compat_influence(dm: str, other_gan: str, other_ji: str) -> str:
+    seen: List[str] = []
+    for code in (calculate_sipsin(dm, other_gan, is_gan=True),
+                 calculate_sipsin(dm, other_ji, is_gan=False)):
+        tag = _COMPAT_INFLUENCE_TAG.get(sipsin_group(code))
+        if tag and tag not in seen:
+            seen.append(tag)
+    return "·".join(seen) or "무난"
+
+
+def _compat_item_block(key: str) -> str:
+    a, b = key.split("_")
+    ag, aj, bg, bj = a[0], a[1], b[0], b[1]
+    me_tag = "/".join(dict.fromkeys([_COMPAT_ELEM_TAG.get(GAN_ELEM.get(ag), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(aj), "")]))
+    yo_tag = "/".join(dict.fromkeys([_COMPAT_ELEM_TAG.get(GAN_ELEM.get(bg), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(bj), "")]))
+    return "\n".join([
+        f"── 키: {key} ──",
+        f"- 나: {_compat_persona(ag, aj)}  [{me_tag}]",
+        f"- 상대: {_compat_persona(bg, bj)}  [{yo_tag}]",
+        f"- 관계 힌트(그대로 쓰지 말 것): 성향 궁합은 '{_compat_gan_relation(ag, bg)}', "
+        f"함께 지내는 느낌은 '{_compat_together(aj, bj)}', "
+        f"상대→나 {_compat_influence(ag, bg, bj)} / 나→상대 {_compat_influence(bg, ag, aj)}",
+    ])
+
+
+_COMPAT_SCHEMA_BODY = """{
+    "overall": "두 사람의 전반적인 궁합과 관계가 나아갈 방향 (친근한 존댓말, 6~9문장)",
+    "love": "애정·연애 궁합. 서로 사랑을 표현하고 받아들이는 방식이 어떻게 맞고 어긋나는지 (5~8문장)",
+    "communication": "소통 궁합. 대화 스타일·속도·감정 전달 방식의 조화 (5~8문장)",
+    "conflict": "주로 부딪히는 지점과 갈등이 드러나는 양상 (5~8문장)",
+    "conflict_resolution": "갈등을 풀어가는 법. 상대의 어떤 기질을 인정하면 빨리 풀리는지 (5~8문장)",
+    "economy": "돈에 대한 감각과 소비 성향의 궁합, 조율하는 법 (4~7문장)",
+    "relationship_advice": "이 관계를 오래 건강하게 이어가기 위한 핵심 조언 (4~7문장)"
+  }"""
+
+
+def _compat_segment_prompt(items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_compat_item_block(k) for k in keys)
+    return f"""아래 {len(items)}개 항목 각각에 대해 두 사람(나 기준)의 연애 궁합을 씁니다.
+각 항목은 완전히 독립입니다. 한 항목 내용을 다른 항목에 복사하지 말고 근거에 맞춰 개별적으로 씁니다.
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요/~편입니다'). 반말 금지.
+- 번호·순번·목록 기호("1.", "1)", "[1]", "①", 문장 앞 "-")를 붙이지 않고 서술형 문장으로만 씁니다.
+- 사주 용어 노출 절대 금지: 십신 이름(비견·겁재·식신·상관·정재·편재·정관·편관·정인·편인), 오행 이름(목·화·토·금·수)과 "○의 기운"·"바탕 기운", 지지 관계 용어(육합·복음·자형·충·형·파·해), 그리고 "일주"·"천간"·"지지"·"간지"·"갑자"·"을축" 같은 말을 한 번도 쓰지 않습니다. 그냥 "나"와 "상대"로만 지칭하고 성격은 태도·행동·감정으로만 묘사합니다.
+- 참고 정보(대괄호 태그, "관계 힌트" 줄 등)는 두 사람을 이해하라고 준 메모입니다. 그 문구를 절대 그대로 옮기지 않습니다. 특히 다음을 금지합니다:
+  · "나의 타고난 성향은 ~이고 몸에 밴 태도는 ~" 처럼 참고 항목을 나열·해설하는 문장
+  · "성장·도전형", "안정·신뢰 지향" 처럼 가운뎃점(·)이나 슬래시(/)로 특성을 나열한 표현
+  · "상대→나", "~ 자극", "관계 힌트" 등 메모의 라벨을 그대로 쓴 문장
+  참고 정보는 완전히 소화한 뒤, 실제 연애 상담사가 대화하듯 100% 새 문장으로 풀어 씁니다.
+- 상대나 나를 띠 동물에 빗대지 않습니다.
+- 특정 날짜·나이·점수 숫자를 쓰지 않고, "오늘"·"요즘"·"이번 주"·"지금 이 시기" 같은 시점 표현도 쓰지 않습니다(타고난 궁합 설명이므로).
+- 문장은 끝까지 완결해서 씁니다. "디한", "섬한"처럼 단어를 잘라 쓰지 않습니다.
+- 두 사람 관계의 좋은 면과 조심할 면을 함께 담되, 마지막은 관계를 발전시키는 현실적인 방향으로 맺습니다.
+
+[생성할 항목 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열을 그대로 사용합니다: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {_COMPAT_SCHEMA_BODY},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
+}}"""
+
+
+def _compat_clean(s: Any) -> Any:
+    return strip_enumeration(apply_text_fixups(s, strip_time_words=True))
+
+
+def _compat_coerce(entry: Any) -> Any:
+    if isinstance(entry, dict) and len(entry) == 1:
+        inner = next(iter(entry.values()))
+        if isinstance(inner, dict) and ("overall" in inner):
+            entry = inner
+    if not isinstance(entry, dict):
+        return entry
+    return {k: _compat_clean(str(entry[k])) for k in _COMPAT_FIELDS if isinstance(entry.get(k), str)}
+
+
+def _compat_valid(entry: Any) -> bool:
+    return isinstance(entry, dict) and all(str(entry.get(k, "")).strip() for k in _COMPAT_FIELDS)
+
+
+def _compat_texts(entry: Any) -> List[str]:
+    if not isinstance(entry, dict):
+        return []
+    return [str(entry.get(k, "")) for k in _COMPAT_FIELDS]
+
+
+def _compat_done_count(db: Dict[str, Any], all_keys: List[str]) -> int:
+    return sum(1 for k in all_keys if _compat_valid(db.get(k)))
+
+
+def run_compatibility(args) -> None:
+    out_path = args.out or COMPATIBILITY_DB_PATH
+    db = _load_json(out_path)
+    all_keys = compat_all_keys()
+    total = len(all_keys)                 # 3,600
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    done = _compat_done_count(db, all_keys)
+    print(f"DB: {out_path}")
+    print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+    budget = args.limit or len(all_keys)
+    print(f"이번 청크 상한: {budget}개" + (f"  (--limit {args.limit})" if args.limit else ""))
+
+    pending = [k for k in all_keys if args.overwrite or not _compat_valid(db.get(k))]
+    seg = pending[:budget]
+
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0     # seg 에서 이미 잘랐으므로 내부 제한 없음
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=_compat_segment_prompt,
+        valid_fn=_compat_valid,
+        coerce_fn=_compat_coerce,
+        models=models, max_output_tokens=COMPATIBILITY_BATCH_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_COMPATIBILITY_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts(_compat_texts(e))),
+        unit="조합", count_fn=(lambda d: _compat_done_count(d, all_keys)),
+        header=f"\n{'━' * 60}\n[궁합] 대상 {len(todo)}개",
+    )
+
+
 def run_relationship(args) -> None:
     out_path = args.out or RELATIONSHIP_DB_PATH
     db = _load_json(out_path)
@@ -1766,9 +2004,10 @@ def run_daily(args) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
-    p.add_argument("--domain", choices=["daily", "personality", "relationship"], default="daily",
+    p.add_argument("--domain", choices=["daily", "personality", "relationship", "compatibility"], default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
-                        "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행)")
+                        "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
+                        "compatibility=궁합 3,600조합(일주쌍, --limit 으로 청크 진행)")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
     p.add_argument("--only", type=str, default=None,
                    help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
@@ -1801,6 +2040,8 @@ def main() -> None:
         run_personality(args)
     elif args.domain == "relationship":
         run_relationship(args)
+    elif args.domain == "compatibility":
+        run_compatibility(args)
 
 
 if __name__ == "__main__":
