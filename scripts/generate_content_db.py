@@ -2436,6 +2436,129 @@ def run_yearly_overall(args) -> None:
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
+# ───── YEARLY OVERALL EXTRAS (총운 4필드 추가: 기회달·주의달 해설 + 치트키·쥐약)
+# 기존 yearly_overall_db.json 항목에 아래 4필드만 덧붙인다(overall_flow 등 6필드 유지).
+#   opportunity_month: 기회의 달에 어떤 기운이 열리는지 + 공격적 액션 (2~3문장)
+#   caution_month: 주의의 달에 어떤 부딪힘이 있는지 + 방어적 대처 (2~3문장)
+#   cheat_key: 올해 운을 극대화할 행동/마인드셋/귀인 유형 (2~3문장)
+#   trap_warning: 올해 운을 깎아먹는, 절대 피해야 할 행동/관계/착각 (2~3문장)
+_YEARLY_EXTRA_KEYS = ("opportunity_month", "caution_month", "cheat_key", "trap_warning")
+
+
+def _yearly_overall_extras_prompt(items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_yearly_item_block(k) for k in keys)
+    return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 총운'의 보조 지침 4가지를 씁니다.
+각 조합은 완전히 독립입니다. 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
+
+[4필드]
+- opportunity_month: 올해 흐름이 활짝 열리는 '기회의 달'에 대한 안내. 반드시 "기회의 달이 오면" 또는 "기회의 달에는" 으로 시작하고, 그때 어떤 기운·분위기가 피어나는지(자신감·주변의 도움·일이 술술 풀림 등)를 먼저 설명한 뒤, 이때 반드시 해야 할 공격적인 행동(미뤄둔 지원·제안·고백·투자 실행, 새 시작 등)을 구체적으로. 2~3문장.
+- caution_month: 올해 흐름이 부딪히고 삐걱대는 '주의의 달'에 대한 안내. 반드시 "주의의 달에는" 으로 시작하고, 왜 조심해야 하는지(마찰·구설·컨디션 저하·판단 흐림 등)를 먼저 설명한 뒤, 리스크를 줄이는 방어적 대처법(큰 결정 미루기·계약 재확인·말 아끼기·건강 관리 등)을 구체적으로. 2~3문장.
+- cheat_key: 올해 내 운을 극대화해 줄 '치트키'. 이 성향의 내가 올해 기운을 최대로 살리려면 어떤 행동·마인드셋을 취해야 하는지, 어떤 유형의 사람(귀인)을 곁에 두면 좋은지. 시원하고 직관적으로. 2~3문장.
+- trap_warning: 올해 내 운을 깎아먹는 '쥐약'. 이 성향의 내가 올해 절대 하면 안 되는 행동, 엮이면 손해인 관계 유형, 빠지기 쉬운 착각을 콕 집어서. 2~3문장.
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요'). 반말 금지.
+- 번호·목록 없이 서술형 문장으로만.
+- opportunity_month·caution_month 에는 특정 월(1월·7월 등)뿐 아니라 계절 표현(초봄·한여름·가을 무렵·연말 등)도 쓰지 마세요. 오직 '기회의 달'·'주의의 달' 이라고만 지칭합니다(실제 달은 앱이 따로 계산해 보여줍니다).
+- 사주 용어 금지("일주"·"간지"·"세운"·"천간"·"지지"·"십신"·"오행"·"합충"·"용신"). "나"와 "올해"로만 지칭.
+- 참고로 준 문구를 그대로 붙여넣지 말고 상황·행동으로 풀어 씁니다. 한자를 쓰지 마세요.
+
+[생성할 조합 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{ "opportunity_month": "...", "caution_month": "...", "cheat_key": "...", "trap_warning": "..." }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...동일 구조..." }}
+}}"""
+
+
+def _yearly_overall_extras_valid(entry: Any) -> bool:
+    return isinstance(entry, dict) and all(
+        len(str(entry.get(f, "")).strip()) >= 40 for f in _YEARLY_EXTRA_KEYS)
+
+
+def _yearly_overall_extras_coerce(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    for f in _YEARLY_EXTRA_KEYS:
+        v = entry.get(f)
+        if isinstance(v, str):
+            for bad, good in _YEARLY_FIXUPS:
+                v = v.replace(bad, good)
+            entry[f] = _strip_hanja(_rel_clean(v))
+    return entry
+
+
+def run_yearly_overall_extras(args) -> None:
+    out_path = args.out or YEARLY_OVERALL_DB_PATH
+    db = _load_json(out_path)
+    all_keys = yearly_all_keys()
+    total = len(all_keys)                 # 3,600
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    def _has_base(k):
+        return _yearly_overall_valid(db.get(k))
+
+    done = sum(1 for k in all_keys if _yearly_overall_extras_valid(db.get(k)))
+    print(f"DB: {out_path}")
+    print(f"기존 완료(4필드): {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+
+    pending = [k for k in all_keys
+               if _has_base(k) and (args.overwrite or not _yearly_overall_extras_valid(db.get(k)))]
+    seg = pending[: (args.limit or len(all_keys))]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    def _store(_db, _key, _entry, _model):
+        base = _db.get(_key) if isinstance(_db.get(_key), dict) else {}
+        merged = dict(base)
+        for f in _YEARLY_EXTRA_KEYS:
+            merged[f] = _entry.get(f)
+        merged["_model_extras"] = _model
+        _db[_key] = merged
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=_yearly_overall_extras_prompt,
+        valid_fn=_yearly_overall_extras_valid,
+        coerce_fn=_yearly_overall_extras_coerce,
+        models=models, max_output_tokens=YEARLY_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_YEARLY_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts([str(e.get(f, "")) for f in _YEARLY_EXTRA_KEYS])),
+        unit="조합", store_fn=_store,
+        count_fn=(lambda d: sum(1 for k in all_keys if _yearly_overall_extras_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[총운 추가 4필드] 대상 {len(todo)}개",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _yearly_overall_extras_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료(4필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
 def run_daily(args) -> None:
     out_path = args.out or DAILY_DB_PATH
     db = _load_json(out_path)
@@ -2640,7 +2763,7 @@ def main() -> None:
     p.add_argument("--domain",
                    choices=["daily", "personality", "relationship", "compatibility",
                             "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
-                            "yearly_overall"],
+                            "yearly_overall", "yearly_overall_extras"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -2692,6 +2815,8 @@ def main() -> None:
         run_marriage_solo(args)
     elif args.domain == "yearly_overall":
         run_yearly_overall(args)
+    elif args.domain == "yearly_overall_extras":
+        run_yearly_overall_extras(args)
 
 
 if __name__ == "__main__":
