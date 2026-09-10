@@ -1943,6 +1943,161 @@ def run_love_charm(args, kind: str) -> None:
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
+# ───────────── MARRIAGE EXTRAS (결혼운 couple 전용 추가 필드 2개)
+# 기존 relationship_db.json 의 couple marriage 항목(3,600)에 아래 2필드만 덧붙인다.
+# overall·couple_overall 은 건드리지 않고 병합(store_fn)한다.
+#   pre_marriage_check: [{"topic": str, "detail": str}, ...] 3개 — 결혼 전 맞춰야 할 지점
+#   future_scenario: str — 결혼 후 두 사람 삶의 대략적 시나리오 (5~7문장)
+MARRIAGE_EXTRAS_MAX_OUTPUT_TOKENS = 40000
+_MARRIAGE_EXTRAS_SYSTEM = (
+    "당신은 2030 세대를 위한 결혼 상담가입니다. 제공된 두 사람의 성향 정보만 근거로 서술합니다. "
+    "사주 용어(십신·오행·합충·일주·간지·천간·지지)는 절대 쓰지 않고 태도·행동·감정·생활 방식으로만 묘사합니다. "
+    "친근한 존댓말만 씁니다. 유효한 JSON 만 출력합니다."
+)
+_MARRIAGE_EXTRAS_KEYS = ("pre_marriage_check", "future_scenario")
+
+
+def _marriage_extras_prompt(items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_rel_item_block(k) for k in keys)
+    return f"""아래 {len(items)}개 항목(두 사람의 일주쌍) 각각에 대해 결혼운 보조 정보 2가지를 씁니다.
+각 항목은 완전히 독립입니다. 한 항목 내용을 다른 항목에 복사하지 말고 두 사람의 성향 조합에 맞춰 개별적으로 씁니다.
+
+[pre_marriage_check — 결혼 전 꼭 맞춰봐야 할 것]
+- 두 사람이 어긋나기 쉬운 지점 3가지를 고릅니다. 생활의 속도, 돈을 쓰고 모으는 방식(경제권), 가치관·우선순위,
+  감정 표현과 갈등 대처, 가족·주변과의 거리 중에서 이 조합에 특히 중요한 3가지.
+- 각 항목은 {{"topic": "짧은 주제(6자 내외)", "detail": "왜 이 조합에서 중요한지 + 결혼 전에 무엇을 합의해두면 좋은지 (2~3문장)"}}.
+
+[future_scenario — 두 사람이 그려갈 미래]
+- 두 사람이 결혼해 함께 사는 모습을 구체적인 장면으로 그려줍니다. 집의 분위기, 주말을 보내는 방식,
+  돈·일을 대하는 태도, 몇 년 뒤 관계가 어떻게 무르익는지 등. 특정 연도·나이는 쓰지 않습니다.
+- 5~7문장의 따뜻하고 현실적인 서술.
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요'). 반말 금지.
+- future_scenario 는 번호·목록 없이 서술형 문장으로만.
+- 사주 용어 노출 금지("일주"·"간지"·"천간"·"지지"·"십신"·"오행" 등). "나"와 "상대"로만 지칭.
+- 참고로 준 키워드([성장형] 등)를 문장에 그대로 붙여넣지 말고 자기 문장으로 풉니다.
+
+[생성할 항목 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{
+    "pre_marriage_check": [
+      {{"topic": "생활의 속도", "detail": "..."}},
+      {{"topic": "경제권", "detail": "..."}},
+      {{"topic": "가치관", "detail": "..."}}
+    ],
+    "future_scenario": "두 사람의 결혼 후 삶을 그린 5~7문장 서술"
+  }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
+}}"""
+
+
+def _marriage_extras_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    chk = entry.get("pre_marriage_check")
+    if not (isinstance(chk, list) and len(chk) >= 3
+            and all(isinstance(x, dict) and str(x.get("topic", "")).strip()
+                    and len(str(x.get("detail", "")).strip()) >= 20 for x in chk[:3])):
+        return False
+    return len(str(entry.get("future_scenario", "")).strip()) >= 120
+
+
+def _marriage_extras_coerce(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    chk = entry.get("pre_marriage_check")
+    if isinstance(chk, list):
+        entry["pre_marriage_check"] = [
+            {"topic": _rel_clean(str(x.get("topic", ""))).strip(),
+             "detail": _rel_clean(str(x.get("detail", "")))}
+            for x in chk if isinstance(x, dict) and str(x.get("topic", "")).strip()
+        ][:3]
+    if isinstance(entry.get("future_scenario"), str):
+        entry["future_scenario"] = _rel_clean(entry["future_scenario"])
+    return entry
+
+
+def run_marriage_extras(args) -> None:
+    out_path = args.out or RELATIONSHIP_DB_PATH
+    db = _load_json(out_path)
+    all_keys = [k for k in relationship_all_keys() if _rel_mode_type(k) == ("couple", "marriage")]
+    total = len(all_keys)                 # 3,600
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    def _has_base(k):
+        e = db.get(k)
+        return isinstance(e, dict) and str(e.get("couple_overall", "")).strip()
+
+    missing_base = [k for k in all_keys if not _has_base(k)]
+    if missing_base:
+        print(f"[경고] couple_overall 없는 결혼운 항목 {len(missing_base)}개 — 먼저 --domain relationship 로 채우세요.")
+
+    done = sum(1 for k in all_keys if _marriage_extras_valid(db.get(k)))
+    print(f"DB: {out_path}")
+    print(f"기존 완료(2필드): {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+    budget = args.limit or len(all_keys)
+
+    pending = [k for k in all_keys
+               if _has_base(k) and (args.overwrite or not _marriage_extras_valid(db.get(k)))]
+    seg = pending[:budget]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    def _store(_db, _key, _entry, _model):
+        base = _db.get(_key) if isinstance(_db.get(_key), dict) else {}
+        merged = dict(base)
+        merged["pre_marriage_check"] = _entry.get("pre_marriage_check")
+        merged["future_scenario"] = _entry.get("future_scenario")
+        merged["_model_extras"] = _model
+        _db[_key] = merged
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=_marriage_extras_prompt,
+        valid_fn=_marriage_extras_valid,
+        coerce_fn=_marriage_extras_coerce,
+        models=models, max_output_tokens=MARRIAGE_EXTRAS_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_MARRIAGE_EXTRAS_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts(
+            [str(e.get("future_scenario", ""))]
+            + [str(x.get("detail", "")) for x in (e.get("pre_marriage_check") or []) if isinstance(x, dict)])),
+        unit="조합", store_fn=_store,
+        count_fn=(lambda d: sum(1 for k in all_keys if _marriage_extras_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[결혼운 추가필드] 대상 {len(todo)}개",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _marriage_extras_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료(2필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
 def run_daily(args) -> None:
     out_path = args.out or DAILY_DB_PATH
     db = _load_json(out_path)
@@ -2146,12 +2301,13 @@ def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
     p.add_argument("--domain",
                    choices=["daily", "personality", "relationship", "compatibility",
-                            "reunion_charm", "crush_charm"],
+                            "reunion_charm", "crush_charm", "marriage_extras"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
                         "compatibility=궁합 3,600조합(일주쌍, --limit 으로 청크 진행) · "
-                        "reunion_charm/crush_charm=재회운·짝사랑운 '나의 매력' 일주 60")
+                        "reunion_charm/crush_charm=재회운·짝사랑운 '나의 매력' 일주 60 · "
+                        "marriage_extras=결혼운 couple 3,600 에 확인사항·미래시나리오 2필드 추가(--limit 청크)")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
     p.add_argument("--only", type=str, default=None,
                    help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
@@ -2190,6 +2346,8 @@ def main() -> None:
         run_love_charm(args, "reunion")
     elif args.domain == "crush_charm":
         run_love_charm(args, "crush")
+    elif args.domain == "marriage_extras":
+        run_marriage_extras(args)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,9 @@ DB 를 다시 생성했다면 프로세스를 재시작하거나 `reload()` 를 
 값 스키마(유형·mode별):
     solo 전 유형            : {"overall": str}
     couple reunion/crush   : {"overall": str, "strategy_3months": [str, str, str]}
-    couple marriage        : {"overall": str, "couple_overall": str}
+    couple marriage        : {"overall": str, "couple_overall": str,
+                              "pre_marriage_check": [{"topic": str, "detail": str}, x3],
+                              "future_scenario": str}   ← 뒤 2필드는 --domain marriage_extras 로 추가
 
 재회운/짝사랑운(reunion/crush)은 별도 파일 `<유형>_charm_db.json` 에서 '상대에게 어필할
 나의 매력' 서술을 본인 일주(60개) 기준으로 조회해 응답의 your_charm 필드로 병합한다(solo/couple 공통).

@@ -129,6 +129,27 @@ def analyze_crush(self_info, partner_info=None, target_date=None):
 
 
 # ---------------------------------------------------------------- 결혼운
+# couple 추가 필드 정적 DB 미스 시 사주 무관 고정 폴백.
+_MARRIAGE_CHECK_FALLBACK = [
+    {"topic": "생활의 속도",
+     "detail": "두 사람이 일상을 꾸리는 속도와 계획성이 다를 수 있어요. 집안일 분담, 약속 잡는 방식, "
+               "쉬는 날을 보내는 리듬을 결혼 전에 구체적으로 맞춰두면 사소한 마찰이 크게 줄어듭니다."},
+    {"topic": "경제권",
+     "detail": "돈을 모으고 쓰는 기준이 다르면 오래 부딪히기 쉽습니다. 공동 통장 여부, 생활비 분담, "
+               "큰 지출을 결정하는 방식을 미리 합의해두세요."},
+    {"topic": "가치관",
+     "detail": "일과 가정의 우선순위, 아이 계획, 양가 가족과의 거리 같은 큰 방향을 솔직하게 확인해야 해요. "
+               "지금 생각이 달라도 괜찮으니, 서로의 기준을 알고 접점을 찾아두는 것이 중요합니다."},
+]
+_MARRIAGE_SCENARIO_FALLBACK = (
+    "두 사람은 서로의 부족한 부분을 채워주며 안정적인 가정을 만들어갈 수 있는 조합입니다. "
+    "처음에는 생활 방식의 차이로 조율이 필요하지만, 대화로 규칙을 정해가며 점차 편안한 리듬을 찾게 돼요. "
+    "집은 두 사람의 취향이 자연스럽게 섞인 아늑한 공간이 되고, 주말에는 각자의 시간과 함께하는 시간을 균형 있게 나눕니다. "
+    "돈과 일에 대해서는 큰 그림을 함께 그리며 서두르지 않고 한 걸음씩 목표를 이뤄가는 편이에요. "
+    "시간이 지날수록 서로를 향한 신뢰가 단단해져, 힘든 시기에도 흔들리지 않는 든든한 동반자가 됩니다."
+)
+
+
 def _marriage_fallback(w1, w2, partner_exists: bool) -> dict:
     d = {
         "overall": (
@@ -187,6 +208,22 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
         out["couple_best_year"] = _couple_best_year(w1, w2)
         couple_overall = data.get("couple_overall") or _marriage_fallback(w1, w2, True)["couple_overall"]
         out["couple_overall"] = paragraphize(str(couple_overall))
+
+        # couple 전용 추가 필드(결혼 전 확인사항 · 미래 시나리오). 정적 DB 에 있으면 사용, 없으면 폴백.
+        chk = data.get("pre_marriage_check") if isinstance(data, dict) else None
+        if isinstance(chk, list) and chk:
+            out["pre_marriage_check"] = [
+                {"topic": str(x.get("topic", "")).strip(),
+                 "detail": paragraphize(str(x.get("detail", "")))}
+                for x in chk if isinstance(x, dict) and str(x.get("topic", "")).strip()
+            ][:3] or _MARRIAGE_CHECK_FALLBACK
+        else:
+            out["pre_marriage_check"] = _MARRIAGE_CHECK_FALLBACK
+        scenario = data.get("future_scenario") if isinstance(data, dict) else None
+        out["future_scenario"] = (
+            paragraphize(str(scenario)) if isinstance(scenario, str) and scenario.strip()
+            else _MARRIAGE_SCENARIO_FALLBACK
+        )
     return out, is_fallback
 
 
