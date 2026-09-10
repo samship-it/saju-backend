@@ -416,7 +416,16 @@ def _atomic_write_json(path: str, data: Dict[str, Any]) -> None:
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
-    os.replace(tmp, path)
+    # Windows: 대상 파일을 다른 프로세스(백신·동기화·읽기)가 잠깐 열고 있으면
+    # os.replace 가 WinError 5 를 던진다 → 짧게 재시도.
+    for attempt in range(12):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 11:
+                raise
+            time.sleep(0.5 + attempt * 0.25)
 
 
 def _load_json(path: str) -> Dict[str, Any]:
@@ -2559,6 +2568,133 @@ def run_yearly_overall_extras(args) -> None:
     print(f"완료(4필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
+# ───── YEARLY 분야 8종 (재물/연애/사업/직장/건강/여행/취미) — 총운과 동일 6필드 스키마
+# 키 "<나의 일주>_<세운 간지>", 파일 domains/yearly/data/yearly_<category>_db.json.
+_YEARLY_CAT = {
+    "wealth": {"ko": "재물운",
+        "flow": "올해 돈이 들어오고 나가는 전체 흐름 — 재물운이 강해지는 조건, 어디서 기회가 오고 어디서 새는지",
+        "advice": "투자·저축·소비·대출에서 올해 꼭 지킬 원칙과, 금전 사기·과소비·보증 같은 조심할 것"},
+    "love": {"ko": "연애운",
+        "flow": "올해 새로운 인연과 기존 관계의 전체 흐름 — 설렘·권태·이별·재회 가능성, 어떤 만남이 열리는지",
+        "advice": "연애할 때 올해 취하면 좋은 태도, 빠지기 쉬운 착각, 조심해야 할 상대 유형"},
+    "business": {"ko": "사업운",
+        "flow": "올해 사업·창업·확장의 전체 흐름 — 매출·거래처·협업 운, 벌일 때와 움츠릴 때",
+        "advice": "자금·동업·계약에서 올해 조심할 것과, 사업을 키우려면 무엇에 집중해야 하는지"},
+    "career_change": {"ko": "직장·이직운",
+        "flow": "올해 이직·승진·부서이동의 전체 흐름 — 커리어가 도약하는 조건, 상사·동료 관계의 분위기",
+        "advice": "이직·연봉협상·사내 관계에서 올해 취할 전략과, 조직 안에서 조심할 부분"},
+    "health": {"ko": "건강운",
+        "flow": "올해 컨디션과 생활 관리의 전체 흐름 — 활력이 도는 때와 처지는 때, 특히 신경 써야 할 부분",
+        "advice": "올해 챙기면 좋은 건강 습관, 무리하면 탈나는 지점, 스트레스 관리법 (특정 질병은 단정하지 말 것)"},
+    "travel": {"ko": "여행운",
+        "flow": "올해 이동·여행의 전체 흐름 — 국내와 해외, 이동수가 열리는 시기와 잘 맞는 여행 스타일",
+        "advice": "여행·이사·장거리 이동에서 올해 조심할 것과, 어떤 여행이 나에게 가장 도움이 되는지"},
+    "hobby": {"ko": "취미운",
+        "flow": "올해 새로 빠질 만한 취미·활동의 전체 흐름 — 취미가 올해 나에게 주는 의미",
+        "advice": "나를 살리는 활동 유형과, 취미로 스트레스·관계·커리어까지 풀어내는 법"},
+}
+
+
+def _yearly_cat_db_path(category: str) -> str:
+    return os.path.join(_ROOT, "domains", "yearly", "data", f"yearly_{category}_db.json")
+
+
+def _yearly_cat_prompt(category: str, items: List[Tuple[str]]) -> str:
+    c = _YEARLY_CAT[category]
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_yearly_item_block(k) for k in keys)
+    return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {c['ko']}'를 씁니다.
+각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
+
+[6필드 — 모두 '{c['ko']}' 관점으로]
+- one_line: 올해 {c['ko']}를 한 문장으로 압축 (12~24자, 짧고 센스 있게)
+- keywords: 올해 {c['ko']} 핵심 키워드 정확히 3개 (서로 다른 한국어 단어/짧은 구)
+- overall_flow: {c['flow']} (5~7문장)
+- first_half: 상반기 {c['ko']} 흐름 — 연초 분위기, 집중하면 좋은 것, 조심할 부분 (4~6문장)
+- second_half: 하반기 {c['ko']} 흐름 — 상반기와 어떻게 달라지는지, 연말로 갈수록의 방향 (4~6문장)
+- advice: {c['advice']} — 2030 세대가 실제로 겪는 상황으로 구체적으로 (4~6문장)
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요/~편이에요'). 반말 금지.
+- 번호·순번·목록 기호 없이 서술형 문장으로만. keywords 만 배열.
+- 특정 월(1월·3월·7월 등)이나 특정 연도·나이를 단정하지 마세요. '상반기·하반기·연초·초봄·한여름·가을 무렵·연말' 같은 표현만 씁니다.
+- 사주 용어 노출 금지: 십신·오행·합충·용신은 물론 "일주"·"간지"·"세운"·"천간"·"지지" 같은 말도 쓰지 않습니다. "나"와 "올해"로만 지칭합니다.
+- 참고로 준 문구를 문장에 그대로 붙여넣지 말고 상황·행동으로 풀어 씁니다. one_line 은 부정적 단어로 시작하지 않습니다. 한자를 쓰지 마세요.
+
+[생성할 조합 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{
+    "one_line": "...",
+    "keywords": ["...", "...", "..."],
+    "overall_flow": "...",
+    "first_half": "...",
+    "second_half": "...",
+    "advice": "..."
+  }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
+}}"""
+
+
+def run_yearly_cat(args, category: str) -> None:
+    ko = _YEARLY_CAT[category]["ko"]
+    out_path = args.out or _yearly_cat_db_path(category)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    db = _load_json(out_path)
+    all_keys = yearly_all_keys()
+    total = len(all_keys)                 # 3,600
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    done = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    print(f"DB: {out_path}")
+    print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+
+    pending = [k for k in all_keys if args.overwrite or not _yearly_overall_valid(db.get(k))]
+    seg = pending[: (args.limit or len(all_keys))]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=(lambda its, _c=category: _yearly_cat_prompt(_c, its)),
+        valid_fn=_yearly_overall_valid,
+        coerce_fn=_yearly_overall_coerce,
+        models=models, max_output_tokens=YEARLY_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_YEARLY_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts(_yearly_overall_texts(e))),
+        unit="조합", count_fn=(lambda d: sum(1 for k in all_keys if _yearly_overall_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[연간 {ko}] 대상 {len(todo)}개",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
 def run_daily(args) -> None:
     out_path = args.out or DAILY_DB_PATH
     db = _load_json(out_path)
@@ -2763,7 +2899,9 @@ def main() -> None:
     p.add_argument("--domain",
                    choices=["daily", "personality", "relationship", "compatibility",
                             "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
-                            "yearly_overall", "yearly_overall_extras"],
+                            "yearly_overall", "yearly_overall_extras",
+                            "yearly_wealth", "yearly_love", "yearly_business",
+                            "yearly_career_change", "yearly_health", "yearly_travel", "yearly_hobby"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -2817,6 +2955,8 @@ def main() -> None:
         run_yearly_overall(args)
     elif args.domain == "yearly_overall_extras":
         run_yearly_overall_extras(args)
+    elif args.domain.startswith("yearly_") and args.domain[len("yearly_"):] in _YEARLY_CAT:
+        run_yearly_cat(args, args.domain[len("yearly_"):])
 
 
 if __name__ == "__main__":
