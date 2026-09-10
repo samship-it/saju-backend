@@ -10,12 +10,14 @@ from core.saju_base import calculate_saju, sipsin_of_ganji
 from core.daewoon import get_wolwoon_list
 from core.constants import GAN_ELEM, JI_ELEM, YUKHAP, CHUNG, SAMHAP
 from core.sipsin import sipsin_group
+from core.timeframe import _year_ganji
 from shared.ai_client import call_gemini_json
 from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block, SCORING_RULES
 from shared.fortune_cache import get_or_create
 from shared.public import person_summary
 from shared.text_format import paragraphize
+from domains.yearly import content_db as _yearly_db
 
 CATEGORIES = {
     "overall": "총운",
@@ -125,6 +127,72 @@ def _fallback(category: str, year: int, saju: Dict[str, Any], monthly, best, cau
     return d
 
 
+_OVERALL_FALLBACK = {
+    "one_line": "익숙한 길에서 벗어나 방향을 다시 잡는 해",
+    "keywords": ["방향 재정비", "기반 다지기", "꾸준함"],
+    "overall_flow": (
+        "올해는 급격한 도약보다 방향을 다시 잡고 기반을 다지는 흐름이 강해요. "
+        "무리하게 판을 키우기보다 이미 가진 것을 단단하게 만드는 선택이 유리합니다. "
+        "사람 관계에서는 먼저 듣는 태도가 뜻밖의 기회를 열어줘요. "
+        "조급함만 내려놓으면 한 해의 방향은 나쁘지 않습니다. "
+        "성취는 속도가 아니라 꾸준함에서 나오는 시기예요."
+    ),
+    "first_half": (
+        "상반기에는 그동안 벌여둔 일을 정리하고 우선순위를 다시 세우기 좋아요. "
+        "새로운 시도보다 지금 맡은 자리를 탄탄하게 다지는 데 집중해 보세요. "
+        "무언가를 크게 바꾸고 싶은 마음이 들어도 한 박자 쉬어가는 여유가 필요합니다."
+    ),
+    "second_half": (
+        "하반기로 갈수록 상반기에 다져둔 기반 위에서 새로운 시도에 힘이 붙어요. "
+        "연말에 가까워질수록 방향이 또렷해지고 결정을 내리기 수월해집니다. "
+        "그동안의 준비가 조금씩 결과로 이어지는 흐름이에요."
+    ),
+    "advice": (
+        "이직이나 이사는 급하게 밀어붙이기보다 충분히 알아보고 움직이세요. "
+        "돈 문제는 감정이 아니라 계산을 앞세우고, 큰 지출은 시기를 나눠 계획하세요. "
+        "새로운 만남이나 관계에서는 서두르지 말고 상대를 천천히 알아가는 편이 유리합니다. "
+        "올해는 무리한 확장보다 내실을 채우는 한 해로 삼아 보세요."
+    ),
+}
+
+
+def _yearly_overall_static(ty: int, saju: dict, monthly, best, caution):
+    yy = str(ty)[2:]
+    g1 = saju.get("day_ganji") or ""
+    se = _year_ganji(ty)
+    entry = _yearly_db.lookup("overall", g1, se)
+    is_fb = entry is None
+    src = entry or _OVERALL_FALLBACK
+
+    kws = [str(k).strip() for k in (src.get("keywords") or []) if str(k).strip()][:3]
+    while len(kws) < 3:
+        kws.append("")
+    flow, fh, sh, adv = (
+        str(src.get("overall_flow", "")), str(src.get("first_half", "")),
+        str(src.get("second_half", "")), str(src.get("advice", "")),
+    )
+    out = {
+        "content_type": f"{yy}년 총운",
+        "category": "overall",
+        "target_year": ty,
+        "day_master": saju.get("day_master"),
+        "birth_time_known": saju.get("birth_time_known"),
+        "saju_info": person_summary(saju),
+        "one_line": str(src.get("one_line", "")),
+        "keywords": kws,
+        "overall_flow": paragraphize(flow),
+        "first_half": paragraphize(fh),
+        "second_half": paragraphize(sh),
+        "advice": paragraphize(adv),
+        "monthly": monthly,
+        "best_months": best,
+        "caution_months": caution,
+        # 구버전 프론트 호환용 합본
+        "analysis": paragraphize("\n\n".join(t for t in (flow, fh, sh, adv) if t.strip())),
+    }
+    return out, is_fb
+
+
 def generate_yearly(
     category: str,
     year: int, month: int, day: int,
@@ -140,6 +208,10 @@ def generate_yearly(
     monthly = _monthly_strength(saju, ty)
     best, caution = _best_caution(monthly)
     yy = str(ty)[2:]
+
+    if category == "overall":
+        # 총운은 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
+        return _yearly_overall_static(ty, saju, monthly, best, caution)
 
     def _gen():
         extra_schema = ""
