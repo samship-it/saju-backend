@@ -153,6 +153,24 @@ _OVERALL_FALLBACK = {
         "새로운 만남이나 관계에서는 서두르지 말고 상대를 천천히 알아가는 편이 유리합니다. "
         "올해는 무리한 확장보다 내실을 채우는 한 해로 삼아 보세요."
     ),
+    "opportunity_month": (
+        "기회의 달에는 주변에서 나를 도와주려는 손길이 늘고 미뤄뒀던 일이 술술 풀리기 시작해요. "
+        "이때는 망설이던 지원이나 제안, 새로운 시작을 과감하게 실행에 옮기세요. "
+        "평소보다 한 발 더 적극적으로 움직일수록 결과가 크게 돌아옵니다."
+    ),
+    "caution_month": (
+        "주의의 달에는 작은 일에도 마찰이 잦고 판단이 흐려지기 쉬우니 속도를 늦춰야 해요. "
+        "큰 계약이나 중요한 결정은 시기를 미루고, 말은 아끼며 서류와 조건을 한 번 더 확인하세요. "
+        "컨디션 관리에 신경 쓰면 리스크를 크게 줄일 수 있어요."
+    ),
+    "cheat_key": (
+        "올해는 혼자 다 짊어지려 하지 말고, 나를 있는 그대로 지지해 주는 사람을 곁에 두세요. "
+        "완벽하게 준비되지 않아도 일단 시작하는 태도가 막힌 흐름을 뚫어줍니다."
+    ),
+    "trap_warning": (
+        "모든 걸 통제하려다 지쳐 나가떨어지거나, 남의 평가에 예민하게 반응하는 순간 운이 새어 나가요. "
+        "나를 이용하려 드는 관계, 조급함에서 나온 즉흥적인 결정은 올해 특히 피하세요."
+    ),
 }
 
 
@@ -190,6 +208,10 @@ def _yearly_overall_static(ty: int, saju: dict, monthly, best, caution):
         # 구버전 프론트 호환용 합본
         "analysis": paragraphize("\n\n".join(t for t in (flow, fh, sh, adv) if t.strip())),
     }
+    for f in ("opportunity_month", "caution_month", "cheat_key", "trap_warning"):
+        v = src.get(f)
+        out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
+                  else _OVERALL_FALLBACK[f])
     return out, is_fb
 
 
