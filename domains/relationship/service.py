@@ -20,15 +20,25 @@ from domains.relationship import content_db
 
 _LABEL = {"reunion": "재회운", "crush": "짝사랑운"}
 
-# 재회운 '상대에게 어필할 나의 매력' 정적 DB 미스 시 사주 무관 고정 폴백.
-_REUNION_CHARM_FALLBACK = (
-    "당신의 가장 큰 매력은 상대의 말과 감정을 허투루 흘려듣지 않고 오래 기억해 주는 태도예요. "
-    "옛 인연은 함께였을 때의 편안했던 대화와 자신이 존중받는다고 느꼈던 순간을 가장 그리워하기 쉽습니다. "
-    "다시 마주쳤을 때는 서둘러 관계를 되돌리려 하기보다, 예전처럼 담담하고 진솔하게 안부를 건네는 모습이 "
-    "상대의 마음을 자연스럽게 다시 흔듭니다. 연락의 온도를 상대에 맞춰 천천히 올리고, 예전보다 한결 "
-    "단단해진 모습을 보여줄수록 신뢰가 쌓여요. 다만 잘 보이려는 마음이 앞서 과하게 맞춰주면 부담이 될 수 있으니 "
-    "내 페이스를 지키는 선을 잊지 마세요."
-)
+# '상대에게 어필할 나의 매력' 정적 DB 미스 시 사주 무관 고정 폴백 (유형별).
+_CHARM_FALLBACK = {
+    "reunion": (
+        "당신의 가장 큰 매력은 상대의 말과 감정을 허투루 흘려듣지 않고 오래 기억해 주는 태도예요. "
+        "옛 인연은 함께였을 때의 편안했던 대화와 자신이 존중받는다고 느꼈던 순간을 가장 그리워하기 쉽습니다. "
+        "다시 마주쳤을 때는 서둘러 관계를 되돌리려 하기보다, 예전처럼 담담하고 진솔하게 안부를 건네는 모습이 "
+        "상대의 마음을 자연스럽게 다시 흔듭니다. 연락의 온도를 상대에 맞춰 천천히 올리고, 예전보다 한결 "
+        "단단해진 모습을 보여줄수록 신뢰가 쌓여요. 다만 잘 보이려는 마음이 앞서 과하게 맞춰주면 부담이 될 수 있으니 "
+        "내 페이스를 지키는 선을 잊지 마세요."
+    ),
+    "crush": (
+        "당신의 가장 큰 매력은 상대의 이야기에 진심으로 귀 기울이고 그 사람의 결을 세심하게 살피는 태도예요. "
+        "함께 있을 때 상대는 자신이 있는 그대로 존중받는다는 편안함을 느끼기 쉽습니다. "
+        "다가갈 때는 마음을 한 번에 쏟기보다, 자연스러운 대화와 작은 관심을 꾸준히 건네며 천천히 거리를 좁혀 보세요. "
+        "상대가 편하게 여기는 화제나 취향을 기억해 두었다가 가볍게 이어가면 호감이 깊어집니다. "
+        "다만 상대의 반응을 확인하기 전에 마음을 앞세워 몰아붙이면 부담이 될 수 있으니, 상대의 속도를 존중하며 "
+        "여유 있는 모습을 유지하는 것이 좋아요."
+    ),
+}
 
 
 def _parse_date(s: Optional[str]) -> datetime.date:
@@ -93,9 +103,9 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
         "person1": _info(s1),
         "overall": paragraphize(str(data.get("overall", ""))),
     }
-    if kind == "reunion":
-        charm = content_db.charm_lookup(g1)
-        out["your_charm"] = paragraphize(charm) if charm else _REUNION_CHARM_FALLBACK
+    if kind in ("reunion", "crush"):
+        charm = content_db.charm_lookup(g1, kind)
+        out["your_charm"] = paragraphize(charm) if charm else _CHARM_FALLBACK[kind]
     if partner_exists:
         out["person2"] = _info(s2)
         strat = content_db.strategy_list(entry) if entry is not None else []

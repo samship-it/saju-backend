@@ -1803,21 +1803,43 @@ def run_relationship(args) -> None:
     print(f"전체 진행: {final_done}/{total}  ({100 * final_done / total:.1f}%)  · 남음 {total - final_done}")
 
 
-# ─────────────────────────────── REUNION CHARM (재회운 '상대에게 어필할 나의 매력')
-# 재회 국면에서만 쓰는 사람 중심(본인 일주 60개) 서술 1필드.
+# ───────────────── LOVE CHARM (재회운·짝사랑운 '상대에게 어필할 나의 매력')
+# 사람 중심(본인 일주 60개) 서술 1필드. 유형별로 프레이밍만 다르다.
 # 키 = 일주 간지 한자 2자(예 "辛卯"). 값 = {"your_charm": str, "_model": str}.
-# 궁합/관계 DB 와 별개 파일(reunion_charm_db.json)로 두고, 재회운 응답에만 병합한다.
-REUNION_CHARM_DB_PATH = os.path.join(_ROOT, "domains", "relationship", "data", "reunion_charm_db.json")
-REUNION_CHARM_MAX_OUTPUT_TOKENS = 16384
+# 관계/궁합 DB 와 별개 파일(<유형>_charm_db.json)로 두고 해당 유형 응답에만 병합한다.
+LOVE_CHARM_MAX_OUTPUT_TOKENS = 16384
+_LOVE_CHARM_DB_PATH = {
+    "reunion": os.path.join(_ROOT, "domains", "relationship", "data", "reunion_charm_db.json"),
+    "crush": os.path.join(_ROOT, "domains", "relationship", "data", "crush_charm_db.json"),
+}
+_LOVE_CHARM_INTRO = {
+    "reunion": '"옛 인연이 당신에게 다시 끌리는 이유 — 재회 국면에서 상대의 마음을 다시 흔드는 당신만의 매력"',
+    "crush": '"짝사랑하는 상대에게 다가갈 때, 그 사람의 마음을 사로잡는 당신만의 매력"',
+}
+_LOVE_CHARM_POINTS = {
+    "reunion": (
+        "- 헤어진 상대가 당신을 떠올렸을 때 가장 그리워할 법한 지점(대화·분위기·태도·감정을 다루는 방식 등)\n"
+        "- 다시 만났을 때 상대가 \"역시 이 사람\" 하고 느낄 당신의 강점\n"
+        "- 그 매력을 재회 과정에서 자연스럽게 드러내는 법 (연락·태도·거리 조절)\n"
+        "- 과하게 쓰면 오히려 부담이 되는 부분과 그 조절"
+    ),
+    "crush": (
+        "- 상대가 당신을 알아갈수록 빠져들 법한 지점(대화·분위기·태도·감정을 다루는 방식 등)\n"
+        "- 함께 있을 때 상대가 편안함이나 설렘을 느낄 당신의 강점\n"
+        "- 그 매력을 다가가는 과정에서 자연스럽게 드러내는 법 (연락·표현·거리 조절)\n"
+        "- 과하게 쓰면 부담이 되거나 매력이 반감되는 부분과 그 조절"
+    ),
+}
+_LOVE_CHARM_PRONOUN = {"reunion": "상대(옛 인연)", "crush": "상대(마음에 둔 사람)"}
 
-_REUNION_CHARM_SYSTEM = (
+_LOVE_CHARM_SYSTEM = (
     "당신은 2030 세대를 위한 관계 상담가입니다. 제공된 성향 정보만 근거로 서술합니다. "
     "사주 용어(십신·오행·합충·일주·간지·천간·지지)는 절대 쓰지 않고 태도·행동·감정으로만 묘사합니다. "
     "친근한 존댓말만 씁니다. 유효한 JSON 만 출력합니다."
 )
 
 
-def _reunion_charm_block(ganji: str) -> str:
+def _love_charm_block(ganji: str) -> str:
     dm, dbc = ganji[0], ganji[1]
     me_tag = "/".join(dict.fromkeys([
         _COMPAT_ELEM_TAG.get(GAN_ELEM.get(dm), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(dbc), ""),
@@ -1828,22 +1850,19 @@ def _reunion_charm_block(ganji: str) -> str:
     ])
 
 
-def _reunion_charm_prompt(items: List[Tuple[str]]) -> str:
+def _love_charm_prompt(kind: str, items: List[Tuple[str]]) -> str:
     keys = [it[0] for it in items]
-    blocks = "\n\n".join(_reunion_charm_block(k) for k in keys)
-    return f"""아래 {len(items)}개 항목 각각에 대해, "옛 인연이 당신에게 다시 끌리는 이유 — 재회 국면에서 상대의 마음을 다시 흔드는 당신만의 매력"을 씁니다.
+    blocks = "\n\n".join(_love_charm_block(k) for k in keys)
+    return f"""아래 {len(items)}개 항목 각각에 대해, {_LOVE_CHARM_INTRO[kind]}을 씁니다.
 각 항목은 완전히 독립입니다. 한 항목 내용을 다른 항목에 복사하지 말고 성향에 맞춰 개별적으로 씁니다.
 
 [담아야 할 것]
-- 헤어진 상대가 당신을 떠올렸을 때 가장 그리워할 법한 지점(대화·분위기·태도·감정을 다루는 방식 등)
-- 다시 만났을 때 상대가 "역시 이 사람" 하고 느낄 당신의 강점
-- 그 매력을 재회 과정에서 자연스럽게 드러내는 법 (연락·태도·거리 조절)
-- 과하게 쓰면 오히려 부담이 되는 부분과 그 조절
+{_LOVE_CHARM_POINTS[kind]}
 
 [말투·형식 규칙 — 최우선]
 - 친근한 존댓말만('~해요/~예요/~입니다/~보세요/~편입니다'). 반말 금지.
 - 번호·순번·목록 기호("1.", "1)", "[1]", "①", 문장 앞 "-")를 붙이지 않고 서술형 문장으로만.
-- 사주 용어 노출 금지: 십신·오행·합충·배우자성·도화는 물론 "일주"·"갑자일주"·"간지"·"천간"·"지지" 같은 말도 쓰지 않습니다. "나"와 "상대(옛 인연)"로만 지칭하고 성격은 태도·행동·감정으로만 묘사합니다.
+- 사주 용어 노출 금지: 십신·오행·합충·배우자성·도화는 물론 "일주"·"갑자일주"·"간지"·"천간"·"지지" 같은 말도 쓰지 않습니다. "나"와 "{_LOVE_CHARM_PRONOUN[kind]}"로만 지칭하고 성격은 태도·행동·감정으로만 묘사합니다.
 - 특정 날짜·연도·나이를 단정하지 않고, "오늘"·"요즘"·"이번 주" 같은 시점 표현도 쓰지 않습니다(타고난 매력 설명이므로).
 - 참고로 준 키워드([성장형] 등)를 문장에 그대로 붙여넣지 말고 반드시 자기 문장으로 풀어 씁니다.
 
@@ -1861,18 +1880,19 @@ def _reunion_charm_prompt(items: List[Tuple[str]]) -> str:
 }}"""
 
 
-def _reunion_charm_valid(entry: Any) -> bool:
+def _love_charm_valid(entry: Any) -> bool:
     return isinstance(entry, dict) and len(str(entry.get("your_charm", "")).strip()) >= 120
 
 
-def _reunion_charm_coerce(entry: Any) -> Any:
+def _love_charm_coerce(entry: Any) -> Any:
     if isinstance(entry, dict) and "your_charm" in entry:
         entry["your_charm"] = _rel_clean(str(entry["your_charm"]))
     return entry
 
 
-def run_reunion_charm(args) -> None:
-    out_path = args.out or REUNION_CHARM_DB_PATH
+def run_love_charm(args, kind: str) -> None:
+    ko = _REL_TYPE_KO[kind]
+    out_path = args.out or _LOVE_CHARM_DB_PATH[kind]
     db = _load_json(out_path)
     all_keys = sixty_gapja()
     total = len(all_keys)                 # 60
@@ -1882,12 +1902,12 @@ def run_reunion_charm(args) -> None:
     if not args.batch or args.batch < 2:
         args.batch = 10
 
-    done = sum(1 for k in all_keys if _reunion_charm_valid(db.get(k)))
+    done = sum(1 for k in all_keys if _love_charm_valid(db.get(k)))
     print(f"DB: {out_path}")
     print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
     budget = args.limit or len(all_keys)
 
-    pending = [k for k in all_keys if args.overwrite or not _reunion_charm_valid(db.get(k))]
+    pending = [k for k in all_keys if args.overwrite or not _love_charm_valid(db.get(k))]
     seg = pending[:budget]
     if args.dry_run:
         print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:8])}")
@@ -1908,17 +1928,17 @@ def run_reunion_charm(args) -> None:
     sub.limit = 0
     _run_batched(
         sub, todo, db, out_path, api_keys,
-        prompt_fn=_reunion_charm_prompt,
-        valid_fn=_reunion_charm_valid,
-        coerce_fn=_reunion_charm_coerce,
-        models=models, max_output_tokens=REUNION_CHARM_MAX_OUTPUT_TOKENS,
-        total=total, system_instruction=_REUNION_CHARM_SYSTEM,
+        prompt_fn=(lambda its, _k=kind: _love_charm_prompt(_k, its)),
+        valid_fn=_love_charm_valid,
+        coerce_fn=_love_charm_coerce,
+        models=models, max_output_tokens=LOVE_CHARM_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_LOVE_CHARM_SYSTEM,
         banmal_fn=(lambda e: _banmal_in_texts([str(e.get("your_charm", ""))])),
-        unit="일주", count_fn=(lambda d: sum(1 for k in all_keys if _reunion_charm_valid(d.get(k)))),
-        header=f"\n{'━' * 60}\n[재회운 매력] 대상 {len(todo)}개",
+        unit="일주", count_fn=(lambda d: sum(1 for k in all_keys if _love_charm_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[{ko} 매력] 대상 {len(todo)}개",
     )
 
-    final_cnt = sum(1 for k in all_keys if _reunion_charm_valid(db.get(k)))
+    final_cnt = sum(1 for k in all_keys if _love_charm_valid(db.get(k)))
     print(f"\n{'=' * 60}")
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
@@ -2125,12 +2145,13 @@ def run_daily(args) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
     p.add_argument("--domain",
-                   choices=["daily", "personality", "relationship", "compatibility", "reunion_charm"],
+                   choices=["daily", "personality", "relationship", "compatibility",
+                            "reunion_charm", "crush_charm"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
                         "compatibility=궁합 3,600조합(일주쌍, --limit 으로 청크 진행) · "
-                        "reunion_charm=재회운 '나의 매력' 일주 60")
+                        "reunion_charm/crush_charm=재회운·짝사랑운 '나의 매력' 일주 60")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
     p.add_argument("--only", type=str, default=None,
                    help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
@@ -2166,7 +2187,9 @@ def main() -> None:
     elif args.domain == "compatibility":
         run_compatibility(args)
     elif args.domain == "reunion_charm":
-        run_reunion_charm(args)
+        run_love_charm(args, "reunion")
+    elif args.domain == "crush_charm":
+        run_love_charm(args, "crush")
 
 
 if __name__ == "__main__":
