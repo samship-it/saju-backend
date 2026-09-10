@@ -363,6 +363,7 @@ def strip_enumeration(s: Any) -> Any:
 _TYPO_FIXUPS = {
     "천섀기": "천천히",
     "여미까": "여기니까",
+    "제테크": "재테크",
 }
 # '타고난 흐름' 설명에 부적합한 시점 단어 제거(relationship 등에서 strip_time_words=True 로 사용).
 _TIME_WORD_LEAD = re.compile(r"(?:^|(?<=[.!?…]\s)|(?<=[\s,]))(?:오늘|요즘)[,\s]+")
@@ -2011,18 +2012,26 @@ def _marriage_extras_valid(entry: Any) -> bool:
     return len(str(entry.get("future_scenario", "")).strip()) >= 120
 
 
+_HANJA_RE = re.compile(r"\s*[\(（]?[㐀-鿿]+[\)）]?")
+
+
+def _strip_hanja(s: str) -> str:
+    s = s.replace("语气", "말투").replace("氛围", "분위기")
+    return _HANJA_RE.sub("", s).replace("  ", " ").strip()
+
+
 def _marriage_extras_coerce(entry: Any) -> Any:
     if not isinstance(entry, dict):
         return entry
     chk = entry.get("pre_marriage_check")
     if isinstance(chk, list):
         entry["pre_marriage_check"] = [
-            {"topic": _rel_clean(str(x.get("topic", ""))).strip(),
-             "detail": _rel_clean(str(x.get("detail", "")))}
+            {"topic": _strip_hanja(_rel_clean(str(x.get("topic", "")))).strip(),
+             "detail": _strip_hanja(_rel_clean(str(x.get("detail", ""))))}
             for x in chk if isinstance(x, dict) and str(x.get("topic", "")).strip()
         ][:3]
     if isinstance(entry.get("future_scenario"), str):
-        entry["future_scenario"] = _rel_clean(entry["future_scenario"])
+        entry["future_scenario"] = _strip_hanja(_rel_clean(entry["future_scenario"]))
     return entry
 
 
@@ -2096,6 +2105,193 @@ def run_marriage_extras(args) -> None:
     final_cnt = sum(1 for k in all_keys if _marriage_extras_valid(db.get(k)))
     print(f"\n{'=' * 60}")
     print(f"완료(2필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
+# ─────────────────────────────── YEARLY (연간 운세 — 나의 일주 60 × 세운 간지 60)
+# 세운 간지는 60갑자 순환이라 (일주, 세운)만으로 결정 → 연도 무관 재사용.
+# 정확한 베스트/주의 월·월별 강도 그래프는 런타임 엔진이 원국 전체로 계산한다.
+# 정적 DB엔 계절·상하반기 표현의 AI 서술만 저장한다.
+# 키 = "<나의 일주>_<세운 간지>" 예 "甲子_丙午".
+YEARLY_OVERALL_DB_PATH = os.path.join(_ROOT, "domains", "yearly", "data", "yearly_overall_db.json")
+YEARLY_MAX_OUTPUT_TOKENS = 40000
+
+_YEARLY_SYSTEM = (
+    "당신은 2030 세대를 위한 사주 앱 화자입니다. 제공된 성향 정보만 근거로 한 해를 하나의 스토리처럼 풀어냅니다. "
+    "사주 용어(십신·오행·합충·용신·일주·간지·세운·천간·지지)는 절대 쓰지 않고 태도·행동·감정·상황으로만 묘사합니다. "
+    "특정 월(1월·7월 등)을 단정하지 않고 '상반기·하반기·연초·초봄·한여름·가을 무렵·연말' 같은 표현만 씁니다. "
+    "친근한 존댓말만 씁니다. 유효한 JSON 만 출력합니다."
+)
+
+
+def yearly_all_keys() -> List[str]:
+    g = sixty_gapja()
+    return [f"{a}_{se}" for a in g for se in g]      # 60 × 60 = 3,600
+
+
+# 세운 지지와 내 일지의 관계 → 연간용 짧은 형용구(원문 복사되기 어렵게).
+_YEARLY_TOGETHER_TAG = {
+    "육합": "흐름을 부드럽게 밀어주는", "삼합": "큰 목표로 끌어당기는",
+    "방합": "같은 방향으로 힘을 모으는", "반합": "은근히 도와주는",
+    "충": "판을 흔들고 이동을 부추기는", "복음": "익숙하고 잔잔한",
+    "파": "사소하게 삐걱대는", "해": "오해가 끼기 쉬운", "형": "부대끼며 맞춰가야 하는",
+}
+
+
+def _yearly_together(dbc: str, sej: str) -> str:
+    raw = branch_relation(dbc, sej)                # "육합(협력·인연)" / "복음(같은 지지) · 자형" ...
+    m = re.match(r"([가-힣]+)", raw)
+    return _YEARLY_TOGETHER_TAG.get(m.group(1) if m else "", "특별한 굴곡 없이 담담한")
+
+
+def _yearly_item_block(key: str) -> str:
+    a, se = key.split("_")
+    dm, dbc = a[0], a[1]
+    seg, sej = se[0], se[1]
+    me_tag = "/".join(dict.fromkeys([
+        _COMPAT_ELEM_TAG.get(GAN_ELEM.get(dm), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(dbc), ""),
+    ]))
+    return "\n".join([
+        f"── 키: {key} ──",
+        f"- 나: {_compat_persona(dm, dbc)}" + (f"  [{me_tag}]" if me_tag.strip('/') else ""),
+        f"- 올해가 나에게 주는 자극(그대로 쓰지 말 것): {_compat_influence(dm, seg, sej)}",
+        f"- 올해 기운의 결(그대로 쓰지 말 것): {_yearly_together(dbc, sej)} 한 해",
+    ])
+
+
+def _yearly_overall_prompt(items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_yearly_item_block(k) for k in keys)
+    return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 총운'을 씁니다.
+각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로 씁니다.
+
+[6필드]
+- one_line: 올해를 한 문장으로 압축 (12~22자, 짧고 센스 있게)
+- keywords: 올해 핵심 키워드 정확히 3개 (서로 다른 한국어 단어/짧은 구)
+- overall_flow: 올해 전체 흐름과 분위기 — 올해 기운이 나에게 어떤 결의 한 해를 가져오는지, 무엇에 힘이 실리고 무엇을 조심해야 하는지 (5~7문장)
+- first_half: 상반기 흐름 — 연초 분위기, 집중하면 좋은 일, 조심할 부분 (4~6문장)
+- second_half: 하반기 흐름 — 상반기와 어떻게 달라지는지, 연말로 갈수록의 방향 (4~6문장)
+- advice: 올해 꼭 기억할 조언 — 2030 세대가 실제로 겪는 상황(이직·이사·투자·대출·시험·소개팅 등)으로 구체적으로 (4~6문장)
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요/~편이에요'). 반말 금지.
+- 번호·순번·목록 기호 없이 서술형 문장으로만. keywords 만 배열.
+- 특정 월(1월·3월·7월 등)이나 특정 연도·나이를 단정하지 마세요. '상반기·하반기·연초·초봄·한여름·가을 무렵·연말' 같은 표현만 씁니다.
+- 사주 용어 노출 금지: 십신·오행·합충·용신은 물론 "일주"·"간지"·"세운"·"천간"·"지지" 같은 말도 쓰지 않습니다. "나"와 "올해"로만 지칭합니다.
+- 참고로 준 문구를 문장에 그대로 붙여넣지 말고 반드시 자기 문장으로 풉니다. 특히 "끌림도 갈등도", "담백한 흐름", "책임감을 요구", "승부욕을 자극" 같은 표현을 그대로 쓰지 말고 상황·행동으로 바꿔 씁니다.
+- "이번 년도"·"금년" 대신 "올해"만 씁니다. one_line 은 부정적 단어("내리막길" 등)로 시작하지 않습니다.
+
+[생성할 조합 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{
+    "one_line": "...",
+    "keywords": ["...", "...", "..."],
+    "overall_flow": "...",
+    "first_half": "...",
+    "second_half": "...",
+    "advice": "..."
+  }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
+}}"""
+
+
+def _yearly_overall_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if not str(entry.get("one_line", "")).strip():
+        return False
+    kw = entry.get("keywords")
+    if not (isinstance(kw, list) and len([k for k in kw if str(k).strip()]) >= 3):
+        return False
+    return all(len(str(entry.get(f, "")).strip()) >= 60
+               for f in ("overall_flow", "first_half", "second_half", "advice"))
+
+
+_YEARLY_FIXUPS = [
+    ("이번 년도", "올해"), ("이번년도", "올해"), ("금년", "올해"),
+    ("끌림도 갈등도 크지 않은 담백한 흐름", "특별한 사건 없이 잔잔한 흐름"),
+    ("끌림도 갈등도 약한", "특별한 자극이 크지 않은"),
+]
+
+
+def _yearly_overall_coerce(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    for f in ("one_line", "overall_flow", "first_half", "second_half", "advice"):
+        v = entry.get(f)
+        if isinstance(v, str):
+            for bad, good in _YEARLY_FIXUPS:
+                v = v.replace(bad, good)
+            entry[f] = _rel_clean(v)
+    kw = entry.get("keywords")
+    if isinstance(kw, list):
+        entry["keywords"] = [_rel_clean(str(k)).strip() for k in kw if str(k).strip()][:3]
+    return entry
+
+
+def _yearly_overall_texts(entry: Any) -> List[str]:
+    if not isinstance(entry, dict):
+        return []
+    return [str(entry.get(f, "")) for f in ("overall_flow", "first_half", "second_half", "advice")]
+
+
+def run_yearly_overall(args) -> None:
+    out_path = args.out or YEARLY_OVERALL_DB_PATH
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    db = _load_json(out_path)
+    all_keys = yearly_all_keys()
+    total = len(all_keys)                 # 3,600
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    done = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    print(f"DB: {out_path}")
+    print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+    budget = args.limit or len(all_keys)
+
+    pending = [k for k in all_keys if args.overwrite or not _yearly_overall_valid(db.get(k))]
+    seg = pending[:budget]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=_yearly_overall_prompt,
+        valid_fn=_yearly_overall_valid,
+        coerce_fn=_yearly_overall_coerce,
+        models=models, max_output_tokens=YEARLY_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_YEARLY_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts(_yearly_overall_texts(e))),
+        unit="조합", count_fn=(lambda d: sum(1 for k in all_keys if _yearly_overall_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[연간 총운] 대상 {len(todo)}개",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
 def run_daily(args) -> None:
@@ -2301,13 +2497,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
     p.add_argument("--domain",
                    choices=["daily", "personality", "relationship", "compatibility",
-                            "reunion_charm", "crush_charm", "marriage_extras"],
+                            "reunion_charm", "crush_charm", "marriage_extras", "yearly_overall"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
                         "compatibility=궁합 3,600조합(일주쌍, --limit 으로 청크 진행) · "
                         "reunion_charm/crush_charm=재회운·짝사랑운 '나의 매력' 일주 60 · "
-                        "marriage_extras=결혼운 couple 3,600 에 확인사항·미래시나리오 2필드 추가(--limit 청크)")
+                        "marriage_extras=결혼운 couple 3,600 에 확인사항·미래시나리오 2필드 추가(--limit 청크) · "
+                        "yearly_overall=연간 총운 3,600(일주×세운, --limit 청크)")
     p.add_argument("--limit", type=int, default=0, help="이번 실행에서 새로 생성할 최대 개수 (0=제한 없음)")
     p.add_argument("--only", type=str, default=None,
                    help="특정 키만 생성 (daily: 戊辰_乙巳 / personality: 戊辰)")
@@ -2348,6 +2545,8 @@ def main() -> None:
         run_love_charm(args, "crush")
     elif args.domain == "marriage_extras":
         run_marriage_extras(args)
+    elif args.domain == "yearly_overall":
+        run_yearly_overall(args)
 
 
 if __name__ == "__main__":
