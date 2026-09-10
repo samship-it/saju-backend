@@ -19,6 +19,9 @@ DB 를 다시 생성했다면 프로세스를 재시작하거나 `reload()` 를 
     solo 전 유형            : {"overall": str}
     couple reunion/crush   : {"overall": str, "strategy_3months": [str, str, str]}
     couple marriage        : {"overall": str, "couple_overall": str}
+
+재회운(reunion)은 별도 파일 `reunion_charm_db.json` 에서 '상대에게 어필할 나의 매력'
+서술을 본인 일주(60개) 기준으로 조회해 응답의 your_charm 필드로 병합한다(solo/couple 공통).
 """
 import json
 import os
@@ -27,11 +30,14 @@ from typing import Any, Dict, List, Optional
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 DB_PATH = os.environ.get("RELATIONSHIP_DB_PATH", os.path.join(DATA_DIR, "relationship_db.json"))
+# 재회운 전용 '상대에게 어필할 나의 매력' — 본인 일주 60개 (사람 중심, 상대와 무관).
+CHARM_DB_PATH = os.environ.get("REUNION_CHARM_DB_PATH", os.path.join(DATA_DIR, "reunion_charm_db.json"))
 
 _VALID_TYPES = ("reunion", "crush", "marriage")
 
 _lock = threading.Lock()
 _cache: Optional[Dict[str, Any]] = None
+_charm_cache: Optional[Dict[str, Any]] = None
 
 
 def make_key(self_ganji: str, partner_ganji: Optional[str], rtype: str) -> str:
@@ -58,8 +64,34 @@ def load_db(force: bool = False) -> Dict[str, Any]:
         return _cache
 
 
+def load_charm_db(force: bool = False) -> Dict[str, Any]:
+    """reunion_charm_db.json 을 최초 1회 읽어 캐시한다(정적 파일, 약 60개)."""
+    global _charm_cache
+    if _charm_cache is not None and not force:
+        return _charm_cache
+    with _lock:
+        if _charm_cache is not None and not force:
+            return _charm_cache
+        try:
+            with open(CHARM_DB_PATH, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            _charm_cache = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError):
+            _charm_cache = {}
+        return _charm_cache
+
+
+def charm_lookup(self_ganji: str) -> Optional[str]:
+    """재회운 '상대에게 어필할 나의 매력' 서술(본인 일주 기준). 없으면 None."""
+    entry = load_charm_db().get((self_ganji or "").strip())
+    if isinstance(entry, dict):
+        entry = entry.get("your_charm")
+    return entry if isinstance(entry, str) and entry.strip() else None
+
+
 def reload() -> Dict[str, Any]:
     """DB 파일을 다시 생성한 뒤 메모리 캐시를 갱신할 때 호출(테스트/재생성용)."""
+    load_charm_db(force=True)
     return load_db(force=True)
 
 
