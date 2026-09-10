@@ -2368,7 +2368,23 @@ _YEARLY_FIXUPS = [
     ("끌림도 갈등도 약한", "특별한 자극이 크지 않은"),
     ("익숙한 내리막길보다", "익숙한 길에서 벗어나"),
     ("내리막길", "지난 흐름"),
+    # 힌트로 준 '올해 기운의 결/자극' 태그가 문장에 그대로 복사된 것 → 자연스러운 표현으로
+    ("판을 흔들고 이동을 부추기는", "크게 움직이게 하는"),
+    ("흐름을 부드럽게 밀어주는", "부드럽게 힘을 실어주는"),
+    ("큰 목표로 끌어당기는", "큰 목표에 다가서게 하는"),
+    ("같은 방향으로 힘을 모으는", "한 방향으로 힘이 모이는"),
+    ("은근히 도와주는", "은근하게 힘이 되는"),
+    ("부대끼며 맞춰가야 하는", "서로 부딪히며 맞춰가는"),
+    ("특별한 굴곡 없이 담담한", "큰 굴곡 없이 잔잔한"),
+    ("특별한 굴곡 없이 담담", "큰 굴곡 없이 잔잔"),
 ]
+
+# keywords 로 새어 나오면 안 되는 추상 힌트 태그(그대로 복사됨). 포함 시 그 키워드 제거.
+# (자연 키워드가 아닌, 힌트 블록에서 그대로 베낀 게 분명한 것만.)
+_YEARLY_KW_LEAKS = (
+    "승부욕 자극", "성취욕 자극", "책임감 요구", "표현을 이끎", "안정감을 줌",
+    "판을 흔들고", "이동을 부추기는",
+)
 
 
 def _yearly_overall_coerce(entry: Any) -> Any:
@@ -2382,7 +2398,9 @@ def _yearly_overall_coerce(entry: Any) -> Any:
             entry[f] = _strip_hanja(_rel_clean(v))
     kw = entry.get("keywords")
     if isinstance(kw, list):
-        entry["keywords"] = [_strip_hanja(_rel_clean(str(k))).strip() for k in kw if str(k).strip()][:3]
+        cleaned = [_strip_hanja(_rel_clean(str(k))).strip() for k in kw if str(k).strip()]
+        cleaned = [k for k in cleaned if not any(bad in k for bad in _YEARLY_KW_LEAKS)]
+        entry["keywords"] = cleaned[:3]
     return entry
 
 
@@ -2608,7 +2626,7 @@ def _yearly_cat_prompt(category: str, items: List[Tuple[str]]) -> str:
 
 [6필드 — 모두 '{c['ko']}' 관점으로]
 - one_line: 올해 {c['ko']}를 한 문장으로 압축 (12~24자, 짧고 센스 있게)
-- keywords: 올해 {c['ko']} 핵심 키워드 정확히 3개 (서로 다른 한국어 단어/짧은 구)
+- keywords: 올해 {c['ko']} 핵심 키워드 정확히 3개. 반드시 '{c['ko']}'와 직접 관련된 구체적인 한국어 명사/명사구로 쓰고, "승부욕 자극"·"성취욕 자극"·"책임감 요구"·"표현을 이끎"·"담담한 흐름"·"부드러운 흐름"처럼 아래 참고 문구에서 가져온 추상 표현은 절대 키워드로 쓰지 마세요.
 - overall_flow: {c['flow']} (5~7문장)
 - first_half: 상반기 {c['ko']} 흐름 — 연초 분위기, 집중하면 좋은 것, 조심할 부분 (4~6문장)
 - second_half: 하반기 {c['ko']} 흐름 — 상반기와 어떻게 달라지는지, 연말로 갈수록의 방향 (4~6문장)

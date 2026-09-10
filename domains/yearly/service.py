@@ -174,13 +174,18 @@ _OVERALL_FALLBACK = {
 }
 
 
-def _yearly_overall_static(ty: int, saju: dict, monthly, best, caution):
+# 정적 DB(일주×세운)로 서빙하는 카테고리. 모두 6필드 동일 스키마.
+# overall 은 여기에 4필드(기회/주의달·치트키·쥐약)가 더 붙는다.
+_STATIC_CATEGORIES = ("overall", "wealth", "love")
+
+
+def _yearly_static(category: str, ty: int, saju: dict, monthly, best, caution):
     yy = str(ty)[2:]
     g1 = saju.get("day_ganji") or ""
     se = _year_ganji(ty)
-    entry = _yearly_db.lookup("overall", g1, se)
+    entry = _yearly_db.lookup(category, g1, se)
     is_fb = entry is None
-    src = entry or _OVERALL_FALLBACK
+    src = entry or (_OVERALL_FALLBACK if category == "overall" else _catfb(category, ty))
 
     kws = [str(k).strip() for k in (src.get("keywords") or []) if str(k).strip()][:3]
     while len(kws) < 3:
@@ -190,8 +195,8 @@ def _yearly_overall_static(ty: int, saju: dict, monthly, best, caution):
         str(src.get("second_half", "")), str(src.get("advice", "")),
     )
     out = {
-        "content_type": f"{yy}년 총운",
-        "category": "overall",
+        "content_type": f"{yy}년 {CATEGORIES[category]}",
+        "category": category,
         "target_year": ty,
         "day_master": saju.get("day_master"),
         "birth_time_known": saju.get("birth_time_known"),
@@ -208,11 +213,42 @@ def _yearly_overall_static(ty: int, saju: dict, monthly, best, caution):
         # 구버전 프론트 호환용 합본
         "analysis": paragraphize("\n\n".join(t for t in (flow, fh, sh, adv) if t.strip())),
     }
-    for f in ("opportunity_month", "caution_month", "cheat_key", "trap_warning"):
-        v = src.get(f)
-        out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
-                  else _OVERALL_FALLBACK[f])
+    if category == "overall":
+        for f in ("opportunity_month", "caution_month", "cheat_key", "trap_warning"):
+            v = src.get(f)
+            out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
+                      else _OVERALL_FALLBACK[f])
     return out, is_fb
+
+
+def _catfb(category: str, ty: int) -> dict:
+    """분야 정적 DB 미스 시 6필드 폴백 (계절 표현만, 특정 월 없음)."""
+    ko = CATEGORIES.get(category, "운세")
+    return {
+        "one_line": f"올해 {ko}, 서두르지 않으면 방향이 보이는 해",
+        "keywords": ["방향 잡기", "꾸준함", "내실"],
+        "overall_flow": (
+            f"올해 {ko}는 큰 기복보다 방향을 다시 잡고 기반을 다지는 흐름이에요. "
+            "무리하게 판을 키우기보다 이미 가진 것을 단단하게 만드는 편이 유리합니다. "
+            "조급함을 내려놓고 한 걸음씩 나아가면 한 해의 결과는 나쁘지 않아요. "
+            "속도보다 꾸준함이 성과로 이어지는 시기입니다."
+        ),
+        "first_half": (
+            "상반기에는 벌여둔 일을 정리하고 우선순위를 다시 세우기 좋아요. "
+            "새로운 시도보다 지금 자리를 탄탄히 다지는 데 집중해 보세요. "
+            "크게 바꾸고 싶어도 한 박자 쉬어가는 여유가 필요합니다."
+        ),
+        "second_half": (
+            "하반기로 갈수록 상반기에 다진 기반 위에서 새 시도에 힘이 붙어요. "
+            "연말에 가까워질수록 방향이 또렷해지고 결정을 내리기 수월해집니다. "
+            "그동안의 준비가 조금씩 결과로 이어지는 흐름이에요."
+        ),
+        "advice": (
+            "큰 결정은 급하게 밀어붙이지 말고 충분히 알아본 뒤 움직이세요. "
+            "감정보다 계산을 앞세우고, 부담이 큰 선택은 시기를 나눠 계획하세요. "
+            "올해는 무리한 확장보다 내실을 채우는 한 해로 삼아 보세요."
+        ),
+    }
 
 
 def generate_yearly(
@@ -231,9 +267,9 @@ def generate_yearly(
     best, caution = _best_caution(monthly)
     yy = str(ty)[2:]
 
-    if category == "overall":
-        # 총운은 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
-        return _yearly_overall_static(ty, saju, monthly, best, caution)
+    if category in _STATIC_CATEGORIES:
+        # 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
+        return _yearly_static(category, ty, saju, monthly, best, caution)
 
     def _gen():
         extra_schema = ""

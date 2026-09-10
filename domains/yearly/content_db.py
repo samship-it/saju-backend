@@ -57,15 +57,17 @@ def reload() -> None:
         load_db(cat, force=True)
 
 
+# 6필드 스키마(총운·분야 8종 공통). 총운만 여기에 4필드(기회/주의달·치트키·쥐약)가 더 붙는다.
+_SIXFIELD = ("one_line", "overall_flow", "first_half", "second_half", "advice")
+
+
 def lookup(category: str, self_ganji: str, seyun_ganji: str) -> Optional[Dict[str, Any]]:
     """조합에 해당하는 사전 생성 서술(dict). 없거나 불완전하면 None."""
     entry = load_db(category).get(make_key(self_ganji, seyun_ganji))
     if not isinstance(entry, dict):
         return None
-    if category == "overall":
-        need = ("one_line", "overall_flow", "first_half", "second_half", "advice")
-        if not all(str(entry.get(k, "")).strip() for k in need):
-            return None
+    if not all(str(entry.get(k, "")).strip() for k in _SIXFIELD):
+        return None
     return entry
 
 
