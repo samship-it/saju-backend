@@ -2107,6 +2107,146 @@ def run_marriage_extras(args) -> None:
     print(f"완료(2필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
+# ───────────── MARRIAGE SOLO EXTRAS (결혼운 solo 전용 추가 필드 3개, 일주 60)
+# 상대 없는 solo 결혼운. 기존 relationship_db.json 의 "<일주>_marriage" 60개에 병합.
+#   marriage_timing: 내 사주에서 결혼운이 어떤 패턴으로 강해지는지 (연도는 엔진이 붙임)
+#   spouse_type: 나와 잘 맞는 배우자 성향
+#   prep_strategy: 결혼 성공률을 높이는 준비 전략
+MARRIAGE_SOLO_MAX_OUTPUT_TOKENS = 40000
+_MARRIAGE_SOLO_SYSTEM = _MARRIAGE_EXTRAS_SYSTEM
+_MARRIAGE_SOLO_KEYS = ("marriage_timing", "spouse_type", "prep_strategy")
+
+
+def _marriage_solo_block(key: str) -> str:
+    gj = key.split("_")[0]
+    dm, dbc = gj[0], gj[1]
+    me_tag = "/".join(dict.fromkeys([
+        _COMPAT_ELEM_TAG.get(GAN_ELEM.get(dm), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(dbc), ""),
+    ]))
+    return "\n".join([
+        f"── 키: {key} ──",
+        _compat_persona(dm, dbc) + (f"  [{me_tag}]" if me_tag.strip('/') else ""),
+    ])
+
+
+def _marriage_solo_prompt(items: List[Tuple[str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_marriage_solo_block(k) for k in keys)
+    return f"""아래 {len(items)}개 항목(내 성향 하나) 각각에 대해 '혼자 보는 결혼운' 보조 정보 3가지를 씁니다.
+각 항목은 완전히 독립입니다. 한 항목 내용을 다른 항목에 복사하지 말고 성향에 맞춰 개별적으로 씁니다.
+
+[marriage_timing — 내 결혼운이 강해지는 흐름]
+- 내 성향으로 볼 때 결혼(인연을 맺고 매듭짓는 것)이 어떤 조건·마음 상태·삶의 단계에서 잘 풀리는지.
+- 반대로 어떤 때 서두르면 안 되는지. 특정 연도·나이·달은 절대 쓰지 마세요(그건 따로 안내됨).
+- 4~6문장.
+
+[spouse_type — 나에게 어울리는 배우자 성향]
+- 내 기질의 빈틈을 채워주는 배우자의 성격·태도·연애 방식. 어떤 사람과 함께일 때 내가 가장 편안하고 안정되는지.
+- 반대로 나와 부딪히기 쉬운 유형도 한 가지 짚어줍니다. 4~6문장.
+
+[prep_strategy — 결혼 성공률을 높이는 준비 전략]
+- 좋은 인연을 만나고 관계를 결혼까지 끌고 가기 위해 내가 끌어올려야 할 매력·습관, 고치면 좋은 부분.
+- 2030 세대의 현실(소개팅·연애·자기관리·경제력·가족 관계)로 구체적으로. 4~6문장.
+
+[말투·형식 규칙 — 최우선]
+- 친근한 존댓말만('~해요/~예요/~입니다/~보세요'). 반말 금지.
+- 번호·목록 없이 서술형 문장으로만.
+- 사주 용어 노출 금지("일주"·"간지"·"천간"·"지지"·"십신"·"오행"·"배우자성"·"관성"·"재성" 등). "나"와 "배우자(상대)"로만 지칭.
+- 참고로 준 키워드([성장형] 등)를 그대로 붙여넣지 말고 자기 문장으로 풉니다. 한자를 쓰지 마세요.
+
+[생성할 항목 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{ "marriage_timing": "...", "spouse_type": "...", "prep_strategy": "..." }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "...동일 구조..." }}
+}}"""
+
+
+def _marriage_solo_valid(entry: Any) -> bool:
+    return isinstance(entry, dict) and all(
+        len(str(entry.get(f, "")).strip()) >= 90 for f in _MARRIAGE_SOLO_KEYS)
+
+
+def _marriage_solo_coerce(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    for f in _MARRIAGE_SOLO_KEYS:
+        if isinstance(entry.get(f), str):
+            entry[f] = _strip_hanja(_rel_clean(entry[f]))
+    return entry
+
+
+def run_marriage_solo(args) -> None:
+    out_path = args.out or RELATIONSHIP_DB_PATH
+    db = _load_json(out_path)
+    all_keys = [f"{gj}_marriage" for gj in sixty_gapja()]
+    total = len(all_keys)                 # 60
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 10
+
+    def _has_base(k):
+        e = db.get(k)
+        return isinstance(e, dict) and str(e.get("overall", "")).strip()
+
+    done = sum(1 for k in all_keys if _marriage_solo_valid(db.get(k)))
+    print(f"DB: {out_path}")
+    print(f"기존 완료(3필드): {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+
+    pending = [k for k in all_keys
+               if _has_base(k) and (args.overwrite or not _marriage_solo_valid(db.get(k)))]
+    seg = pending[: (args.limit or len(all_keys))]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    def _store(_db, _key, _entry, _model):
+        base = _db.get(_key) if isinstance(_db.get(_key), dict) else {}
+        merged = dict(base)
+        for f in _MARRIAGE_SOLO_KEYS:
+            merged[f] = _entry.get(f)
+        merged["_model_solo"] = _model
+        _db[_key] = merged
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=_marriage_solo_prompt,
+        valid_fn=_marriage_solo_valid,
+        coerce_fn=_marriage_solo_coerce,
+        models=models, max_output_tokens=MARRIAGE_SOLO_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=_MARRIAGE_SOLO_SYSTEM,
+        banmal_fn=(lambda e: _banmal_in_texts([str(e.get(f, "")) for f in _MARRIAGE_SOLO_KEYS])),
+        unit="일주", store_fn=_store,
+        count_fn=(lambda d: sum(1 for k in all_keys if _marriage_solo_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[solo 결혼운 3필드] 대상 {len(todo)}개",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _marriage_solo_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료(3필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
 # ─────────────────────────────── YEARLY (연간 운세 — 나의 일주 60 × 세운 간지 60)
 # 세운 간지는 60갑자 순환이라 (일주, 세운)만으로 결정 → 연도 무관 재사용.
 # 정확한 베스트/주의 월·월별 강도 그래프는 런타임 엔진이 원국 전체로 계산한다.
@@ -2497,7 +2637,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
     p.add_argument("--domain",
                    choices=["daily", "personality", "relationship", "compatibility",
-                            "reunion_charm", "crush_charm", "marriage_extras", "yearly_overall"],
+                            "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
+                            "yearly_overall"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -2545,6 +2686,8 @@ def main() -> None:
         run_love_charm(args, "crush")
     elif args.domain == "marriage_extras":
         run_marriage_extras(args)
+    elif args.domain == "marriage_solo":
+        run_marriage_solo(args)
     elif args.domain == "yearly_overall":
         run_yearly_overall(args)
 

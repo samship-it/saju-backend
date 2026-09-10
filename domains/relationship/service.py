@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 
 from config import KST
 from core.saju_base import calculate_saju
+from core.constants import CHUNG
 from core.timeframe import next_3_months, marriage_10year_window
 from shared.public import person_summary
 from shared.text_format import paragraphize
@@ -150,6 +151,73 @@ _MARRIAGE_SCENARIO_FALLBACK = (
 )
 
 
+# solo 전용 추가 필드 정적 DB 미스 시 고정 폴백.
+_MARRIAGE_SOLO_FALLBACK = {
+    "marriage_timing": (
+        "당신의 결혼운은 마음이 안정되고 스스로의 삶이 어느 정도 자리를 잡았다고 느낄 때 가장 크게 열립니다. "
+        "무언가에 쫓기듯 서두르기보다, 지금의 관계나 나 자신에게 확신이 설 때 한 걸음 내딛는 편이 좋아요. "
+        "인연은 예상치 못한 자리에서 자연스럽게 이어지는 경우가 많으니, 새로운 모임이나 관계에 마음을 열어두세요. "
+        "반대로 일이나 관계가 크게 흔들리는 시기에는 큰 결정을 미루고 흐름이 잔잔해질 때를 기다리는 것이 현명합니다."
+    ),
+    "spouse_type": (
+        "당신에게 잘 맞는 배우자는 당신이 놓치기 쉬운 부분을 차분하게 채워주는 사람이에요. "
+        "감정 기복이 크지 않고 대화가 잘 통하며, 당신의 페이스를 존중해 주는 사람과 함께일 때 가장 편안합니다. "
+        "책임감이 있으면서도 유연해서, 갈등이 생겨도 대화로 풀어가려는 태도를 가진 사람이 잘 맞아요. "
+        "반대로 자기 방식만 고집하거나 감정 표현이 지나치게 격한 유형과는 부딪히기 쉬우니 초반에 잘 살펴보세요."
+    ),
+    "prep_strategy": (
+        "좋은 인연을 결혼까지 이어가려면 먼저 나의 일상과 마음의 여유를 단단히 만들어두는 것이 중요해요. "
+        "상대의 말을 끝까지 듣고 내 감정을 솔직하게 표현하는 연습을 해두면 관계가 훨씬 안정됩니다. "
+        "경제적인 계획과 미래에 대한 생각을 어느 정도 정리해두면 상대에게 신뢰를 주기 쉬워요. "
+        "새로운 만남의 기회를 피하지 말고, 나를 꾸미고 관리하는 데에도 꾸준히 신경 써보세요."
+    ),
+}
+
+# 결혼운 10년 강도 reason 코드 → 사용자용 라벨.
+_MARRIAGE_REASON_KO = {
+    "배우자성 세운": "인연이 들어오는 기운이 강한 해",
+    "일지 육합": "결혼 상대와 손발이 맞아떨어지는 해",
+    "일지 삼합": "배우자 자리가 활발하게 움직이는 해",
+    "일지 충": "관계에 변화·이동이 큰 해",
+    "도화 세운": "매력이 빛나고 만남이 많아지는 해",
+    "용신 세운": "전반적으로 나에게 유리한 흐름의 해",
+}
+
+# 점수·궁합 → '감성 한줄 총평' 헤드라인 (템플릿, 생성 없음).
+_HEADLINE_COUPLE = [
+    (88, "서로의 부족함을 완벽하게 메워주는, 천생연분 밸런스"),
+    (78, "오래 함께할수록 단단해지는, 믿음직한 동반자"),
+    (68, "다른 색깔이 만나 근사한 조화를 이루는 관계"),
+    (58, "서로 맞춰가며 완성해가는, 성장하는 사랑"),
+    (0, "정성을 들인 만큼 깊어지는, 노력이 필요한 인연"),
+]
+_HEADLINE_SOLO = [
+    (85, "인연을 매듭짓기에 더없이 좋은, 결혼운이 무르익은 흐름"),
+    (72, "준비된 만큼 이뤄지는, 좋은 인연이 가까이 오는 흐름"),
+    (60, "기반을 다지면 결실로 이어지는, 안정적인 결혼운"),
+    (48, "서두르기보다 관계의 질을 쌓아야 할 시기"),
+    (0, "결혼보다 나의 삶을 단단히 만드는 데 집중할 때"),
+]
+
+
+def _marriage_headline(score: int, is_couple: bool, day_ji_chung: bool) -> str:
+    table = _HEADLINE_COUPLE if is_couple else _HEADLINE_SOLO
+    base = next(txt for lo, txt in table if score >= lo)
+    if is_couple and day_ji_chung and score < 78:
+        base += " (변화가 잦으니 솔직한 대화가 열쇠예요)"
+    return base
+
+
+def _reasons_ko(reasons) -> list:
+    seen, out = set(), []
+    for r in reasons or []:
+        ko = _MARRIAGE_REASON_KO.get(r)
+        if ko and ko not in seen:
+            seen.add(ko)
+            out.append(ko)
+    return out
+
+
 def _marriage_fallback(w1, w2, partner_exists: bool) -> dict:
     d = {
         "overall": (
@@ -188,6 +256,15 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
 
     # 점수는 AI 가 아니라 엔진의 10년 강도(BEST 1위)에서 결정 — 결정적(deterministic).
     score = w1["best"][0]["strength"] if w1["best"] else 60
+    score = max(0, min(100, int(round(float(score)))))
+
+    # BEST 연도에 사용자용 사유 라벨을 붙인다.
+    best_years = [{**b, "reasons_ko": _reasons_ko(b.get("reasons"))} for b in w1["best"]]
+    best_year = _couple_best_year(w1, w2) if partner_exists else (
+        best_years[0]["year"] if best_years else ty)
+
+    day_ji_chung = bool(partner_exists and s2 and
+                        frozenset((s1.get("day_branch"), s2.get("day_branch"))) in CHUNG)
 
     out = {
         "content_type": "결혼운",
@@ -196,16 +273,18 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
         "partner_exists": partner_exists,
         "combo_key": content_db.make_key(g1, g2, "marriage"),
         "person1": _info(s1),
-        "overall_score": max(0, min(100, int(round(float(score))))),
+        "overall_score": score,
+        "headline": _marriage_headline(score, partner_exists, day_ji_chung),
+        "best_year": best_year,
         "best_period_label": w1["best_period_label"],
-        "best_years": w1["best"],
+        "best_years": best_years,
         "year_strengths": w1["years"],
         "overall": paragraphize(str(data.get("overall", ""))),
     }
     if partner_exists:
         out["person2"] = _info(s2)
         out["partner_best_years"] = w2["best"]
-        out["couple_best_year"] = _couple_best_year(w1, w2)
+        out["couple_best_year"] = best_year
         couple_overall = data.get("couple_overall") or _marriage_fallback(w1, w2, True)["couple_overall"]
         out["couple_overall"] = paragraphize(str(couple_overall))
 
@@ -224,6 +303,12 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
             paragraphize(str(scenario)) if isinstance(scenario, str) and scenario.strip()
             else _MARRIAGE_SCENARIO_FALLBACK
         )
+    else:
+        # solo 전용 3필드: 정적 DB 에 있으면 사용, 없으면 폴백.
+        for f in ("marriage_timing", "spouse_type", "prep_strategy"):
+            v = data.get(f) if isinstance(data, dict) else None
+            out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
+                      else _MARRIAGE_SOLO_FALLBACK[f])
     return out, is_fallback
 
 
