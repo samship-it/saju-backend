@@ -2357,6 +2357,8 @@ _YEARLY_FIXUPS = [
     ("이번 년도", "올해"), ("이번년도", "올해"), ("금년", "올해"),
     ("끌림도 갈등도 크지 않은 담백한 흐름", "특별한 사건 없이 잔잔한 흐름"),
     ("끌림도 갈등도 약한", "특별한 자극이 크지 않은"),
+    ("익숙한 내리막길보다", "익숙한 길에서 벗어나"),
+    ("내리막길", "지난 흐름"),
 ]
 
 
@@ -2368,10 +2370,10 @@ def _yearly_overall_coerce(entry: Any) -> Any:
         if isinstance(v, str):
             for bad, good in _YEARLY_FIXUPS:
                 v = v.replace(bad, good)
-            entry[f] = _rel_clean(v)
+            entry[f] = _strip_hanja(_rel_clean(v))
     kw = entry.get("keywords")
     if isinstance(kw, list):
-        entry["keywords"] = [_rel_clean(str(k)).strip() for k in kw if str(k).strip()][:3]
+        entry["keywords"] = [_strip_hanja(_rel_clean(str(k))).strip() for k in kw if str(k).strip()][:3]
     return entry
 
 
