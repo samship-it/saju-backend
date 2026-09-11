@@ -2586,59 +2586,197 @@ def run_yearly_overall_extras(args) -> None:
     print(f"완료(4필드) {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
-# ───── YEARLY 분야 8종 (재물/연애/사업/직장/건강/여행/취미) — 총운과 동일 6필드 스키마
-# 키 "<나의 일주>_<세운 간지>", 파일 domains/yearly/data/yearly_<category>_db.json.
-_YEARLY_CAT = {
-    "wealth": {"ko": "재물운",
-        "flow": "올해 돈이 들어오고 나가는 전체 흐름 — 재물운이 강해지는 조건, 어디서 기회가 오고 어디서 새는지",
-        "advice": "투자·저축·소비·대출에서 올해 꼭 지킬 원칙과, 금전 사기·과소비·보증 같은 조심할 것"},
-    "love": {"ko": "연애운",
-        "flow": "올해 새로운 인연과 기존 관계의 전체 흐름 — 설렘·권태·이별·재회 가능성, 어떤 만남이 열리는지",
-        "advice": "연애할 때 올해 취하면 좋은 태도, 빠지기 쉬운 착각, 조심해야 할 상대 유형"},
-    "business": {"ko": "사업운",
-        "flow": "올해 사업·창업·확장의 전체 흐름 — 매출·거래처·협업 운, 벌일 때와 움츠릴 때",
-        "advice": "자금·동업·계약에서 올해 조심할 것과, 사업을 키우려면 무엇에 집중해야 하는지"},
-    "career_change": {"ko": "직장·이직운",
-        "flow": "올해 이직·승진·부서이동의 전체 흐름 — 커리어가 도약하는 조건, 상사·동료 관계의 분위기",
-        "advice": "이직·연봉협상·사내 관계에서 올해 취할 전략과, 조직 안에서 조심할 부분"},
-    "health": {"ko": "건강운",
-        "flow": "올해 컨디션과 생활 관리의 전체 흐름 — 활력이 도는 때와 처지는 때, 특히 신경 써야 할 부분",
-        "advice": "올해 챙기면 좋은 건강 습관, 무리하면 탈나는 지점, 스트레스 관리법 (특정 질병은 단정하지 말 것)"},
-    "travel": {"ko": "여행운",
-        "flow": "올해 이동·여행의 전체 흐름 — 국내와 해외, 이동수가 열리는 시기와 잘 맞는 여행 스타일",
-        "advice": "여행·이사·장거리 이동에서 올해 조심할 것과, 어떤 여행이 나에게 가장 도움이 되는지"},
-    "hobby": {"ko": "취미운",
-        "flow": "올해 새로 빠질 만한 취미·활동의 전체 흐름 — 취미가 올해 나에게 주는 의미",
-        "advice": "나를 살리는 활동 유형과, 취미로 스트레스·관계·커리어까지 풀어내는 법"},
+# ───── YEARLY 분야운 v2 — 분야별 특화 스키마 + 단일 키워드 + concept_object 태그
+# 키 "<나의 일주>_<세운 간지>" (study 만 "<일주>_<세운>_<생애단계코드>").
+# 공통 필드: one_line, keywords[정확히 1], concept_object(objects 중 1), overall_flow
+#            + 분야별 특화 텍스트 필드 + (일부) rating_fields(1~5 별점 객체).
+# 총운/재물/애정은 구 6필드 스키마 유지(차후 마이그레이션) — 여기서 다루지 않는다.
+_YEARLY_V2: Dict[str, Dict[str, Any]] = {
+    "business": {
+        "ko": "사업운",
+        "objects": ["빌딩", "로켓", "그래프", "아이디어"],
+        "logic": "식상 + 재성 + 비겁 + 관성",
+        "text_fields": [
+            ("overall_flow", "올해 사업 전체 흐름 — 매출·거래처·협업의 기운, 벌일 때와 움츠릴 때 (5~7문장)"),
+            ("business_traits", "올해 나의 사업가 기질 — '개척형 / 아이디어형 / 안정내실형' 중 어디에 가장 가까운지 규정하고, 그 근거와 올해 활용법 (3~5문장)"),
+            ("direction", "올해 맞는 사업 방향성 — '프리랜서 / 사이드 프로젝트 / 확장형' 중 무엇이 유리한지와 이유 (3~5문장)"),
+            ("expansion_timing", "사업 확장·시작에 좋은 시기 — 상반기/하반기·계절 조건으로만 (특정 월 숫자 금지) (2~4문장)"),
+            ("partner_luck", "올해 사업 파트너·협업운 — 어떤 유형과 잘 맞고 무엇을 조심할지 (3~5문장)"),
+        ],
+    },
+    "career_change": {
+        "ko": "직장·이직운",
+        "objects": ["사무실", "서류가방", "열린 문", "계단"],
+        "logic": "관성 + 인성 + 식상 + 일간 강약 + 대운/세운",
+        "text_fields": [
+            ("overall_flow", "올해 직장운 전체 흐름 — 조직 내 입지, 상사·동료 관계, 평가·승진 분위기 (5~7문장)"),
+            ("job_change_eval", "올해 이직 평가 — 지금 옮기면 얻는 이점과 성공 가능성, 지금이 적기인지 (3~5문장)"),
+            ("opportunity_style", "이직 기회가 오는 방식·추천 경로 — 지인 제안 / 공채 / 헤드헌팅 등 올해 어디에 힘이 실리는지 (3~5문장)"),
+            ("ideal_environment", "올해 나에게 맞는 직장 환경·조직 문화 — 규모·속도·분위기 (3~5문장)"),
+            ("timing_flow", "이직·승진 타이밍 흐름 — 상반기/하반기·계절 조건으로만 (특정 월 숫자 금지) (2~4문장)"),
+        ],
+        "rating_fields": [
+            ("current_vs_change", ("stability", "growth", "change"),
+             "현재 자리 유지 대비 이직했을 때의 [안정성 stability, 성장성 growth, 변화도 change]를 각각 1~5 정수 별점으로"),
+        ],
+    },
+    "health": {
+        "ko": "건강운",
+        "objects": ["잎사귀", "사람", "물", "햇빛"],
+        "logic": "해당 세운이 생활 리듬·활력·회복에 주는 작용",
+        "text_fields": [
+            ("overall_flow", "올해 컨디션·생활 관리 전체 흐름 — 활력이 도는 때와 처지는 때 (5~7문장)"),
+            ("care_points", "올해 특히 신경 쓸 관리 포인트 — 생활 습관·리듬 위주로 (특정 질병 단정 금지) (3~5문장)"),
+            ("recovery_method", "지치거나 무리했을 때 나에게 맞는 회복법 — 휴식 / 운동 / 사람 / 자연 중 어느 쪽인지와 방법 (3~5문장)"),
+        ],
+    },
+    "travel": {
+        "ko": "여행운",
+        "objects": ["여행가방", "비행기", "지도", "풍경"],
+        "logic": "식상 + 역마 + 충 + 이동",
+        "text_fields": [
+            ("overall_flow", "올해 이동·여행 전체 흐름 — 이동수가 열리는 기운, 국내와 해외 (5~7문장)"),
+            ("travel_style", "올해 나에게 맞는 여행 스타일 — '도시형 vs 자연형', '휴양형 vs 장기체류형' 축으로 규정 (3~5문장)"),
+            ("travel_luck", "여행 중 들어오는 행운 — 어떤 만남·계기·기회가 생기는지 (2~4문장)"),
+            ("recommended_spots", "추천 장소 방향·여행 시기 — 방위·풍경 유형과 계절 조건으로 (특정 월 숫자 금지) (2~4문장)"),
+        ],
+    },
+    "hobby": {
+        "ko": "취미운",
+        "objects": ["카메라", "기타", "그림", "운동용품"],
+        "logic": "오행 + 십신 + 역마 + 올해 활성 요소",
+        "text_fields": [
+            ("overall_flow", "올해 취미·여가 활동 전체 흐름 — 취미가 올해 나에게 주는 의미 (5~7문장)"),
+            ("active_activities", "올해 잘 맞는 활동 — 운동 / 악기 / 그림·창작 / 촬영 등 구체적으로 (3~5문장)"),
+            ("solo_vs_group", "혼자 몰입하는 취미 vs 함께하는 취미 중 올해 맞는 쪽과 이유 (2~4문장)"),
+            ("benefits", "취미로 올해 얻게 되는 것 — 에너지·스트레스 해소·관계·커리어로 이어지는 결과 (3~5문장)"),
+        ],
+    },
 }
+
+# study 는 생애 6단계 × (일주×세운). 나머지 v2 분야와 동일 규격 + stage 컨텍스트.
+_YEARLY_STUDY_SPEC: Dict[str, Any] = {
+    "ko": "학업운",
+    "objects": ["책", "노트", "펜", "스탠드 조명"],
+    "logic": "관성 + 인성 + 식상 + 일간 강약 + 대운/세운",
+    "text_fields": [
+        ("overall_flow", "해당 연령대 기준 올해 학업·배움 전체 흐름 (5~7문장)"),
+        ("study_style", "올해 나에게 가장 효율적인 학습 방식 — 몰입형 / 반복형 / 토론형 / 실전형 등 규정 (3~5문장)"),
+        ("focus_and_achievement", "올해 집중력과 시험·자격증 성취운 — 결과가 잘 나오는 조건과 흔들리는 지점 (3~5문장)"),
+        ("recommended_fields", "올해 배우거나 도전하면 좋은 분야·자격증 — 연령대 현실에 맞게 구체적으로 (3~5문장)"),
+    ],
+}
+# (코드, 라벨, 이 단계에서 '배움'의 현실 맥락)
+_STUDY_STAGES: List[Tuple[str, str, str]] = [
+    ("s0",  "10대 이하", "수능·내신·입시와 진로 탐색이 중심인 시기"),
+    ("s20", "20대",     "취업 준비·자격증·어학·대학원 등 사회 진입을 위한 배움이 중심인 시기"),
+    ("s30", "30대",     "이직·전직 준비, 실무 심화, 커리어 확장을 위한 자기계발이 중심인 시기"),
+    ("s40", "40대",     "재교육·전문성 강화, 자녀 교육 지원, 제2커리어 준비가 얽히는 시기"),
+    ("s50", "50대",     "은퇴 이후를 대비한 새 기술·자격 취득, 제2의 직업을 위한 배움이 중심인 시기"),
+    ("s60", "60대 이상", "평생학습·취미형 배움, 건강하게 머리를 쓰는 활동이 중심인 시기"),
+]
+_STUDY_STAGE_MAP = {c: (label, ctx) for c, label, ctx in _STUDY_STAGES}
 
 
 def _yearly_cat_db_path(category: str) -> str:
     return os.path.join(_ROOT, "domains", "yearly", "data", f"yearly_{category}_db.json")
 
 
-def _yearly_cat_prompt(category: str, items: List[Tuple[str]]) -> str:
-    c = _YEARLY_CAT[category]
-    keys = [it[0] for it in items]
-    blocks = "\n\n".join(_yearly_item_block(k) for k in keys)
-    return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {c['ko']}'를 씁니다.
-각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
+def _yearly_v2_all_keys(category: str) -> List[str]:
+    g = sixty_gapja()
+    if category == "study":
+        return [f"{a}_{se}_{sc}" for a in g for se in g for sc, _, _ in _STUDY_STAGES]
+    return [f"{a}_{se}" for a in g for se in g]
 
-[6필드 — 모두 '{c['ko']}' 관점으로]
-- one_line: 올해 {c['ko']}를 한 문장으로 압축 (12~24자, 짧고 센스 있게)
-- keywords: 올해 {c['ko']} 핵심 키워드 정확히 3개. 반드시 '{c['ko']}'와 직접 관련된 구체적인 한국어 명사/명사구로 쓰고, "승부욕 자극"·"성취욕 자극"·"책임감 요구"·"표현을 이끎"·"담담한 흐름"·"부드러운 흐름"처럼 아래 참고 문구에서 가져온 추상 표현은 절대 키워드로 쓰지 마세요.
-- overall_flow: {c['flow']} (5~7문장)
-- first_half: 상반기 {c['ko']} 흐름 — 연초 분위기, 집중하면 좋은 것, 조심할 부분 (4~6문장)
-- second_half: 하반기 {c['ko']} 흐름 — 상반기와 어떻게 달라지는지, 연말로 갈수록의 방향 (4~6문장)
-- advice: {c['advice']} — 2030 세대가 실제로 겪는 상황으로 구체적으로 (4~6문장)
+
+def _yearly_v2_spec(category: str) -> Dict[str, Any]:
+    return _YEARLY_STUDY_SPEC if category == "study" else _YEARLY_V2[category]
+
+
+# v2 는 힌트를 '서술 문구' 대신 '한 단어 태그'로만 준다(그대로 복사돼도 티가 안 나고,
+# 모델이 반드시 자기 문장으로 풀 수밖에 없게).
+_V2_TOGETHER_WORD = {
+    "육합": "협력", "삼합": "결집", "방합": "동행", "반합": "지원",
+    "충": "변동", "복음": "반복", "파": "삐걱거림", "해": "구설", "형": "조정",
+}
+_V2_INFLUENCE_WORD = {
+    "비겁": "경쟁심", "식상": "표현", "재성": "성취", "관성": "책임", "인성": "안정",
+}
+
+
+def _v2_influence_words(dm: str, seg: str, sej: str) -> str:
+    seen = []
+    for code in (calculate_sipsin(dm, seg, is_gan=True), calculate_sipsin(dm, sej, is_gan=False)):
+        w = _V2_INFLUENCE_WORD.get(sipsin_group(code))
+        if w and w not in seen:
+            seen.append(w)
+    return "·".join(seen) or "무난"
+
+
+def _yearly_v2_item_block(key: str, category: str) -> str:
+    parts = key.split("_")
+    a, se = parts[0], parts[1]
+    dm, dbc = a[0], a[1]
+    seg, sej = se[0], se[1]
+    rel = branch_relation(dbc, sej)
+    m = re.match(r"([가-힣]+)", rel)
+    together = _V2_TOGETHER_WORD.get(m.group(1) if m else "", "평이")
+    me_tag = "/".join(dict.fromkeys([
+        _COMPAT_ELEM_TAG.get(GAN_ELEM.get(dm), ""), _COMPAT_ELEM_TAG.get(JI_ELEM.get(dbc), ""),
+    ])).strip("/")
+    lines = [
+        f"── 키: {key} ──",
+        f"- 나: {_compat_persona(dm, dbc)}" + (f"  [성향: {me_tag}]" if me_tag else ""),
+        f"- 올해가 주는 자극(키워드 힌트, 그대로 쓰지 말 것): {_v2_influence_words(dm, seg, sej)}",
+        f"- 올해 기운의 결(키워드 힌트, 그대로 쓰지 말 것): {together}",
+    ]
+    if category == "study":
+        label, ctx = _STUDY_STAGE_MAP.get(parts[2], ("", ""))
+        lines.append(f"- 생애단계: {label} — {ctx}")
+    return "\n".join(lines)
+
+
+def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
+    spec = _yearly_v2_spec(category)
+    ko = spec["ko"]
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_yearly_v2_item_block(k, category) for k in keys)
+    objs = spec["objects"]
+    tf_lines = "\n".join(f"- {name}: {desc}" for name, desc in spec["text_fields"])
+    rating = spec.get("rating_fields", [])
+    rating_lines = "\n".join(
+        "- {}: {}. 반드시 {{{}}} 형태의 객체.".format(
+            name, desc, ", ".join(s + ': <1~5 정수>' for s in subs))
+        for name, subs, desc in rating)
+
+    schema_obj = {"one_line": "...", "keywords": ["핵심키워드 1개"], "concept_object": f"<{' / '.join(objs)} 중 하나>"}
+    for name, _ in spec["text_fields"]:
+        schema_obj[name] = "..."
+    for name, subs, _ in rating:
+        schema_obj[name] = {s: 3 for s in subs}
+    schema_str = json.dumps(schema_obj, ensure_ascii=False, indent=4)
+
+    stage_note = ""
+    if category == "study":
+        stage_note = "\n- 각 조합의 '생애단계 맥락'에 철저히 맞춰 씁니다. 10대에게 자격증·이직 얘기, 60대에게 수능 얘기를 하지 않습니다."
+
+    return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {ko}'를 씁니다.
+각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
+(참고 명리 로직: {spec['logic']} — 이 관점의 해석이되, 용어는 절대 노출하지 않습니다.){stage_note}
+
+[공통 필드]
+- one_line: 올해 {ko}를 한 문장으로 압축 (12~26자). 아래 keywords 의 단어가 자연스럽게 녹아들게 씁니다. 부정적 단어로 시작하지 않습니다.
+- keywords: 올해 {ko}의 핵심을 담은 한국어 키워드 '정확히 1개'만. ["단어"] 처럼 배열 안에 1개. '{ko}'와 직접 맞닿은 구체적 명사/짧은 명사구로, 참고 문구에서 가져온 추상 표현("승부욕 자극" 등)은 쓰지 않습니다.
+- concept_object: 이 조합의 올해 {ko}를 가장 잘 상징하는 오브젝트 1개를 다음에서 고릅니다: {', '.join(objs)}. (정확히 이 단어 중 하나만)
+
+[특화 필드 — 모두 '{ko}' 관점]
+{tf_lines}
+{rating_lines}
 
 [말투·형식 규칙 — 최우선]
-- 모든 문장을 친근한 존댓말로만 끝냅니다: '~해요 / ~예요 / ~입니다 / ~보세요 / ~됩니다 / ~할게요' 등.
-- 문장을 '~한다.' '~온다.' '~된다.' '~있다.' '~겠지.' '~거야.' 처럼 끝내면 안 됩니다(반말·문어체 금지). 극적으로 쓰고 싶어도 반드시 '~해요' 로 바꿉니다. keywords 만 명사구.
-- 번호·순번·목록 기호 없이 서술형 문장으로만.
-- 특정 월(1월·3월·7월 등)이나 특정 연도·나이를 단정하지 마세요. '상반기·하반기·연초·초봄·한여름·가을 무렵·연말' 같은 표현만 씁니다.
-- 사주 용어 노출 금지: 십신·오행·합충·용신은 물론 "일주"·"간지"·"세운"·"천간"·"지지" 같은 말도 쓰지 않습니다. "나"와 "올해"로만 지칭합니다.
-- 참고로 준 문구([성장형] 등)를 문장에 그대로 붙여넣지 말고 상황·행동으로 풀어 씁니다. one_line 은 부정적 단어로 시작하지 않습니다. 한자를 쓰지 마세요.
+- 모든 문장을 친근한 존댓말로만 끝냅니다: '~해요 / ~예요 / ~입니다 / ~보세요 / ~됩니다' 등. '~한다/~된다/~있다/~거야/~겠지' 같은 반말·문어체 종결 금지. keywords·concept_object 만 명사.
+- 번호·순번·목록 기호 없이 서술형 문장으로. 특정 월(1월·7월 등)·특정 연도·특정 나이 숫자를 단정하지 않습니다('상반기·하반기·연초·초봄·한여름·가을 무렵·연말'만).
+- 사주 용어 노출 금지(십신·오행·합충·용신·"일주"·"간지"·"세운"·"천간"·"지지"). "나"와 "올해"로만 지칭. 참고 문구를 그대로 붙여넣지 말고 자기 문장으로. 한자 사용 금지.
 
 [생성할 조합 — 총 {len(items)}개]
 
@@ -2646,39 +2784,103 @@ def _yearly_cat_prompt(category: str, items: List[Tuple[str]]) -> str:
 
 [출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
 - 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
-- 각 값 구조:
+- 각 값 구조(모든 조합 동일):
 
 {{
-  "{keys[0]}": {{
-    "one_line": "...",
-    "keywords": ["...", "...", "..."],
-    "overall_flow": "...",
-    "first_half": "...",
-    "second_half": "...",
-    "advice": "..."
-  }},
+  "{keys[0]}": {schema_str},
   "{keys[1] if len(keys) > 1 else '키2'}": {{ "...위와 동일 구조..." }}
 }}"""
 
 
+def _yearly_v2_text_names(category: str) -> List[str]:
+    return [n for n, _ in _yearly_v2_spec(category)["text_fields"]]
+
+
+def _yearly_v2_coerce(category: str, entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    spec = _yearly_v2_spec(category)
+    for name in _yearly_v2_text_names(category):
+        v = entry.get(name)
+        if isinstance(v, list):   # 모델이 배열로 준 서술 필드 → 한 문장으로
+            v = " ".join(str(x).strip().rstrip(".。") + "." for x in v if str(x).strip())
+        if isinstance(v, str):
+            for bad, good in _YEARLY_FIXUPS:
+                v = v.replace(bad, good)
+            entry[name] = _strip_hanja(_rel_clean(v))
+    # one_line
+    if isinstance(entry.get("one_line"), str):
+        entry["one_line"] = _strip_hanja(_rel_clean(entry["one_line"]))
+    # keywords → 정확히 1개
+    kw = entry.get("keywords")
+    if isinstance(kw, str):
+        kw = [kw]
+    if isinstance(kw, list):
+        cleaned = [_strip_hanja(_rel_clean(str(k))).strip() for k in kw if str(k).strip()]
+        cleaned = [k for k in cleaned if not any(b in k for b in _YEARLY_KW_LEAKS)]
+        entry["keywords"] = cleaned[:1]
+    # concept_object → objects 중 하나로 정규화
+    objs = spec["objects"]
+    co = _strip_hanja(str(entry.get("concept_object", ""))).strip().strip("[]\"' ")
+    match = next((o for o in objs if o in co or co in o), None) if co else None
+    entry["concept_object"] = match or (objs[0] if not co else co)
+    # rating_fields → 1~5 정수, 기본 3
+    for name, subs, _ in spec.get("rating_fields", []):
+        rv = entry.get(name)
+        rv = rv if isinstance(rv, dict) else {}
+        entry[name] = {}
+        for s in subs:
+            try:
+                n = int(round(float(rv.get(s))))
+            except (TypeError, ValueError):
+                n = 3
+            entry[name][s] = max(1, min(5, n))
+    return entry
+
+
+def _yearly_v2_valid(category: str, entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if not str(entry.get("one_line", "")).strip():
+        return False
+    kw = entry.get("keywords")
+    if not (isinstance(kw, list) and len(kw) == 1 and str(kw[0]).strip()):
+        return False
+    if str(entry.get("concept_object", "")).strip() not in _yearly_v2_spec(category)["objects"]:
+        return False
+    spec = _yearly_v2_spec(category)
+    for name, _ in spec["text_fields"]:
+        v = str(entry.get(name, "")).strip()
+        need = 80 if name == "overall_flow" else 35
+        if len(v) < need:
+            return False
+    for name, subs, _ in spec.get("rating_fields", []):
+        rv = entry.get(name)
+        if not (isinstance(rv, dict) and all(isinstance(rv.get(s), int) and 1 <= rv[s] <= 5 for s in subs)):
+            return False
+    return True
+
+
 def run_yearly_cat(args, category: str) -> None:
-    ko = _YEARLY_CAT[category]["ko"]
+    spec = _yearly_v2_spec(category)
+    ko = spec["ko"]
     out_path = args.out or _yearly_cat_db_path(category)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     db = _load_json(out_path)
-    all_keys = yearly_all_keys()
-    total = len(all_keys)                 # 3,600
+    all_keys = _yearly_v2_all_keys(category)
+    total = len(all_keys)
     if args.only:
         all_keys = [k for k in all_keys if k == args.only or k.startswith(args.only + "_")]
 
     if not args.batch or args.batch < 2:
         args.batch = 10
 
-    done = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    _v = lambda e: _yearly_v2_valid(category, e)
+    done = sum(1 for k in all_keys if _v(db.get(k)))
     print(f"DB: {out_path}")
     print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
 
-    pending = [k for k in all_keys if args.overwrite or not _yearly_overall_valid(db.get(k))]
+    pending = [k for k in all_keys if args.overwrite or not _v(db.get(k))]
     seg = pending[: (args.limit or len(all_keys))]
     if args.dry_run:
         print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:6])}")
@@ -2699,17 +2901,18 @@ def run_yearly_cat(args, category: str) -> None:
     sub.limit = 0
     _run_batched(
         sub, todo, db, out_path, api_keys,
-        prompt_fn=(lambda its, _c=category: _yearly_cat_prompt(_c, its)),
-        valid_fn=_yearly_overall_valid,
-        coerce_fn=_yearly_overall_coerce,
+        prompt_fn=(lambda its, _c=category: _yearly_v2_prompt(_c, its)),
+        valid_fn=(lambda e, _c=category: _yearly_v2_valid(_c, e)),
+        coerce_fn=(lambda e, _c=category: _yearly_v2_coerce(_c, e)),
         models=models, max_output_tokens=YEARLY_MAX_OUTPUT_TOKENS,
         total=total, system_instruction=_YEARLY_SYSTEM,
-        banmal_fn=(lambda e: _banmal_in_texts(_yearly_overall_texts(e))),
-        unit="조합", count_fn=(lambda d: sum(1 for k in all_keys if _yearly_overall_valid(d.get(k)))),
-        header=f"\n{'━' * 60}\n[연간 {ko}] 대상 {len(todo)}개",
+        banmal_fn=(lambda e, _c=category: _banmal_in_texts(
+            [str(e.get(n, "")) for n in _yearly_v2_text_names(_c)])),
+        unit="조합", count_fn=(lambda d, _c=category: sum(1 for k in all_keys if _yearly_v2_valid(_c, d.get(k)))),
+        header=f"\n{'━' * 60}\n[연간 {ko}{' · 생애 6단계' if category == 'study' else ''}] 대상 {len(todo)}개",
     )
 
-    final_cnt = sum(1 for k in all_keys if _yearly_overall_valid(db.get(k)))
+    final_cnt = sum(1 for k in all_keys if _v(db.get(k)))
     print(f"\n{'=' * 60}")
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
@@ -2919,8 +3122,8 @@ def main() -> None:
                    choices=["daily", "personality", "relationship", "compatibility",
                             "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
                             "yearly_overall", "yearly_overall_extras",
-                            "yearly_wealth", "yearly_love", "yearly_business",
-                            "yearly_career_change", "yearly_health", "yearly_travel", "yearly_hobby"],
+                            "yearly_business", "yearly_career_change", "yearly_study",
+                            "yearly_health", "yearly_travel", "yearly_hobby"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -2974,7 +3177,9 @@ def main() -> None:
         run_yearly_overall(args)
     elif args.domain == "yearly_overall_extras":
         run_yearly_overall_extras(args)
-    elif args.domain.startswith("yearly_") and args.domain[len("yearly_"):] in _YEARLY_CAT:
+    elif args.domain == "yearly_study":
+        run_yearly_cat(args, "study")
+    elif args.domain.startswith("yearly_") and args.domain[len("yearly_"):] in _YEARLY_V2:
         run_yearly_cat(args, args.domain[len("yearly_"):])
 
 
