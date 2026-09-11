@@ -2591,6 +2591,12 @@ def run_yearly_overall_extras(args) -> None:
 # 공통 필드: one_line, keywords[정확히 1], concept_object(objects 중 1), overall_flow
 #            + 분야별 특화 텍스트 필드 + (일부) rating_fields(1~5 별점 객체).
 # 총운/재물/애정은 구 6필드 스키마 유지(차후 마이그레이션) — 여기서 다루지 않는다.
+# 2026-09-11: travel/hobby/study 는 나중에 다시 손대지 않도록 처음부터 깊이 있게 생성(분량 2배 이상).
+_V2_DEPTH_NOTE = (
+    "모든 서술 필드는 단문·추상적 조언을 금지합니다. 구체적인 행동 가이드(무엇을 언제 어떻게)와 "
+    "계절·상황별 시나리오를 반드시 섞어 넣어, 실제로 도움이 되는 리포트처럼 밀도 있게 씁니다. "
+    "뭉뚱그린 한 줄 요약을 여러 번 반복하지 말고, 문장마다 새로운 정보·구체적 장면을 더합니다."
+)
 _YEARLY_V2: Dict[str, Dict[str, Any]] = {
     "business": {
         "ko": "사업운",
@@ -2634,46 +2640,51 @@ _YEARLY_V2: Dict[str, Dict[str, Any]] = {
         "ko": "여행운",
         "objects": ["여행가방", "비행기", "지도", "풍경"],
         "logic": "식상 + 역마 + 충 + 이동",
+        "depth_note": _V2_DEPTH_NOTE,
         "text_fields": [
-            ("overall_flow", "올해 이동·여행 전체 흐름 — 이동수가 열리는 기운, 국내와 해외 (5~7문장)"),
-            ("travel_style", "올해 나에게 맞는 여행 스타일 — '도시형 vs 자연형', '휴양형 vs 장기체류형' 축으로 규정 (3~5문장)"),
-            ("travel_luck", "여행 중 들어오는 행운 — 어떤 만남·계기·기회가 생기는지 (2~4문장)"),
-            ("recommended_spots", "추천 장소 방향·여행 시기 — 방위·풍경 유형과 계절 조건으로 (특정 월 숫자 금지) (2~4문장)"),
+            ("overall_flow", "올해 이동·여행 전체 흐름 — 이동수가 열리는 기운, 국내와 해외, 상반기·하반기의 결이 어떻게 다른지, 계절이 바뀔 때마다 이동운이 어떻게 흘러가는지까지 구체적인 장면 묘사와 함께 촘촘하게 (10~14문장)"),
+            ("travel_style", "올해 나에게 맞는 여행 스타일 — '도시형 vs 자연형', '휴양형 vs 장기체류형' 축으로 규정하고, 동행 형태(혼자/연인/친구/가족)·일정 길이·구체적인 활동 예시까지 실제로 계획을 짤 수 있을 만큼 상세하게 (7~10문장)"),
+            ("travel_luck", "여행 중 들어오는 행운 — 어떤 만남·계기·기회가 생기는지, 그 행운을 실제로 붙잡기 위한 구체적 행동 가이드(예: 낯선 사람에게 먼저 말 걸기, 즉흥 일정 남겨두기 등) 포함 (5~8문장)"),
+            ("recommended_spots", "추천 장소 방향·여행 시기 — 방위·풍경 유형과 계절 조건으로(특정 월 숫자 금지), 봄/여름/가을/겨울 각각 어떤 여행이 어울리는지 계절별 시나리오를 2가지 이상 구체적으로 제시 (6~9문장)"),
         ],
+        "min_lens": {"overall_flow": 220, "travel_style": 150, "travel_luck": 100, "recommended_spots": 120},
     },
     "hobby": {
         "ko": "취미운",
         "objects": ["카메라", "기타", "그림", "운동용품"],
         "logic": "오행 + 십신 + 역마 + 올해 활성 요소",
+        "depth_note": _V2_DEPTH_NOTE,
         "text_fields": [
-            ("overall_flow", "올해 취미·여가 활동 전체 흐름 — 취미가 올해 나에게 주는 의미 (5~7문장)"),
-            ("active_activities", "올해 잘 맞는 활동 — 운동 / 악기 / 그림·창작 / 촬영 등 구체적으로 (3~5문장)"),
-            ("solo_vs_group", "혼자 몰입하는 취미 vs 함께하는 취미 중 올해 맞는 쪽과 이유 (2~4문장)"),
-            ("benefits", "취미로 올해 얻게 되는 것 — 에너지·스트레스 해소·관계·커리어로 이어지는 결과 (3~5문장)"),
+            ("overall_flow", "올해 취미·여가 활동 전체 흐름 — 취미가 올해 나에게 주는 의미, 상반기·하반기 관심사가 어떻게 옮겨가는지, 몰입이 잘 되는 시기와 흥미가 식는 시기까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("active_activities", "올해 잘 맞는 활동 — 운동 / 악기 / 그림·창작 / 촬영 등 구체적인 종목·시작 방법·어떤 순간에 특히 몰입감이 오는지까지 실행 가능한 수준으로 상세하게 (7~10문장)"),
+            ("solo_vs_group", "혼자 몰입하는 취미 vs 함께하는 취미 중 올해 맞는 쪽과 구체적인 이유, 상황별(스트레스가 클 때 vs 여유로울 때) 어느 쪽이 더 맞는지 시나리오로 (5~8문장)"),
+            ("benefits", "취미로 올해 얻게 되는 것 — 에너지·스트레스 해소·관계·커리어로 이어지는 결과를 구체적인 예시와 함께, 그 효과를 극대화하기 위한 실천 가이드 포함 (6~9문장)"),
         ],
+        "min_lens": {"overall_flow": 220, "active_activities": 150, "solo_vs_group": 100, "benefits": 120},
     },
 }
 
-# study 는 생애 6단계 × (일주×세운). 나머지 v2 분야와 동일 규격 + stage 컨텍스트.
+# study 는 생애 3단계(10대 이하/20대/30대 이상 통합) × (일주×세운) = 60×60×3 = 10,800.
+# 2026-09-11: 6단계(s0~s60)에서 3단계로 축소(사용자 지시) — 30대 이상은 s30_plus 로 통합,
+# 40~60대+ 유저는 s30_plus 데이터를 그대로 공유해서 본다. 나머지 v2 분야와 동일 규격 + stage 컨텍스트.
 _YEARLY_STUDY_SPEC: Dict[str, Any] = {
     "ko": "학업운",
     "objects": ["책", "노트", "펜", "스탠드 조명"],
     "logic": "관성 + 인성 + 식상 + 일간 강약 + 대운/세운",
+    "depth_note": _V2_DEPTH_NOTE,
     "text_fields": [
-        ("overall_flow", "해당 연령대 기준 올해 학업·배움 전체 흐름 (5~7문장)"),
-        ("study_style", "올해 나에게 가장 효율적인 학습 방식 — 몰입형 / 반복형 / 토론형 / 실전형 등 규정 (3~5문장)"),
-        ("focus_and_achievement", "올해 집중력과 시험·자격증 성취운 — 결과가 잘 나오는 조건과 흔들리는 지점 (3~5문장)"),
-        ("recommended_fields", "올해 배우거나 도전하면 좋은 분야·자격증 — 연령대 현실에 맞게 구체적으로 (3~5문장)"),
+        ("overall_flow", "해당 연령대 기준 올해 학업·배움 전체 흐름 — 상반기·하반기 집중력의 결이 어떻게 다른지, 흐름이 좋을 때와 흔들릴 때를 구체적인 장면으로 (10~14문장)"),
+        ("study_style", "올해 나에게 가장 효율적인 학습 방식 — 몰입형 / 반복형 / 토론형 / 실전형 등으로 규정하고, 실제로 적용할 수 있는 구체적인 방법(시간대, 환경, 루틴)까지 (7~10문장)"),
+        ("focus_and_achievement", "올해 집중력과 시험·자격증 성취운 — 결과가 잘 나오는 조건과 흔들리는 지점을 구체적 상황으로, 그 흐름을 살리기 위한 실천 가이드 포함 (7~10문장)"),
+        ("recommended_fields", "올해 배우거나 도전하면 좋은 분야·자격증 — 연령대 현실에 맞게 구체적인 예시와 시작 시기(상반기/하반기)까지 제시 (6~9문장)"),
     ],
+    "min_lens": {"overall_flow": 220, "study_style": 150, "focus_and_achievement": 150, "recommended_fields": 120},
 }
 # (코드, 라벨, 이 단계에서 '배움'의 현실 맥락)
 _STUDY_STAGES: List[Tuple[str, str, str]] = [
-    ("s0",  "10대 이하", "수능·내신·입시와 진로 탐색이 중심인 시기"),
+    ("s10", "10대 이하", "수능·내신·입시와 진로 탐색이 중심인 시기"),
     ("s20", "20대",     "취업 준비·자격증·어학·대학원 등 사회 진입을 위한 배움이 중심인 시기"),
-    ("s30", "30대",     "이직·전직 준비, 실무 심화, 커리어 확장을 위한 자기계발이 중심인 시기"),
-    ("s40", "40대",     "재교육·전문성 강화, 자녀 교육 지원, 제2커리어 준비가 얽히는 시기"),
-    ("s50", "50대",     "은퇴 이후를 대비한 새 기술·자격 취득, 제2의 직업을 위한 배움이 중심인 시기"),
-    ("s60", "60대 이상", "평생학습·취미형 배움, 건강하게 머리를 쓰는 활동이 중심인 시기"),
+    ("s30_plus", "30대 이상", "승진·직무 전문성 강화를 위한 재교육, 전문 자격증 취득, 제2커리어·평생학습을 위한 자기계발이 중심인 시기 (30대부터 60대 이상까지 공통으로 겪는 배움의 결)"),
 ]
 _STUDY_STAGE_MAP = {c: (label, ctx) for c, label, ctx in _STUDY_STAGES}
 
@@ -2758,7 +2769,9 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
 
     stage_note = ""
     if category == "study":
-        stage_note = "\n- 각 조합의 '생애단계 맥락'에 철저히 맞춰 씁니다. 10대에게 자격증·이직 얘기, 60대에게 수능 얘기를 하지 않습니다."
+        stage_note = "\n- 각 조합의 '생애단계 맥락'에 철저히 맞춰 씁니다. 10대에게 자격증·이직 얘기, 30대 이상에게 수능 얘기를 하지 않습니다."
+
+    depth_note = spec.get("depth_note", "")
 
     return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {ko}'를 씁니다.
 각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
@@ -2769,9 +2782,10 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
 - keywords: 올해 {ko}의 핵심을 담은 한국어 키워드 '정확히 1개'만. ["단어"] 처럼 배열 안에 1개. '{ko}'와 직접 맞닿은 구체적 명사/짧은 명사구로, 참고 문구에서 가져온 추상 표현("승부욕 자극" 등)은 쓰지 않습니다.
 - concept_object: 이 조합의 올해 {ko}를 가장 잘 상징하는 오브젝트 1개를 다음에서 고릅니다: {', '.join(objs)}. (정확히 이 단어 중 하나만)
 
-[특화 필드 — 모두 '{ko}' 관점]
+[특화 필드 — 모두 '{ko}' 관점, 괄호 안 문장 수는 최소 기준(그 이상도 좋습니다)]
 {tf_lines}
 {rating_lines}
+{("\n[분량·깊이 규칙 — 최우선]\n- " + depth_note) if depth_note else ""}
 
 [말투·형식 규칙 — 최우선]
 - 모든 문장을 친근한 존댓말로만 끝냅니다: '~해요 / ~예요 / ~입니다 / ~보세요 / ~됩니다' 등. '~한다/~된다/~있다/~거야/~겠지' 같은 반말·문어체 종결 금지. keywords·concept_object 만 명사.
@@ -2849,9 +2863,10 @@ def _yearly_v2_valid(category: str, entry: Any) -> bool:
     if str(entry.get("concept_object", "")).strip() not in _yearly_v2_spec(category)["objects"]:
         return False
     spec = _yearly_v2_spec(category)
+    min_lens = spec.get("min_lens", {})
     for name, _ in spec["text_fields"]:
         v = str(entry.get(name, "")).strip()
-        need = 80 if name == "overall_flow" else 35
+        need = min_lens.get(name, 80 if name == "overall_flow" else 35)
         if len(v) < need:
             return False
     for name, subs, _ in spec.get("rating_fields", []):
@@ -2909,7 +2924,7 @@ def run_yearly_cat(args, category: str) -> None:
         banmal_fn=(lambda e, _c=category: _banmal_in_texts(
             [str(e.get(n, "")) for n in _yearly_v2_text_names(_c)])),
         unit="조합", count_fn=(lambda d, _c=category: sum(1 for k in all_keys if _yearly_v2_valid(_c, d.get(k)))),
-        header=f"\n{'━' * 60}\n[연간 {ko}{' · 생애 6단계' if category == 'study' else ''}] 대상 {len(todo)}개",
+        header=f"\n{'━' * 60}\n[연간 {ko}{' · 생애 3단계' if category == 'study' else ''}] 대상 {len(todo)}개",
     )
 
     final_cnt = sum(1 for k in all_keys if _v(db.get(k)))
