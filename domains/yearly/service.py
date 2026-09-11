@@ -256,12 +256,16 @@ def _catfb(category: str, ty: int) -> dict:
 # 아직 완료된 카테고리만 여기 등록(완료되는 대로 한 줄씩 추가). study 는 생애단계 키가 붙어 별도 처리.
 _YEARLY_V2_TEXT_FIELDS = {
     "business": ("overall_flow", "business_traits", "direction", "expansion_timing", "partner_luck"),
+    "career_change": ("overall_flow", "job_change_eval", "opportunity_style", "ideal_environment", "timing_flow"),
+    "health": ("overall_flow", "care_points", "recovery_method"),
 }
 _YEARLY_V2_OBJECTS = {
     "business": ("빌딩", "로켓", "그래프", "아이디어"),
+    "career_change": ("사무실", "서류가방", "열린 문", "계단"),
+    "health": ("잎사귀", "사람", "물", "햇빛"),
 }
 _YEARLY_V2_RATING_FIELDS: Dict[str, tuple] = {
-    # "career_change": (("current_vs_change", ("stability", "growth", "change")),),
+    "career_change": (("current_vs_change", ("stability", "growth", "change")),),
 }
 _YEARLY_V2_CATEGORIES = tuple(_YEARLY_V2_TEXT_FIELDS)
 
