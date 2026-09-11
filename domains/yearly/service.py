@@ -251,6 +251,76 @@ def _catfb(category: str, ty: int) -> dict:
     }
 
 
+# ── 분야운 v2(스크립트 generate_content_db._YEARLY_V2 와 동일 스키마, 여기선 서빙만) ──
+# 총운/재물/애정과 달리 분야별 특화 필드 + 단일 키워드 + concept_object.
+# 아직 완료된 카테고리만 여기 등록(완료되는 대로 한 줄씩 추가). study 는 생애단계 키가 붙어 별도 처리.
+_YEARLY_V2_TEXT_FIELDS = {
+    "business": ("overall_flow", "business_traits", "direction", "expansion_timing", "partner_luck"),
+}
+_YEARLY_V2_OBJECTS = {
+    "business": ("빌딩", "로켓", "그래프", "아이디어"),
+}
+_YEARLY_V2_RATING_FIELDS: Dict[str, tuple] = {
+    # "career_change": (("current_vs_change", ("stability", "growth", "change")),),
+}
+_YEARLY_V2_CATEGORIES = tuple(_YEARLY_V2_TEXT_FIELDS)
+
+
+def _yearly_v2_fallback(category: str) -> dict:
+    ko = CATEGORIES.get(category, "운세")
+    fields = _YEARLY_V2_TEXT_FIELDS[category]
+    out = {
+        "one_line": f"올해 {ko}, 서두르지 않으면 방향이 보이는 해",
+        "keywords": ["방향"],
+        "concept_object": _YEARLY_V2_OBJECTS.get(category, ("",))[0],
+        "overall_flow": (
+            f"올해 {ko}는 큰 기복보다 방향을 다시 잡고 기반을 다지는 흐름이에요. "
+            "무리하게 판을 키우기보다 이미 가진 것을 단단하게 만드는 편이 유리합니다. "
+            "조급함을 내려놓고 한 걸음씩 나아가면 한 해의 결과는 나쁘지 않아요."
+        ),
+    }
+    for f in fields[1:]:
+        out[f] = "차분하게 내실을 다지면서 기회를 기다리는 편이 유리해요. 서두르지 않아도 흐름은 곧 따라옵니다."
+    for name, subs in _YEARLY_V2_RATING_FIELDS.get(category, ()):
+        out[name] = {s: 3 for s in subs}
+    return out
+
+
+def _yearly_v2_static(category: str, ty: int, saju: dict, monthly, best, caution):
+    yy = str(ty)[2:]
+    g1 = saju.get("day_ganji") or ""
+    se = _year_ganji(ty)
+    fields = _YEARLY_V2_TEXT_FIELDS[category]
+    rating = _YEARLY_V2_RATING_FIELDS.get(category, ())
+    required = ("one_line", "concept_object") + fields
+    entry = _yearly_db.lookup(category, g1, se, required=required)
+    is_fb = entry is None
+    src = entry or _yearly_v2_fallback(category)
+
+    kw = [str(k).strip() for k in (src.get("keywords") or []) if str(k).strip()][:1]
+    out = {
+        "content_type": f"{yy}년 {CATEGORIES[category]}",
+        "category": category,
+        "target_year": ty,
+        "day_master": saju.get("day_master"),
+        "birth_time_known": saju.get("birth_time_known"),
+        "saju_info": person_summary(saju),
+        "one_line": str(src.get("one_line", "")),
+        "keywords": kw,
+        "concept_object": str(src.get("concept_object", "")),
+        "monthly": monthly,
+        "best_months": best,
+        "caution_months": caution,
+    }
+    for f in fields:
+        out[f] = paragraphize(str(src.get(f, "")))
+    for name, subs in rating:
+        rv = src.get(name) if isinstance(src.get(name), dict) else {}
+        out[name] = {s: int(rv.get(s) or 3) for s in subs}
+    out["analysis"] = paragraphize("\n\n".join(str(src.get(f, "")) for f in fields if str(src.get(f, "")).strip()))
+    return out, is_fb
+
+
 def generate_yearly(
     category: str,
     year: int, month: int, day: int,
@@ -270,6 +340,8 @@ def generate_yearly(
     if category in _STATIC_CATEGORIES:
         # 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
         return _yearly_static(category, ty, saju, monthly, best, caution)
+    if category in _YEARLY_V2_CATEGORIES:
+        return _yearly_v2_static(category, ty, saju, monthly, best, caution)
 
     def _gen():
         extra_schema = ""

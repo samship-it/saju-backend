@@ -61,12 +61,22 @@ def reload() -> None:
 _SIXFIELD = ("one_line", "overall_flow", "first_half", "second_half", "advice")
 
 
-def lookup(category: str, self_ganji: str, seyun_ganji: str) -> Optional[Dict[str, Any]]:
-    """조합에 해당하는 사전 생성 서술(dict). 없거나 불완전하면 None."""
-    entry = load_db(category).get(make_key(self_ganji, seyun_ganji))
+def lookup(
+    category: str, self_ganji: str, seyun_ganji: str,
+    required: Optional[tuple] = None, key: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """조합에 해당하는 사전 생성 서술(dict). 없거나 불완전하면 None.
+
+    `required` 를 주면 그 필드들로 완전성을 검사한다(분야 v2 스키마처럼
+    6필드가 아닌 카테고리용). 기본은 구 6필드 스키마(총운/재물/애정).
+    `key` 를 주면 make_key 대신 그대로 조회 키로 쓴다(학업운의
+    "<일주>_<세운>_<생애단계>" 처럼 3-파트 키).
+    """
+    entry = load_db(category).get(key or make_key(self_ganji, seyun_ganji))
     if not isinstance(entry, dict):
         return None
-    if not all(str(entry.get(k, "")).strip() for k in _SIXFIELD):
+    need = required if required is not None else _SIXFIELD
+    if not all(str(entry.get(k, "")).strip() for k in need):
         return None
     return entry
 
