@@ -296,11 +296,15 @@ def test_yearly_year_is_dynamic_not_hardcoded():
     assert r["target_year"] == datetime.date.today().year
 
 
-def test_yearly_travel_hobby_recommendation():
+def test_yearly_travel_hobby_v2_schema():
     t = client.post("/api/v1/yearly/travel", json={**BIRTH_A, "target_year": 2026}).json()
-    assert isinstance(t["recommendation"], dict)
+    assert t["concept_object"] in ("여행가방", "비행기", "지도", "풍경")
+    assert len(t["keywords"]) == 1
+    assert t["travel_style"] and t["travel_luck"] and t["recommended_spots"]
     h = client.post("/api/v1/yearly/hobby", json={**BIRTH_A, "target_year": 2026}).json()
-    assert isinstance(h["recommendation"], list)
+    assert h["concept_object"] in ("카메라", "기타", "그림", "운동용품")
+    assert len(h["keywords"]) == 1
+    assert h["active_activities"] and h["solo_vs_group"] and h["benefits"]
 
 
 def test_yearly_categories_endpoint():

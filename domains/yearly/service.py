@@ -258,11 +258,15 @@ _YEARLY_V2_TEXT_FIELDS = {
     "business": ("overall_flow", "business_traits", "direction", "expansion_timing", "partner_luck"),
     "career_change": ("overall_flow", "job_change_eval", "opportunity_style", "ideal_environment", "timing_flow"),
     "health": ("overall_flow", "care_points", "recovery_method"),
+    "travel": ("overall_flow", "travel_style", "travel_luck", "recommended_spots"),
+    "hobby": ("overall_flow", "active_activities", "solo_vs_group", "benefits"),
 }
 _YEARLY_V2_OBJECTS = {
     "business": ("빌딩", "로켓", "그래프", "아이디어"),
     "career_change": ("사무실", "서류가방", "열린 문", "계단"),
     "health": ("잎사귀", "사람", "물", "햇빛"),
+    "travel": ("여행가방", "비행기", "지도", "풍경"),
+    "hobby": ("카메라", "기타", "그림", "운동용품"),
 }
 _YEARLY_V2_RATING_FIELDS: Dict[str, tuple] = {
     "career_change": (("current_vs_change", ("stability", "growth", "change")),),
