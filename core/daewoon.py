@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Tuple
 from korean_lunar_calendar import KoreanLunarCalendar
 
+from config import KST
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -176,7 +178,7 @@ def calculate_saju_daewoon_sewoon(
 
     # 5. 대운 간지 흐름 & 세운 10년치 데이터 생성
     daewoon_flow = generate_daewoon_list(year_gan, month_ganji, is_forward, daewoon_num)
-    current_year = datetime.now().year
+    current_year = datetime.now(KST).year  # 서버가 UTC로 돌아도 KST 기준 연도로 고정
     sewoon_flow = generate_sewoon_list(start_year=current_year, count=10)
 
     return {
