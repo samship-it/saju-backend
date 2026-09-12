@@ -2818,39 +2818,50 @@ _YEARLY_V2: Dict[str, Dict[str, Any]] = {
         "ko": "사업운",
         "objects": ["빌딩", "로켓", "그래프", "아이디어"],
         "logic": "식상 + 재성 + 비겁 + 관성",
+        "depth_note": _V2_DEPTH_NOTE,
         "text_fields": [
-            ("overall_flow", "올해 사업 전체 흐름 — 매출·거래처·협업의 기운, 벌일 때와 움츠릴 때 (5~7문장)"),
-            ("business_traits", "올해 나의 사업가 기질 — '개척형 / 아이디어형 / 안정내실형' 중 어디에 가장 가까운지 규정하고, 그 근거와 올해 활용법 (3~5문장)"),
-            ("direction", "올해 맞는 사업 방향성 — '프리랜서 / 사이드 프로젝트 / 확장형' 중 무엇이 유리한지와 이유 (3~5문장)"),
-            ("expansion_timing", "사업 확장·시작에 좋은 시기 — 상반기/하반기·계절 조건으로만 (특정 월 숫자 금지) (2~4문장)"),
-            ("partner_luck", "올해 사업 파트너·협업운 — 어떤 유형과 잘 맞고 무엇을 조심할지 (3~5문장)"),
+            ("overall_flow", "올해 사업 전체 흐름 — 매출·거래처·협업의 기운, 벌일 때와 움츠릴 때, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("business_traits", "올해 나의 사업가 기질 — '개척형 / 아이디어형 / 안정내실형' 중 어디에 가장 가까운지 규정하고, 그 근거와 올해 실전 활용법까지 구체적으로 (7~10문장)"),
+            ("direction", "올해 맞는 사업 방향성 — '프리랜서 / 사이드 프로젝트 / 확장형' 중 무엇이 유리한지와 이유, 실제로 어떻게 실행하면 좋을지 구체적 시나리오 포함 (7~10문장)"),
+            ("expansion_timing", "사업 확장·시작에 좋은 시기 — 상반기/하반기·계절 조건으로(특정 월 숫자 금지), 그 시기를 어떻게 준비하고 활용할지 실천 가이드 포함 (5~8문장)"),
+            ("partner_luck", "올해 사업 파트너·협업운 — 어떤 유형과 잘 맞고 무엇을 조심할지, 실제 협업 상황 시나리오와 함께 (5~8문장)"),
         ],
+        "min_lens": {"overall_flow": 220, "business_traits": 150, "direction": 150, "expansion_timing": 100, "partner_luck": 100},
     },
     "career_change": {
         "ko": "직장·이직운",
         "objects": ["사무실", "서류가방", "열린 문", "계단"],
         "logic": "관성 + 인성 + 식상 + 일간 강약 + 대운/세운",
+        "depth_note": _V2_DEPTH_NOTE,
         "text_fields": [
-            ("overall_flow", "올해 직장운 전체 흐름 — 조직 내 입지, 상사·동료 관계, 평가·승진 분위기 (5~7문장)"),
-            ("job_change_eval", "올해 이직 평가 — 지금 옮기면 얻는 이점과 성공 가능성, 지금이 적기인지 (3~5문장)"),
-            ("opportunity_style", "이직 기회가 오는 방식·추천 경로 — 지인 제안 / 공채 / 헤드헌팅 등 올해 어디에 힘이 실리는지 (3~5문장)"),
-            ("ideal_environment", "올해 나에게 맞는 직장 환경·조직 문화 — 규모·속도·분위기 (3~5문장)"),
-            ("timing_flow", "이직·승진 타이밍 흐름 — 상반기/하반기·계절 조건으로만 (특정 월 숫자 금지) (2~4문장)"),
+            ("overall_flow", "올해 직장운 전체 흐름 — 조직 내 입지, 상사·동료 관계, 평가·승진 분위기, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("job_change_eval", "올해 이직 평가 — 지금 옮기면 얻는 이점과 성공 가능성, 지금이 적기인지, 구체적인 판단 기준까지 (7~10문장)"),
+            ("opportunity_style", "이직 기회가 오는 방식·추천 경로 — 지인 제안 / 공채 / 헤드헌팅 등 올해 어디에 힘이 실리는지, 그 기회를 잡기 위한 구체적 행동 가이드 포함 (6~9문장)"),
+            ("ideal_environment", "올해 나에게 맞는 직장 환경·조직 문화 — 규모·속도·분위기, 실제로 어떤 회사를 골라야 할지 판단 기준까지 (6~9문장)"),
+            ("timing_flow", "이직·승진 타이밍 흐름 — 상반기/하반기·계절 조건으로(특정 월 숫자 금지), 그 시기에 준비해야 할 것까지 (5~8문장)"),
         ],
-        "rating_fields": [
-            ("current_vs_change", ("stability", "growth", "change"),
-             "현재 자리 유지 대비 이직했을 때의 [안정성 stability, 성장성 growth, 변화도 change]를 각각 1~5 정수 별점으로"),
+        "compare_fields": [
+            ("stay_vs_move", [
+                ("stay_score", "int15", "현재 자리를 유지했을 때의 올해 유불리를 1~5 정수 별점으로(5=매우 유리)"),
+                ("move_score", "int15", "올해 이직을 추진했을 때의 유불리를 1~5 정수 별점으로(5=매우 유리)"),
+                ("stay_summary", "text", "현재 자리를 유지할 때 얻는 것과 놓치는 것을 구체적으로 (2~3문장)"),
+                ("move_summary", "text", "이직을 추진할 때 얻는 것과 감수할 리스크를 구체적으로 (2~3문장)"),
+                ("verdict", "enum:유지 권장|이직 추천", "이 조합에 최종적으로 '유지 권장' 또는 '이직 추천' 중 정확히 하나만"),
+            ]),
         ],
+        "min_lens": {"overall_flow": 220, "job_change_eval": 150, "opportunity_style": 120, "ideal_environment": 120, "timing_flow": 100},
     },
     "health": {
         "ko": "건강운",
         "objects": ["잎사귀", "사람", "물", "햇빛"],
         "logic": "해당 세운이 생활 리듬·활력·회복에 주는 작용",
+        "depth_note": _V2_DEPTH_NOTE,
         "text_fields": [
-            ("overall_flow", "올해 컨디션·생활 관리 전체 흐름 — 활력이 도는 때와 처지는 때 (5~7문장)"),
-            ("care_points", "올해 특히 신경 쓸 관리 포인트 — 생활 습관·리듬 위주로 (특정 질병 단정 금지) (3~5문장)"),
-            ("recovery_method", "지치거나 무리했을 때 나에게 맞는 회복법 — 휴식 / 운동 / 사람 / 자연 중 어느 쪽인지와 방법 (3~5문장)"),
+            ("overall_flow", "올해 컨디션·생활 관리 전체 흐름 — 활력이 도는 때와 처지는 때, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("care_points", "올해 특히 신경 쓸 관리 포인트 — 생활 습관·리듬 위주로(특정 질병 단정 금지), 구체적인 실천 방법까지 (7~10문장)"),
+            ("recovery_method", "지치거나 무리했을 때 나에게 맞는 회복법 — 휴식 / 운동 / 사람 / 자연 중 어느 쪽인지와 구체적인 방법, 상황별 시나리오 포함 (7~10문장)"),
         ],
+        "min_lens": {"overall_flow": 220, "care_points": 150, "recovery_method": 150},
     },
     "travel": {
         "ko": "여행운",
@@ -2877,6 +2888,32 @@ _YEARLY_V2: Dict[str, Dict[str, Any]] = {
             ("benefits", "취미로 올해 얻게 되는 것 — 에너지·스트레스 해소·관계·커리어로 이어지는 결과를 구체적인 예시와 함께, 그 효과를 극대화하기 위한 실천 가이드 포함 (6~9문장)"),
         ],
         "min_lens": {"overall_flow": 220, "active_activities": 150, "solo_vs_group": 100, "benefits": 120},
+    },
+    "wealth": {
+        "ko": "재물운",
+        "objects": ["지갑", "저금통", "새싹", "열쇠"],
+        "logic": "재성 + 식상 + 비겁 + 관성",
+        "depth_note": _V2_DEPTH_NOTE,
+        "text_fields": [
+            ("overall_flow", "올해 재물 전체 흐름 — 들어오고 나가는 돈의 기운, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("income_style", "올해 나의 수입 스타일 — '고정 수입 안정형 / 부수입·부업형 / 변동 수입형' 중 어디에 가장 가까운지 규정하고, 올해 활용법까지 (7~10문장)"),
+            ("spending_pattern", "올해 소비 패턴과 절약 포인트 — 돈이 새는 지점과 아껴야 할 습관을 구체적으로 (6~9문장)"),
+            ("investment_luck", "올해 투자·재테크 운 — 안전자산형과 공격투자형 중 무엇이 유리한지와 이유, 실제 판단 기준까지 (6~9문장)"),
+        ],
+        "min_lens": {"overall_flow": 220, "income_style": 150, "spending_pattern": 120, "investment_luck": 120},
+    },
+    "love": {
+        "ko": "애정운",
+        "objects": ["꽃다발", "편지", "반지", "별"],
+        "logic": "재성 + 관성 + 도화 + 육합/삼합",
+        "depth_note": _V2_DEPTH_NOTE,
+        "text_fields": [
+            ("overall_flow", "올해 연애 전체 흐름 — 인연이 오가는 기운, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
+            ("meeting_style", "올해 새로운 인연이 오는 방식 — 소개팅 / 자연스러운 만남 / 재회 등 어디에 힘이 실리는지와 구체적인 상황 (7~10문장)"),
+            ("relationship_depth", "관계가 깊어지는 방식과 올해 나의 밀당 스타일 — 실제 연애 상황 시나리오와 함께 (6~9문장)"),
+            ("caution_point", "올해 연애에서 특히 조심할 점 — 반복되기 쉬운 실수와 그걸 피하는 구체적 방법 (6~9문장)"),
+        ],
+        "min_lens": {"overall_flow": 220, "meeting_style": 150, "relationship_depth": 120, "caution_point": 120},
     },
 }
 
@@ -2963,6 +3000,14 @@ def _yearly_v2_item_block(key: str, category: str) -> str:
     return "\n".join(lines)
 
 
+def _compare_sub_sample(sub_type: str) -> Any:
+    if sub_type == "int15":
+        return 3
+    if sub_type.startswith("enum:"):
+        return sub_type.split(":", 1)[1].split("|")[0]
+    return "..."
+
+
 def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
     spec = _yearly_v2_spec(category)
     ko = spec["ko"]
@@ -2975,12 +3020,21 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
         "- {}: {}. 반드시 {{{}}} 형태의 객체.".format(
             name, desc, ", ".join(s + ': <1~5 정수>' for s in subs))
         for name, subs, desc in rating)
+    compare = spec.get("compare_fields", [])
+    compare_lines = "\n".join(
+        "- {}: 반드시 {{{}}} 형태의 객체.\n".format(
+            name, ", ".join(f"{sn}: <{st}>" for sn, st, _ in subs))
+        + "\n".join(f"    - {sn}: {sd}" for sn, st, sd in subs)
+        for name, subs in compare
+    )
 
     schema_obj = {"one_line": "...", "keywords": ["핵심키워드 1개"], "concept_object": f"<{' / '.join(objs)} 중 하나>"}
     for name, _ in spec["text_fields"]:
         schema_obj[name] = "..."
     for name, subs, _ in rating:
         schema_obj[name] = {s: 3 for s in subs}
+    for name, subs in compare:
+        schema_obj[name] = {sn: _compare_sub_sample(st) for sn, st, _ in subs}
     schema_str = json.dumps(schema_obj, ensure_ascii=False, indent=4)
 
     stage_note = ""
@@ -3001,6 +3055,7 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
 [특화 필드 — 모두 '{ko}' 관점, 괄호 안 문장 수는 최소 기준(그 이상도 좋습니다)]
 {tf_lines}
 {rating_lines}
+{compare_lines}
 {("\n[분량·깊이 규칙 — 최우선]\n- " + depth_note) if depth_note else ""}
 
 [말투·형식 규칙 — 최우선]
@@ -3065,6 +3120,29 @@ def _yearly_v2_coerce(category: str, entry: Any) -> Any:
             except (TypeError, ValueError):
                 n = 3
             entry[name][s] = max(1, min(5, n))
+    # compare_fields → 혼합 타입(int15/text/enum:A|B) 객체
+    for name, subs in spec.get("compare_fields", []):
+        cv = entry.get(name)
+        cv = cv if isinstance(cv, dict) else {}
+        out = {}
+        for sn, st, _ in subs:
+            raw = cv.get(sn)
+            if st == "int15":
+                try:
+                    n = int(round(float(raw)))
+                except (TypeError, ValueError):
+                    n = 3
+                out[sn] = max(1, min(5, n))
+            elif st.startswith("enum:"):
+                options = st.split(":", 1)[1].split("|")
+                s = _strip_hanja(str(raw or "")).strip()
+                out[sn] = next((o for o in options if o in s or s in o), options[0])
+            else:
+                s = str(raw or "")
+                for bad, good in _YEARLY_FIXUPS:
+                    s = s.replace(bad, good)
+                out[sn] = _strip_hanja(_rel_clean(s))
+        entry[name] = out
     return entry
 
 
@@ -3089,6 +3167,21 @@ def _yearly_v2_valid(category: str, entry: Any) -> bool:
         rv = entry.get(name)
         if not (isinstance(rv, dict) and all(isinstance(rv.get(s), int) and 1 <= rv[s] <= 5 for s in subs)):
             return False
+    for name, subs in spec.get("compare_fields", []):
+        cv = entry.get(name)
+        if not isinstance(cv, dict):
+            return False
+        for sn, st, _ in subs:
+            v = cv.get(sn)
+            if st == "int15":
+                if not (isinstance(v, int) and 1 <= v <= 5):
+                    return False
+            elif st.startswith("enum:"):
+                if v not in st.split(":", 1)[1].split("|"):
+                    return False
+            else:
+                if len(str(v or "").strip()) < 15:
+                    return False
     return True
 
 
@@ -3355,7 +3448,8 @@ def main() -> None:
                             "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
                             "yearly_overall", "yearly_overall_extras",
                             "yearly_business", "yearly_career_change", "yearly_study",
-                            "yearly_health", "yearly_travel", "yearly_hobby"],
+                            "yearly_health", "yearly_travel", "yearly_hobby",
+                            "yearly_wealth", "yearly_love"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "

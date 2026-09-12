@@ -37,6 +37,9 @@ _SYSTEM = (
 )
 
 
+_GROUP_WEIGHT = {"재성": 3, "인성": 3, "식상": 2, "관성": 1, "비겁": 1}
+
+
 def _monthly_strength(saju: Dict[str, Any], target_year: int) -> List[Dict[str, Any]]:
     dm = saju.get("day_master", "")
     day_branch = saju.get("day_branch", "")
@@ -66,11 +69,14 @@ def _monthly_strength(saju: Dict[str, Any], target_year: int) -> List[Dict[str, 
             score -= 10
         if GAN_ELEM.get(gan) in yongsin or JI_ELEM.get(ji) in yongsin:
             score += 8
+        # 이 달을 지배하는 십신 그룹(월별 서사 매칭용) — 년간/년지 중 가중치 높은 쪽.
+        tag = max((s_gan, s_ji), key=lambda g: _GROUP_WEIGHT.get(g, 0))
         rows.append({
             "month_index": w["month_index"],
             "solar_month_approx": w["solar_month_approx"],
             "ganji": gz,
             "strength": max(0, min(100, round(score))),
+            "tag": tag,
         })
     return rows
 
@@ -80,6 +86,53 @@ def _best_caution(monthly: List[Dict[str, Any]]):
     best = [f"{r['solar_month_approx']}월" for r in ranked[:3]]
     caution = [f"{r['solar_month_approx']}월" for r in ranked[-3:]]
     return best, caution
+
+
+# 월별 구체 서사 — (지배 십신 그룹, 기회/주의 밴드) 조합별 고정 서술. 원국 전체 의존 없이도
+# 정확한 이유(그 달에 어떤 기운이 강해서 기회/주의인지)를 매달 설명할 수 있다.
+_MONTH_TAG_NARRATIVE = {
+    ("재성", "best"): "돈과 관련된 기회가 자연스럽게 따라붙는 달이에요. 협상·거래나 새로운 수입원 제안이 들어오면 적극적으로 검토해볼 만해요.",
+    ("재성", "caution"): "지출 관리에 특히 신경 써야 하는 달이에요. 충동적인 소비나 성급한 투자 결정은 잠시 미뤄두는 편이 안전해요.",
+    ("인성", "best"): "배움과 귀인의 도움이 힘을 발휘하는 달이에요. 새로운 지식을 채우거나 멘토·선배의 조언을 구하기 좋은 시기예요.",
+    ("인성", "caution"): "생각이 많아져 결정이 늦어지기 쉬운 달이에요. 완벽하게 준비하려다 타이밍을 놓치지 않도록 스스로 마감을 정해두세요.",
+    ("식상", "best"): "표현력과 아이디어가 살아나는 달이에요. 하고 싶었던 말을 꺼내거나 창작·기획을 진행하기 좋은 흐름이에요.",
+    ("식상", "caution"): "말이 앞서 오해를 살 수 있는 달이에요. 감정적인 대응보다 한 박자 쉬고 말하는 습관이 도움이 돼요.",
+    ("관성", "best"): "책임과 평가가 좋은 결과로 이어지는 달이에요. 맡은 일을 마무리 짓거나 공식적인 자리에서 좋은 인상을 남기기 좋아요.",
+    ("관성", "caution"): "부담과 압박이 커질 수 있는 달이에요. 무리한 약속을 새로 늘리기보다 기존 일정부터 정리하는 편이 나아요.",
+    ("비겁", "best"): "주변 사람들과의 협력이 힘이 되는 달이에요. 혼자보다 함께할 때 더 큰 성과가 따라와요.",
+    ("비겁", "caution"): "경쟁이나 의견 충돌이 생기기 쉬운 달이에요. 굳이 맞서기보다 한발 물러서는 여유가 필요해요.",
+}
+_MONTH_NEUTRAL_NARRATIVE = "큰 기복 없이 무난하게 흘러가는 달이에요. 평소 페이스를 유지하면서 다음 기회를 준비하기 좋은 시기예요."
+
+
+def _monthly_flow(monthly: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """12개월 각각에 '왜 기회/주의인지' 구체 서사를 붙인다.
+
+    베스트/주의 달 자체는 원국 전체(용신 등)에 의존해 사람마다 다르므로 엔진이
+    실시간으로 순위를 매기고(top3/bottom3), 그 달에 왜 그런지는 그 달을 지배하는
+    십신 그룹(엔진이 이미 계산한 tag)에 맞는 고정 서사를 붙인다 — 특정 (일주,세운)
+    조합에 텍스트를 미리 박아두는 방식이 아니라서 원국이 달라도 항상 정합적이다.
+    """
+    ranked = sorted(monthly, key=lambda r: r["strength"], reverse=True)
+    best_idx = {r["month_index"] for r in ranked[:3]}
+    caution_idx = {r["month_index"] for r in ranked[-3:]}
+    out = []
+    for r in monthly:
+        if r["month_index"] in best_idx:
+            band = "best"
+        elif r["month_index"] in caution_idx:
+            band = "caution"
+        else:
+            band = "neutral"
+        narrative = _MONTH_TAG_NARRATIVE.get((r.get("tag", ""), band), _MONTH_NEUTRAL_NARRATIVE) \
+            if band != "neutral" else _MONTH_NEUTRAL_NARRATIVE
+        out.append({
+            "month": r["solar_month_approx"],
+            "strength": r["strength"],
+            "band": band,
+            "narrative": narrative,
+        })
+    return out
 
 
 _CORE_DATA = {
@@ -174,9 +227,8 @@ _OVERALL_FALLBACK = {
 }
 
 
-# 정적 DB(일주×세운)로 서빙하는 카테고리. 모두 6필드 동일 스키마.
-# overall 은 여기에 4필드(기회/주의달·치트키·쥐약)가 더 붙는다.
-_STATIC_CATEGORIES = ("overall", "wealth", "love")
+# 정적 DB(일주×세운)로 서빙하는 구(6필드) 스키마 카테고리. wealth/love 는 v2(분야 특화 스키마)로 이전됨.
+_STATIC_CATEGORIES = ("overall",)
 
 
 def _yearly_static(category: str, ty: int, saju: dict, monthly, best, caution):
@@ -218,6 +270,7 @@ def _yearly_static(category: str, ty: int, saju: dict, monthly, best, caution):
             v = src.get(f)
             out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
                       else _OVERALL_FALLBACK[f])
+        out["monthly_flow"] = _monthly_flow(monthly)
     return out, is_fb
 
 
@@ -260,6 +313,8 @@ _YEARLY_V2_TEXT_FIELDS = {
     "health": ("overall_flow", "care_points", "recovery_method"),
     "travel": ("overall_flow", "travel_style", "travel_luck", "recommended_spots"),
     "hobby": ("overall_flow", "active_activities", "solo_vs_group", "benefits"),
+    "wealth": ("overall_flow", "income_style", "spending_pattern", "investment_luck"),
+    "love": ("overall_flow", "meeting_style", "relationship_depth", "caution_point"),
 }
 _YEARLY_V2_OBJECTS = {
     "business": ("빌딩", "로켓", "그래프", "아이디어"),
@@ -267,9 +322,17 @@ _YEARLY_V2_OBJECTS = {
     "health": ("잎사귀", "사람", "물", "햇빛"),
     "travel": ("여행가방", "비행기", "지도", "풍경"),
     "hobby": ("카메라", "기타", "그림", "운동용품"),
+    "wealth": ("지갑", "저금통", "새싹", "열쇠"),
+    "love": ("꽃다발", "편지", "반지", "별"),
 }
-_YEARLY_V2_RATING_FIELDS: Dict[str, tuple] = {
-    "career_change": (("current_vs_change", ("stability", "growth", "change")),),
+_YEARLY_V2_RATING_FIELDS: Dict[str, tuple] = {}
+# 혼합 타입(별점+요약문+판정) 비교 필드. sub 타입: "int15"(1~5 정수) · "text" · "enum:A|B".
+_YEARLY_V2_COMPARE_FIELDS: Dict[str, tuple] = {
+    "career_change": (("stay_vs_move", (
+        ("stay_score", "int15"), ("move_score", "int15"),
+        ("stay_summary", "text"), ("move_summary", "text"),
+        ("verdict", "enum:유지 권장|이직 추천"),
+    )),),
 }
 _YEARLY_V2_CATEGORIES = tuple(_YEARLY_V2_TEXT_FIELDS)
 
@@ -291,6 +354,16 @@ def _yearly_v2_fallback(category: str) -> dict:
         out[f] = "차분하게 내실을 다지면서 기회를 기다리는 편이 유리해요. 서두르지 않아도 흐름은 곧 따라옵니다."
     for name, subs in _YEARLY_V2_RATING_FIELDS.get(category, ()):
         out[name] = {s: 3 for s in subs}
+    for name, subs in _YEARLY_V2_COMPARE_FIELDS.get(category, ()):
+        cf: Dict[str, Any] = {}
+        for sn, st in subs:
+            if st == "int15":
+                cf[sn] = 3
+            elif st.startswith("enum:"):
+                cf[sn] = st.split(":", 1)[1].split("|")[0]
+            else:
+                cf[sn] = "차분하게 상황을 지켜보며 준비하는 편이 유리해요."
+        out[name] = cf
     return out
 
 
@@ -325,6 +398,23 @@ def _yearly_v2_static(category: str, ty: int, saju: dict, monthly, best, caution
     for name, subs in rating:
         rv = src.get(name) if isinstance(src.get(name), dict) else {}
         out[name] = {s: int(rv.get(s) or 3) for s in subs}
+    for name, subs in _YEARLY_V2_COMPARE_FIELDS.get(category, ()):
+        cv = src.get(name) if isinstance(src.get(name), dict) else {}
+        cf: Dict[str, Any] = {}
+        for sn, st in subs:
+            raw = cv.get(sn)
+            if st == "int15":
+                try:
+                    n = int(raw)
+                except (TypeError, ValueError):
+                    n = 3
+                cf[sn] = max(1, min(5, n))
+            elif st.startswith("enum:"):
+                options = st.split(":", 1)[1].split("|")
+                cf[sn] = raw if raw in options else options[0]
+            else:
+                cf[sn] = paragraphize(str(raw or ""))
+        out[name] = cf
     out["analysis"] = paragraphize("\n\n".join(str(src.get(f, "")) for f in fields if str(src.get(f, "")).strip()))
     return out, is_fb
 
