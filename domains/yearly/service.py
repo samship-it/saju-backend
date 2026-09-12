@@ -329,6 +329,73 @@ def _yearly_v2_static(category: str, ty: int, saju: dict, monthly, best, caution
     return out, is_fb
 
 
+# ── 학업(study) v2 — 나머지 v2 분야와 스키마는 같지만 키가 3파트(일주_세운_생애단계)라 별도 처리 ──
+_YEARLY_STUDY_TEXT_FIELDS = ("overall_flow", "study_style", "focus_and_achievement", "recommended_fields")
+_YEARLY_STUDY_OBJECTS = ("책", "노트", "펜", "스탠드 조명")
+
+
+def _study_stage_code(age: Optional[int]) -> str:
+    """만 나이 → 생애단계 코드. 생성 스크립트의 _STUDY_STAGES(s10/s20/s30_plus)와 동일 기준."""
+    a = age if isinstance(age, int) else 25
+    if a <= 19:
+        return "s10"
+    if a <= 29:
+        return "s20"
+    return "s30_plus"
+
+
+def _yearly_study_fallback() -> dict:
+    out = {
+        "one_line": "올해 배움은 서두르지 않아도 방향이 보이는 흐름이에요",
+        "keywords": ["성장"],
+        "concept_object": _YEARLY_STUDY_OBJECTS[0],
+        "overall_flow": (
+            "올해 배움은 큰 기복보다 방향을 다시 잡고 기반을 다지는 흐름이에요. "
+            "무리하게 욕심내기보다 이미 쌓아온 것을 단단하게 만드는 편이 유리합니다. "
+            "조급함을 내려놓고 한 걸음씩 나아가면 한 해의 결과는 나쁘지 않아요."
+        ),
+    }
+    for f in _YEARLY_STUDY_TEXT_FIELDS[1:]:
+        out[f] = "차분하게 내실을 다지면서 기회를 기다리는 편이 유리해요. 서두르지 않아도 흐름은 곧 따라옵니다."
+    return out
+
+
+def _yearly_study_static(ty: int, saju: dict, monthly, best, caution):
+    yy = str(ty)[2:]
+    g1 = saju.get("day_ganji") or ""
+    se = _year_ganji(ty)
+    stage = _study_stage_code(saju.get("age"))
+    key = f"{g1}_{se}_{stage}"
+    required = ("one_line", "concept_object") + _YEARLY_STUDY_TEXT_FIELDS
+    entry = _yearly_db.lookup("study", g1, se, required=required, key=key)
+    is_fb = entry is None
+    src = entry or _yearly_study_fallback()
+
+    kw = [str(k).strip() for k in (src.get("keywords") or []) if str(k).strip()][:1]
+    out = {
+        "content_type": f"{yy}년 {CATEGORIES['study']}",
+        "category": "study",
+        "target_year": ty,
+        "day_master": saju.get("day_master"),
+        "birth_time_known": saju.get("birth_time_known"),
+        "saju_info": person_summary(saju),
+        "life_stage": saju.get("life_stage"),
+        "age": saju.get("age"),
+        "one_line": str(src.get("one_line", "")),
+        "keywords": kw,
+        "concept_object": str(src.get("concept_object", "")),
+        "monthly": monthly,
+        "best_months": best,
+        "caution_months": caution,
+    }
+    for f in _YEARLY_STUDY_TEXT_FIELDS:
+        out[f] = paragraphize(str(src.get(f, "")))
+    out["analysis"] = paragraphize(
+        "\n\n".join(str(src.get(f, "")) for f in _YEARLY_STUDY_TEXT_FIELDS if str(src.get(f, "")).strip())
+    )
+    return out, is_fb
+
+
 def generate_yearly(
     category: str,
     year: int, month: int, day: int,
@@ -345,6 +412,9 @@ def generate_yearly(
     best, caution = _best_caution(monthly)
     yy = str(ty)[2:]
 
+    if category == "study":
+        # 정적 DB(일주×세운×생애단계) 조회 — 런타임 Gemini 호출 없음.
+        return _yearly_study_static(ty, saju, monthly, best, caution)
     if category in _STATIC_CATEGORIES:
         # 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
         return _yearly_static(category, ty, saju, monthly, best, caution)
