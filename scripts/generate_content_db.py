@@ -1160,8 +1160,9 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
     done_calls = 0
     failed: List[str] = []
     banmal: List[str] = []
-    stop_all = threading.Event()
+    stop_all = threading.Event()       # 라운드 내부 중단(크레딧 소진/모델 불가) — 라운드마다 새로 만듦
     credits_depleted = threading.Event()
+    interrupted = threading.Event()    # Ctrl-C — 자정 대기 없이 완전히 멈춘다
     t0 = time.time()
 
     def log(msg: str) -> None:
@@ -1269,24 +1270,50 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
                 log(f"  ── 진행: {cnt}/{total} · 이번 실행 {cur_made}개 "
                     f"· 평균 {rate:.1f}s/{unit}(워커당) · 남은 예상 {remain / 3600:.1f}h ──")
 
-    threads = [threading.Thread(target=worker_loop, args=(w,), daemon=True) for w in range(n_workers)]
-    try:
-        for th in threads:
-            th.start()
-        for th in threads:
-            th.join()
-    except KeyboardInterrupt:
-        stop_all.set()
-        print("\n[중단] Ctrl-C — 여기까지 저장됨. 같은 명령으로 이어서 진행합니다.")
-        for th in threads:
-            th.join(timeout=10)
+    day_waits = 0
+    print(f"PerDay(일일 한도) 소진 시: 모든 키 소진되면 태평양시 자정까지 대기 후 자동 재개 "
+          f"(최대 {args.max_days}일)\n")
+    while True:
+        threads = [threading.Thread(target=worker_loop, args=(w,), daemon=True) for w in range(n_workers)]
+        try:
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join()
+        except KeyboardInterrupt:
+            stop_all.set()
+            interrupted.set()
+            print("\n[중단] Ctrl-C — 여기까지 저장됨. 같은 명령으로 이어서 진행합니다.")
+            for th in threads:
+                th.join(timeout=10)
+
+        if work_q.empty() or interrupted.is_set() or credits_depleted.is_set():
+            break
+        if len(dead_keys) < len(keys):
+            # 이론상 도달하면 안 되지만(워커는 큐가 비거나 키가 없을 때만 반환), 무한루프 방지.
+            print("\n[경고] 작업이 남았는데 모든 워커가 종료됨(원인 불명) — 중단합니다.")
+            break
+        if day_waits >= args.max_days:
+            print(f"\n[중단] 연속 대기 {args.max_days}일 한도 도달. 나중에 같은 명령으로 이어서 진행하세요.")
+            break
+        wait_s = _seconds_until_pacific_midnight()
+        day_waits += 1
+        from datetime import datetime, timedelta
+        resume_at = datetime.now() + timedelta(seconds=wait_s)
+        print(f"\n[대기] 모든 키({len(keys)}개)가 오늘 한도 소진 → 태평양시 자정까지 ~{wait_s / 3600:.1f}시간 대기."
+              f"\n       재개 예정: {resume_at:%Y-%m-%d %H:%M} (로컬)  ·  {day_waits}/{args.max_days}일차"
+              f"\n       (Ctrl-C 로 중단해도 여기까지 저장돼 있고, 재실행하면 이어집니다.)")
+        time.sleep(wait_s)
+        dead_keys.clear()
+        stop_all = threading.Event()
+        credits_depleted = threading.Event()
 
     dt = time.time() - t0
     uniq_fail = sorted(set(failed))
     final_cnt = count_fn(db)
     print(f"\n{'=' * 60}")
     print(f"이번 실행: {made}개 생성 · 미완료(재실행 시 자동 재시도) {len(uniq_fail)}개 "
-          f"· 반말 의심 {len(set(banmal))}개 · {dt:.0f}s 소요")
+          f"· 반말 의심 {len(set(banmal))}개 · {dt:.0f}s 소요 · 대기 {day_waits}일")
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
     if credits_depleted.is_set():
         print("상태: 결제 프리페이 크레딧 소진으로 중단됨. 충전 후 같은 명령으로 재실행하세요.")
