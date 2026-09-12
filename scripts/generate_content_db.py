@@ -1113,6 +1113,195 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
     return made
 
 
+def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_fn,
+                             models, max_output_tokens, total, system_instruction, banmal_fn,
+                             unit="조합", store_fn=None, count_fn=None, header="") -> None:
+    """`_run_batched` 의 병렬판. (워커 스레드 × 고정 키 1개) 로 청크 호출을 동시에 여러 개 날린다.
+
+    genai.configure() 가 프로세스 전역이라 워커마다 make_model() 로 독립 클라이언트를
+    만들어 키를 하나씩 고정 배정한다(run_daily_concurrent 와 동일 이유). 모델 로테이션은
+    지원하지 않고 최우선 모델 하나만 쓴다. DB 쓰기는 락 + 원자적 저장으로 보호한다.
+    """
+    batch_size = max(1, args.batch)
+    if args.limit:
+        todo = todo[: args.limit]
+    if not todo:
+        print("생성할 항목이 없습니다. (모두 완료)")
+        return
+
+    if store_fn is None:
+        def store_fn(_db, _key, _entry, _model):
+            _entry["_model"] = _model
+            _db[_key] = _entry
+    if count_fn is None:
+        count_fn = len
+
+    model_name = models[0]
+    if len(models) > 1:
+        print(f"[알림] 병렬 모드는 모델 로테이션을 지원하지 않습니다 → {model_name} 고정 사용")
+
+    n_workers = max(1, min(args.workers, len(keys)))
+    chunks = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
+    n_calls = len(chunks)
+    if header:
+        print(header)
+    print(f"병렬 배치 모드: {len(todo)}개 {unit} · {batch_size}개/호출 ≈ {n_calls}회 호출 "
+          f"· worker {n_workers}개(키 {len(keys)}개 중 1개씩 고정 배정) · 모델 {model_name}\n")
+
+    work_q: "_queue.Queue[list]" = _queue.Queue()
+    attempts: Dict[str, int] = {}
+    for c in chunks:
+        work_q.put(c)
+
+    db_lock = threading.Lock()
+    stats_lock = threading.Lock()
+    dead_keys: set = set()
+    made = 0
+    done_calls = 0
+    failed: List[str] = []
+    banmal: List[str] = []
+    stop_all = threading.Event()
+    credits_depleted = threading.Event()
+    t0 = time.time()
+
+    def log(msg: str) -> None:
+        with stats_lock:
+            print(msg)
+
+    def requeue_or_giveup(chunk_items):
+        retriable = []
+        with stats_lock:
+            for it in chunk_items:
+                attempts[it[0]] = attempts.get(it[0], 0) + 1
+                if attempts[it[0]] < 2:
+                    retriable.append(it)
+                else:
+                    failed.append(it[0])
+        if retriable:
+            work_q.put(retriable)
+
+    def worker_loop(worker_id: int) -> None:
+        nonlocal made, done_calls
+        key_idx = worker_id % len(keys)
+        model = make_model(model_name, keys[key_idx], max_output_tokens, system_instruction)
+        while not stop_all.is_set():
+            try:
+                chunk = work_q.get_nowait()
+            except _queue.Empty:
+                return
+            chunk_keys = [it[0] for it in chunk]
+            try:
+                raw = generate_one(model, prompt_fn(chunk), args.max_retries, args.delay, timeout=300)
+            except CreditsDepleted as e:
+                log(f"\n[전체중단] 결제 프리페이 크레딧 소진 — 대기·재시도 무의미: {str(e)[:200]}")
+                credits_depleted.set()
+                stop_all.set()
+                work_q.put(chunk)
+                return
+            except (DailyQuotaExceeded, InvalidApiKey) as e:
+                reason = "오늘 소진(PerDay)" if isinstance(e, DailyQuotaExceeded) else "키 무효/권한없음"
+                with stats_lock:
+                    dead_keys.add(key_idx)
+                    alive = len(keys) - len(dead_keys)
+                log(f"    ⚠ 워커#{worker_id} 키#{key_idx + 1} {reason} → 키 전환  (살아있는 키 {alive}/{len(keys)})")
+                nxt = _next_alive_key(key_idx, len(keys), dead_keys)
+                work_q.put(chunk)
+                if nxt is None:
+                    log(f"    ✗ 워커#{worker_id} 사용 가능한 키가 없어 종료")
+                    return
+                key_idx = nxt
+                model = make_model(model_name, keys[key_idx], max_output_tokens, system_instruction)
+                continue
+            except ModelUnavailable as e:
+                log(f"[전체중단] 모델 {model_name} 사용 불가: {str(e)[:160]}")
+                stop_all.set()
+                work_q.put(chunk)
+                return
+            except RateLimited as e:
+                wait = min(max(e.retry_after or 5, 3), 30)
+                work_q.put(chunk)
+                time.sleep(wait)
+                continue
+            except Exception as e:  # noqa: BLE001
+                with stats_lock:
+                    done_calls += 1
+                log(f"[워커#{worker_id}] {chunk_keys[0]}…({len(chunk)})  ✗ 호출/파싱 실패: {str(e)[:130]}")
+                requeue_or_giveup(chunk)
+                continue
+
+            with stats_lock:
+                done_calls += 1
+                dc = done_calls
+            payload = _unwrap_batch_payload(raw, chunk_keys)
+            got, miss, bad = 0, [], []
+            for it in chunk:
+                key = it[0]
+                entry = payload.get(key) if isinstance(payload, dict) else None
+                if not isinstance(entry, dict):
+                    miss.append(it); continue
+                entry = coerce_fn(entry)
+                if not valid_fn(entry):
+                    bad.append(it); continue
+                with db_lock:
+                    store_fn(db, key, entry, model_name)
+                got += 1
+                if banmal_fn and banmal_fn(entry):
+                    with stats_lock:
+                        banmal.append(key)
+            if got:
+                with db_lock:
+                    _atomic_write_json(out_path, db)
+            if miss or bad:
+                requeue_or_giveup(miss + bad)
+
+            with stats_lock:
+                made += got
+                cur_made = made
+            cnt = count_fn(db)
+            log(f"[{dc}] 워커#{worker_id} {chunk_keys[0]}…({len(chunk)})  ✓ {got}개"
+                + (f" · 누락 {len(miss)}" if miss else "")
+                + (f" · 불량 {len(bad)}" if bad else "")
+                + f"   완료 {cnt}/{total}")
+            if cur_made and dc % 10 == 0:
+                elapsed = time.time() - t0
+                rate = elapsed / max(cur_made, 1) / max(n_workers, 1)
+                remain = (total - cnt) * rate
+                log(f"  ── 진행: {cnt}/{total} · 이번 실행 {cur_made}개 "
+                    f"· 평균 {rate:.1f}s/{unit}(워커당) · 남은 예상 {remain / 3600:.1f}h ──")
+
+    threads = [threading.Thread(target=worker_loop, args=(w,), daemon=True) for w in range(n_workers)]
+    try:
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+    except KeyboardInterrupt:
+        stop_all.set()
+        print("\n[중단] Ctrl-C — 여기까지 저장됨. 같은 명령으로 이어서 진행합니다.")
+        for th in threads:
+            th.join(timeout=10)
+
+    dt = time.time() - t0
+    uniq_fail = sorted(set(failed))
+    final_cnt = count_fn(db)
+    print(f"\n{'=' * 60}")
+    print(f"이번 실행: {made}개 생성 · 미완료(재실행 시 자동 재시도) {len(uniq_fail)}개 "
+          f"· 반말 의심 {len(set(banmal))}개 · {dt:.0f}s 소요")
+    print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+    if credits_depleted.is_set():
+        print("상태: 결제 프리페이 크레딧 소진으로 중단됨. 충전 후 같은 명령으로 재실행하세요.")
+    elif final_cnt >= total:
+        print(f"상태: 전체 {total}개 생성 완료 🎉")
+    else:
+        print("상태: 아직 미완료. 같은 명령을 다시 실행하면 이어서 진행합니다.")
+    if uniq_fail:
+        print(f"미완료 키: " + ", ".join(uniq_fail[:30]) + (" ..." if len(uniq_fail) > 30 else ""))
+    if banmal:
+        b = sorted(set(banmal))
+        print(f"반말 의심 키(검토 후 --overwrite --only 로 재생성): "
+              + ", ".join(b[:30]) + (" ..." if len(b) > 30 else ""))
+
+
 def run_daily_batched(args, todo, db, out_path, keys) -> None:
     models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
     _run_batched(args, todo, db, out_path, keys,
@@ -2914,7 +3103,8 @@ def run_yearly_cat(args, category: str) -> None:
     todo = [(k,) for k in seg]
     sub = argparse.Namespace(**vars(args))
     sub.limit = 0
-    _run_batched(
+    runner = _run_batched_concurrent if (args.workers and args.workers > 1) else _run_batched
+    runner(
         sub, todo, db, out_path, api_keys,
         prompt_fn=(lambda its, _c=category: _yearly_v2_prompt(_c, its)),
         valid_fn=(lambda e, _c=category: _yearly_v2_valid(_c, e)),
