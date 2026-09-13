@@ -6,8 +6,8 @@
 """
 from typing import Dict, Any, Tuple
 
-from core.constants import score_to_emoji, score_to_band
-from shared.text_format import paragraphize
+from core.constants import score_to_emoji, score_to_band, daily_headline_fallback
+from shared.text_format import paragraphize, first_sentence, is_valid_headline
 from domains.daily.content_db import lookup
 
 CONTENT_TYPE = "daily_fortune"
@@ -55,6 +55,18 @@ def _fallback(saju: Dict[str, Any]) -> dict:
     }
 
 
+def _headline(ai: dict, overall_score: int) -> str:
+    """한줄평 가드레일: LLM(정적 DB)이 준 headline 이 없거나 무효하면 요약 첫 문장을,
+    그마저 무효하면 점수대별 기본 문구로 100% 대체한다."""
+    candidate = str(ai.get("headline") or "").strip()
+    if not candidate:
+        summ = ai.get("summary") or {}
+        candidate = first_sentence(str(summ.get("overall", "")))
+    if is_valid_headline(candidate):
+        return candidate
+    return daily_headline_fallback(overall_score)
+
+
 def _shape(ai: dict) -> dict:
     def s(v, d=60):
         try:
@@ -75,6 +87,7 @@ def _shape(ai: dict) -> dict:
         "work_study_score": s(ai.get("work_study_score")),
         "score_emoji": score_to_emoji(overall),
         "score_band": score_to_band(overall),
+        "headline": _headline(ai, overall),
         "summary": {
             "overall": paragraphize(str(summ.get("overall", ""))),
             "money": paragraphize(str(summ.get("money", ""))),

@@ -8,6 +8,40 @@ import re
 
 _SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'”’)\]]*|\S[^.!?…]*$")
 
+# ── 한줄평(headline) 유효성 가드레일 ──
+# 조건1: 10자 미만, 조건2: 인사말/감탄사만, 조건3: 특수문자로만 구성되거나 문장 미완성.
+_GREETING_OR_INTERJECTION_ONLY = re.compile(
+    r"^(안녕하세요|안녕|반갑습니다|반가워요|반가워|네|넵|아|와|휴|음|어|오|헉|엥|앗|와우|헐)"
+    r"[\s,.!?~…]*$"
+)
+_HAS_MEANINGFUL_CHAR = re.compile(r"[가-힣a-zA-Z0-9]")
+_DANGLING_CLAUSE_END = re.compile(
+    r"(,|、|~|-|그리고|그래서|하지만|근데|그런데|고|며|는데|지만|어서|아서|니까|거나|든지)\s*$"
+)
+
+
+def first_sentence(text: str) -> str:
+    """텍스트에서 첫 문장(또는 첫 줄)만 뽑는다. 프론트 firstSentence() 와 동일 규칙."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    m = re.match(r"^.*?[.!?。](?=\s|$)", t)
+    return (m.group(0) if m else t.split("\n")[0]).strip()
+
+
+def is_valid_headline(text: str) -> bool:
+    """오늘의 운세 한줄평 가드레일. 길이/인사말·감탄사/특수문자·미완성 문장을 걸러낸다."""
+    t = (text or "").strip()
+    if len(t) < 10:
+        return False
+    if _GREETING_OR_INTERJECTION_ONLY.match(t):
+        return False
+    if not _HAS_MEANINGFUL_CHAR.search(t):
+        return False
+    if _DANGLING_CLAUSE_END.search(t):
+        return False
+    return True
+
 
 def paragraphize(text: str, sentences_per_paragraph: int = 3) -> str:
     t = (text or "").strip()

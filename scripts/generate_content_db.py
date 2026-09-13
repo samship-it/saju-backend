@@ -69,6 +69,7 @@ from core.constants import (  # noqa: E402
 from core.sipsin import calculate_sipsin, sipsin_group  # noqa: E402
 from shared.persona_map import persona_prompt, GAN_PERSONA, JI_PERSONA  # noqa: E402
 from shared.ai_client import _extract_json as _extract_json_strict, _is_rate_limited, _retry_delay_sec  # noqa: E402
+from shared.text_format import is_valid_headline  # noqa: E402
 
 
 def _extract_json(text: str) -> dict:
@@ -475,6 +476,8 @@ def daily_prompt(day_ganji: str, iljin_ganji: str) -> str:
   (싱글이든 커플이든 관계없이 love_single 과 love_couple 을 항상 둘 다 채웁니다.)
 - keywords 는 빈 문자열 없이 서로 다른 한국어 키워드 정확히 3개입니다.
 - 모든 값은 비어 있으면 안 됩니다.
+- headline(한줄평)은 반드시 15자 이상의 완결된 운세 요약 문장이어야 하며, '안녕하세요' 같은
+  인사말이나 '와', '아', '휴' 같은 단순 감탄사는 절대로 포함하지 마세요.
 
 [출력 JSON — 이 구조와 키를 그대로, 이 JSON 객체 하나만 출력]
 {{
@@ -482,6 +485,7 @@ def daily_prompt(day_ganji: str, iljin_ganji: str) -> str:
   "money_score": <0-100 정수>,
   "love_score": <0-100 정수>,
   "work_study_score": <0-100 정수>,
+  "headline": "오늘의 운세 한줄평 (존댓말, 15자 이상, 완결된 문장, 인사말·감탄사 금지)",
   "summary": {{
     "overall": "오늘 하루 종합 총평 (존댓말, 5줄 이상)",
     "money": "돈의 흐름과 오늘의 구체적 상황 (존댓말, 5줄 이상)",
@@ -529,6 +533,8 @@ def coerce_daily_entry(entry: Any) -> Any:
         entry["recommended_action"] = _c(entry["recommended_action"])
     if isinstance(entry.get("keywords"), list):
         entry["keywords"] = [_c(k) for k in entry["keywords"]]
+    if isinstance(entry.get("headline"), str):
+        entry["headline"] = _c(entry["headline"])
     return entry
 
 
@@ -552,6 +558,8 @@ def daily_valid(entry: Any) -> bool:
     if not isinstance(kws, list) or len([k for k in kws if str(k).strip()]) < 1:
         return False
     if not str(entry.get("recommended_action", "")).strip():
+        return False
+    if not is_valid_headline(str(entry.get("headline", ""))):
         return False
     return True
 
@@ -808,6 +816,7 @@ _DAILY_SCHEMA_BLOCK = """{
     "money_score": <0-100 정수>,
     "love_score": <0-100 정수>,
     "work_study_score": <0-100 정수>,
+    "headline": "오늘의 운세 한줄평 (존댓말, 15자 이상, 완결된 문장, 인사말·감탄사 금지)",
     "summary": {
       "overall": "오늘 하루 종합 총평 (존댓말, 5줄 이상)",
       "money": "돈의 흐름과 오늘의 구체적 상황 (존댓말, 5줄 이상)",
@@ -863,11 +872,13 @@ def daily_batch_prompt(items: List[Tuple[str, str, str]]) -> str:
 - 2030 세대가 공감할 현실 언어로 말합니다. 같은 일주는 늘 같은 말투를 유지합니다.
 
 [출력 스키마 규칙 — 반드시 준수]
-- 각 조합의 값은 정확히 이 7개 키만 가집니다: overall_score, money_score, love_score, work_study_score, summary, keywords, recommended_action.
+- 각 조합의 값은 정확히 이 8개 키만 가집니다: overall_score, money_score, love_score, work_study_score, headline, summary, keywords, recommended_action.
 - **summary 는 반드시 중첩된 JSON 객체입니다.** overall, money, love_single, love_couple, work_study 5개 하위 키를 summary "안에" 넣습니다.
   summary 를 문자열로 쓰거나, money·love_single·love_couple·work_study 를 조합 값의 최상위로 빼내지 마세요.
   (싱글이든 커플이든 love_single 과 love_couple 을 항상 둘 다 채웁니다.)
 - keywords 는 빈 문자열 없이 서로 다른 한국어 키워드 정확히 3개입니다.
+- headline(한줄평)은 반드시 15자 이상의 완결된 운세 요약 문장이어야 하며, '안녕하세요' 같은
+  인사말이나 '와', '아', '휴' 같은 단순 감탄사는 절대로 포함하지 마세요.
 - 모든 값은 비어 있으면 안 됩니다.
 
 [생성할 조합 — 총 {len(items)}개]

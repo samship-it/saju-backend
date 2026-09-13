@@ -141,6 +141,30 @@ SCORE_EMOJI_BANDS = [
     (90, 100, "😆"),
 ]
 
+# 오늘의 운세 한줄평(headline) 점수대별 기본 문구 — LLM 결과가 가드레일 검증에 실패했을 때
+# 100% 이 문구로 대체한다(shared.text_format.is_valid_headline 참고).
+DAILY_HEADLINE_BANDS = [
+    (0, 9, "내일은 내일의 태양이 뜬다"),
+    (10, 19, "오늘은 에너지 절약 모드"),
+    (20, 29, "괜찮아, 잘될 거야"),
+    (30, 39, "천천히, 나답게"),
+    (40, 49, "중간은 반 이상 간다"),
+    (50, 59, "이 정도면 선방"),
+    (60, 69, "작은 행운이 오는 하루가 될 거예요"),
+    (70, 79, "바라던 좋은 하루"),
+    (80, 89, "나 이런 사람이야~~"),
+    (90, 100, "오늘의 주인공은 바로 나"),
+]
+
+
+def daily_headline_fallback(score: int) -> str:
+    s = max(0, min(100, int(round(score))))
+    for lo, hi, text in DAILY_HEADLINE_BANDS:
+        if lo <= s <= hi:
+            return text
+    return DAILY_HEADLINE_BANDS[5][2]
+
+
 # 궁합/결혼 점수 -> 관계 타입 + 한줄평 (기획 문서 표 그대로)
 COMPAT_BANDS = [
     (90, 100, "💍 천생연분", "이 정도면 결혼각 💍"),
