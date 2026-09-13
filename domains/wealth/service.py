@@ -55,12 +55,19 @@ def _fallback(market: Dict[str, Any]) -> dict:
 
 def _shape(ai: dict, market: Dict[str, Any]) -> dict:
     beh = ai.get("investment_behavior") or {}
+    is_live = bool(market.get("is_live"))
+    # 휴장 중엔 market_point 를 AI 가 절대 덮어쓰지 못하게 스냅샷의 고정 문구를 그대로 쓴다.
+    market_point = (
+        str(ai.get("market_point") or market.get("market_point") or "")
+        if is_live
+        else str(market.get("market_point") or "")
+    )
     return {
         "market": {
             "indices": market.get("indices"),
-            "is_live": market.get("is_live"),
+            "is_live": is_live,
         },
-        "market_point": str(ai.get("market_point") or market.get("market_point") or ""),
+        "market_point": market_point,
         "investment_fortune": str(ai.get("investment_fortune", "")),
         "consumption_fortune": str(ai.get("consumption_fortune", "")),
         "money_flow": str(ai.get("money_flow", "")),
@@ -81,24 +88,45 @@ def analyze_daily_finance(
 ) -> Tuple[dict, bool]:
     saju = calculate_saju(year, month, day, hour, minute, gender=gender, is_lunar=is_lunar, target_date=target_date)
     market = get_market_snapshot(saju.get("target_date"))
+    is_live = bool(market.get("is_live"))
+
+    if is_live:
+        market_context = f"[오늘의 시장 포인트 후보 — 사주와 무관한 외부 데이터]\n{market.get('market_point')}"
+        investment_rule = (
+            "- investment_fortune: 시장 포인트와 개인 사주 흐름을 결합해 투자운을 쓰되, "
+            "주가 방향을 예언하지 말 것. 편재/식상/비겁/변동성 관련 충·형 반영."
+        )
+    else:
+        market_context = (
+            "[시장 상태]\n지금은 국내 증시 정규장이 휴장(주말/공휴일/장외 시간)입니다. "
+            "market_point 필드는 이번 응답에서 사용하지 않으니 신경 쓰지 마세요(시스템이 고정 문구로 대체)."
+        )
+        investment_rule = (
+            "- investment_fortune: 휴장 중이므로 시황을 절대 단정하거나 언급하지 말 것. 대신 사용자의 "
+            "사주 흐름(십신/충형)을 근거로 '휴장 중에 할 수 있는 구체적 행동 지침'만 쓸 것 "
+            "(예: 자산 비중 재정비, 관심 종목·투자 원칙 점검, 다음 개장 대비 계획 세우기). "
+            "지금 사라/팔아라 같은 실시간 매매 전제 조언은 금지."
+        )
 
     prompt = f"""{persona_prompt(saju.get('day_master'), saju.get('day_branch'))}
 
-[오늘의 시장 포인트 후보 — 사주와 무관한 외부 데이터]
-{market.get('market_point')}
+{market_context}
 
 {engine_block(saju, domains=['money', 'business'])}
 
 [규칙]
-- 시장 포인트와 개인 사주 흐름을 결합하되 주가 방향을 예언하지 말 것.
-- 각 해석은 최소 5줄. 사주 용어 노출 금지.
+{investment_rule}
+- consumption_fortune: 오늘 소비 성향과 지출 주의사항에 집중(장 개장 여부와 무관). 재성/비겁/일간 반영.
+- money_flow: 오늘 자금이 들어오고 나가는 흐름(입출금 기류)에 집중. 재성/식상/비겁 관계 반영.
+- caution_point: 오늘 가장 피해야 할 행동 딱 1가지를 명확히(예: 홧김 결제, 무리한 예약 매수 등). 1-2문장.
+- 각 해석은 최소 5줄(caution_point 제외). 사주 용어 노출 금지.
 
 [출력 JSON — 이 구조만 출력]
 {{
-  "market_point": "오늘 시장에서 가장 중요한 현상 하나 (1-2문장)",
-  "investment_fortune": "시장 상황 + 개인 사주를 연결한 투자운 (5줄 이상). 편재/식상/비겁/변동성 관련 충·형 반영",
-  "consumption_fortune": "소비 성향을 구체적 일상 상황으로 번역 (5줄 이상). 재성/비겁/일간/당일 금전 흐름 반영",
-  "money_flow": "오늘 돈이 들어오고 나가는 흐름 설명 (5줄 이상). 재성/식상/비겁 관계 반영",
+  "market_point": "오늘 시장에서 가장 중요한 현상 하나 (1-2문장, 휴장 시에도 형식상 채우되 시스템이 대체함)",
+  "investment_fortune": "위 investment_fortune 규칙을 반영한 투자운 (5줄 이상)",
+  "consumption_fortune": "소비 성향을 구체적 일상 상황으로 번역 (5줄 이상)",
+  "money_flow": "오늘 돈이 들어오고 나가는 흐름 설명 (5줄 이상)",
   "caution_point": "오늘 가장 조심해야 할 행동 하나 (명확하게 1-2문장)",
   "investment_behavior": {{
     "tendency": "적극성 / 관망 중 하나",
