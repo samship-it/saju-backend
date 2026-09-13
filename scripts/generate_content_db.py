@@ -3512,6 +3512,7 @@ LIFELONG_STAGE_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lif
 _LIFELONG_JARGON_TERMS = [
     "비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인",
     "비겁", "식상", "재성", "관성", "인성", "격국", "용신", "십신", "신강", "신약",
+    "충형", "육합", "자형", "복음",
 ]
 _LIFELONG_JARGON_RE = re.compile(r"(?:" + "|".join(_LIFELONG_JARGON_TERMS) + r")\s*(?:중심(?:으로|의)?)?")
 
@@ -3582,27 +3583,54 @@ def _lifelong_stage_keys(only: Optional[str]) -> List[Tuple[str, str, str, str, 
     return out
 
 
+_personality_db_cache: Optional[Dict[str, Any]] = None
+
+
+def _personality_base_nature(ilju: str) -> str:
+    """personality_db.json[일주].character.base_nature — life_theme 이 반복하면 안 되는 '성향' 텍스트."""
+    global _personality_db_cache
+    if _personality_db_cache is None:
+        _personality_db_cache = _load_json(PERSONALITY_DB_PATH)
+    return (_personality_db_cache.get(ilju, {}) or {}).get("character", {}).get("base_nature", "")
+
+
 def _lifelong_base_item_block(ilju: str) -> str:
     dm, db = ilju[0], ilju[1]
-    return f"── 조합 키: {ilju} ──\n{persona_prompt(dm, db)}\n- 일주(원국 대표): {ilju}"
+    base_nature = _personality_base_nature(ilju)
+    ji_sipsin = calculate_sipsin(dm, db, is_gan=False)
+    ji_group = sipsin_group(ji_sipsin)
+    return (
+        f"── 조합 키: {ilju} ──\n{persona_prompt(dm, db)}\n"
+        f"- 이미 확정된 '타고난 성향'(다른 화면에 이미 표시됨 — 절대 반복하지 말 것): {base_nature}\n"
+        f"- 구조적 특징(일지가 일간에 대해 갖는 기운, life_theme 의 근거로만 사용): {ji_group}({ji_sipsin})"
+    )
 
 
 def lifelong_base_batch_prompt(items: List[Tuple[str, str]]) -> str:
     keys = [k for k, _ in items]
     blocks = "\n\n".join(_lifelong_base_item_block(ilju) for _, ilju in items)
-    return f"""아래 {len(items)}개의 일주 각각에 대해, 그 사람의 '타고난 본질'과 '평생에 걸친 삶의 성향'을 만듭니다.
+    return f"""아래 {len(items)}개의 일주 각각에 대해 'life_theme'(인생을 관통하는 반복 과제) 하나만 만듭니다.
 각 일주는 서로 완전히 독립입니다. 한 일주의 내용을 다른 일주에 복사하지 마세요.
 
 [말투 규칙 — 최우선, 절대 예외 없음]
 - 모든 문장을 '친근한 존댓말'로만 씁니다('~해요/~예요/~입니다' 등). 반말은 단 한 번도 쓰지 않습니다.
 - 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등)는 절대 그대로 쓰지 말고 일상 언어로 풀어 씁니다.
 
-[출력 스키마 규칙 — 반드시 준수]
-- 각 일주의 값은 정확히 core_nature, life_domains 2개 키만 가집니다.
-- core_nature.personality: 그 일주의 타고난 본질과 행동 패턴 (3~5문장).
-- core_nature.life_theme: 인생을 관통하는 핵심 대주제를 한 문장(15~30자)으로.
-- life_domains 는 특정 나이대에 국한하지 않는 평생 성향입니다. wealth/career/family/social
-  4개 키를 모두 채웁니다.
+[작성 규칙 — life_theme, base_nature 와 완전히 다른 층위여야 함]
+- base_nature 는 "이 사람이 어떤 사람인가"(기질·태도·행동 패턴)를 말합니다. 절대 그 내용을
+  다른 말로 바꿔 반복하지 마세요.
+- life_theme 은 "이 사람이 평생에 걸쳐 반복적으로 마주하는 상황·과제·긴장 관계"를 말합니다.
+  성격 묘사가 아니라 '되풀이되는 인생의 시나리오/딜레마'로 씁니다.
+- 문장 구조는 서사형(딜레마·되풀이되는 상황을 그리는 문장)을 유지하되, 60개 전부가 똑같은
+  "[긴장A]와 [긴장B] 사이에서 반복하며 ~하는 삶" 틀에 기계적으로 맞춰지지 않게 표현 방식에
+  변주를 주세요. 예: 어떤 일주는 질문형으로 시작, 어떤 일주는 장면 묘사로 시작, 어떤 일주는
+  긴장의 두 축을 나열하는 방식 등 — 골고루 섞어서 씁니다.
+- 나쁜 예(성향 재탕): "빠른 판단력으로 주도권을 쥐는 삶" ← base_nature 영역이라 금지.
+- 좋은 예(반복 과제, 서사형이되 표현은 자유): "홀로 서려는 마음과 곁을 지켜줄 사람이 필요한
+  마음 사이를 오가며 균형을 찾아가는 삶" / "왜 나는 매번 다 갖추고도 마지막에 망설이게 될까?
+  준비된 순간에도 스스로에게 묻고 또 묻는 삶" / "쥐려는 손과 놓아주는 손, 이 두 손을 번갈아
+  쓰며 살아가는 삶"
+- 한 문장(20~40자).
 
 [생성할 일주 — 총 {len(items)}개]
 
@@ -3612,59 +3640,23 @@ def lifelong_base_batch_prompt(items: List[Tuple[str, str]]) -> str:
 - 최상위 key 는 위 '조합 키'(일주) 문자열을 그대로 사용합니다: {', '.join(keys)}
 
 {{
-  "{keys[0]}": {{
-    "core_nature": {{"personality": "...", "life_theme": "..."}},
-    "life_domains": {{
-      "wealth": {{"style": "...", "management_tip": "..."}},
-      "career": {{"best_fit_work": "...", "success_environment": "..."}},
-      "family": {{"relation_characteristics": "...", "harmony_key": "..."}},
-      "social": {{"connection_style": "...", "network_strategy": "..."}}
-    }}
-  }},
-  "{keys[1] if len(keys) > 1 else '일주키2'}": {{ "...위와 완전히 동일한 구조..." }}
+  "{keys[0]}": {{"life_theme": "..."}},
+  "{keys[1] if len(keys) > 1 else '일주키2'}": {{"life_theme": "..."}}
 }}"""
 
 
 def coerce_lifelong_base(entry: Any) -> Any:
     if not isinstance(entry, dict):
         return entry
-    core = entry.get("core_nature")
-    if isinstance(core, dict):
-        for k in ("personality", "life_theme"):
-            if isinstance(core.get(k), str):
-                core[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(core[k])))
-    doms = entry.get("life_domains")
-    if isinstance(doms, dict):
-        for fields in doms.values():
-            if isinstance(fields, dict):
-                for k, v in list(fields.items()):
-                    if isinstance(v, str):
-                        fields[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(v)))
+    if isinstance(entry.get("life_theme"), str):
+        entry["life_theme"] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(entry["life_theme"])))
     return entry
 
 
 def lifelong_base_valid(entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
-    core = entry.get("core_nature")
-    if not isinstance(core, dict) or not all(
-        str(core.get(k, "")).strip() for k in ("personality", "life_theme")
-    ):
-        return False
-    doms = entry.get("life_domains")
-    if not isinstance(doms, dict):
-        return False
-    required = {
-        "wealth": ("style", "management_tip"),
-        "career": ("best_fit_work", "success_environment"),
-        "family": ("relation_characteristics", "harmony_key"),
-        "social": ("connection_style", "network_strategy"),
-    }
-    for name, fields in required.items():
-        d = doms.get(name)
-        if not isinstance(d, dict) or not all(str(d.get(f, "")).strip() for f in fields):
-            return False
-    return True
+    return bool(str(entry.get("life_theme", "")).strip())
 
 
 def _lifelong_stage_item_block(key: str, ilju: str, stage: str, dominant: str, prev: str) -> str:

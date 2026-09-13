@@ -221,6 +221,65 @@ def _ganji_by_year(year: int) -> str:
     return GAN_H[(year - 4) % 10] + JI_H[(year - 4) % 12]
 
 
+def daewoon_ganji_sequence(month_pillar: str, is_forward: bool, count: int = 8) -> List[str]:
+    """월주(한자) + 순역방향만으로 결정되는 1~count 번째 대운 간지 순서.
+
+    일주/생년월일과 무관 — 대운 간지 시퀀스 자체는 월주에서 순행/역행으로 한 칸씩
+    옮겨가며 정해지고(월두법), 실제 개인마다 다른 건 "몇 살부터 1번째가 시작하는가"
+    (대운수)뿐이다. 그래서 (월주, 순역방향)만 있으면 1~8번째 대운 간지를 전부 낼 수 있다.
+    """
+    m_gan = GAN_H.index(month_pillar[0]) if month_pillar and month_pillar[0] in GAN_H else 0
+    m_ji = JI_H.index(month_pillar[1]) if len(month_pillar) > 1 and month_pillar[1] in JI_H else 2
+    step = 1 if is_forward else -1
+    gi, ji = m_gan, m_ji
+    out = []
+    for _ in range(count):
+        gi = (gi + step) % 10
+        ji = (ji + step) % 12
+        out.append(GAN_H[gi] + JI_H[ji])
+    return out
+
+
+# 지지 2자 관계 판정(일지 vs 대운/세운/일진 지지 등 범용) — daily 프롬프트가 쓰던 것과 동일 로직을
+# core 로 승격해 단일 소스로 관리(scripts/generate_content_db.py 는 이걸 그대로 가져다 쓴다).
+def branch_relation(branch_a: str, branch_b: str) -> str:
+    from core.constants import YUKHAP, CHUNG, PA, HAE, SANGHYEONG, SELF_HYEONG
+
+    if not branch_a or not branch_b:
+        return "무관"
+    pair = frozenset((branch_a, branch_b))
+    if branch_a == branch_b:
+        return "복음(같은 지지)" + (" · 자형" if branch_a in SELF_HYEONG else "")
+    for table, label in ((YUKHAP, "육합(협력·인연)"), (CHUNG, "충(충돌·이동)"),
+                         (PA, "파(어긋남)"), (HAE, "해(방해·구설)"), (SANGHYEONG, "형(마찰·조정)")):
+        if pair in table:
+            return label
+    return "무관"
+
+
+def daewoon_step_facts(
+    day_master: str, day_branch: str, month_pillar: str, is_forward: bool, count: int = 8,
+) -> List[Dict[str, Any]]:
+    """1~count 번째 대운 각각의 간지·십신·십신군·(일지 대비) 충형관계를 계산한다.
+
+    Python 이 계산하는 '사실' — AI 프롬프트/정적 DB 콤보 키 생성 양쪽에서 쓴다.
+    """
+    from core.sipsin import calculate_sipsin, sipsin_group
+
+    out = []
+    for i, ganji in enumerate(daewoon_ganji_sequence(month_pillar, is_forward, count), start=1):
+        gan, ji = ganji[0], ganji[1] if len(ganji) > 1 else ""
+        sipsin = calculate_sipsin(day_master, gan, is_gan=True)
+        out.append({
+            "step": i,
+            "ganji": ganji,
+            "sipsin": sipsin,
+            "sipsin_group": sipsin_group(sipsin),
+            "branch_relation": branch_relation(day_branch, ji),
+        })
+    return out
+
+
 def calculate_daewoon_info(
     year: int, month: int, day: int, gender: str,
     year_pillar: str, month_pillar: str = "甲寅",
@@ -235,17 +294,9 @@ def calculate_daewoon_info(
     is_forward = (is_male and is_yang) or (not is_male and not is_yang)
     daewoon_num = calculate_exact_daewoon_num(birth_dt, is_forward)
 
-    m_gan = GAN_H.index(month_pillar[0]) if month_pillar and month_pillar[0] in GAN_H else 0
-    m_ji = JI_H.index(month_pillar[1]) if len(month_pillar) > 1 and month_pillar[1] in JI_H else 2
-    step = 1 if is_forward else -1
-
     flow = []
-    gi, ji = m_gan, m_ji
-    for i in range(1, 9):
-        gi = (gi + step) % 10
-        ji = (ji + step) % 12
+    for i, ganji in enumerate(daewoon_ganji_sequence(month_pillar, is_forward, 8), start=1):
         start_age = daewoon_num + (i - 1) * 10
-        ganji = GAN_H[gi] + JI_H[ji]
         flow.append({
             "step": i,
             "start_age": start_age,

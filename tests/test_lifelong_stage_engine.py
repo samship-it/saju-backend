@@ -173,39 +173,16 @@ def test_lifelong_stage_keys_only_filter():
 
 
 # ------------------------------------------------------------------ 검증/정제 함수
-def test_lifelong_base_valid_accepts_complete_entry():
-    entry = {
-        "core_nature": {"personality": "설명", "life_theme": "주제"},
-        "life_domains": {
-            "wealth": {"style": "s", "management_tip": "t"},
-            "career": {"best_fit_work": "w", "success_environment": "e"},
-            "family": {"relation_characteristics": "r", "harmony_key": "h"},
-            "social": {"connection_style": "c", "network_strategy": "n"},
-        },
-    }
-    assert lifelong_base_valid(entry) is True
+# base 스키마는 life_theme 단독(성향 personality/life_domains 는 personality_db 재사용 및
+# section3 로 이동해 base 테이블에서 제거됨 — domains/lifelong/service.py 모듈 docstring 참고).
+def test_lifelong_base_valid_accepts_life_theme_only():
+    assert lifelong_base_valid({"life_theme": "반복되는 인생 과제"}) is True
 
 
-@pytest.mark.parametrize("missing_path", [
-    ("core_nature", "personality"), ("core_nature", "life_theme"),
-    ("life_domains", "wealth"), ("life_domains", "career"),
-])
-def test_lifelong_base_valid_rejects_missing_fields(missing_path):
-    entry = {
-        "core_nature": {"personality": "설명", "life_theme": "주제"},
-        "life_domains": {
-            "wealth": {"style": "s", "management_tip": "t"},
-            "career": {"best_fit_work": "w", "success_environment": "e"},
-            "family": {"relation_characteristics": "r", "harmony_key": "h"},
-            "social": {"connection_style": "c", "network_strategy": "n"},
-        },
-    }
-    top, sub = missing_path
-    if top == "core_nature":
-        entry["core_nature"][sub] = ""
-    else:
-        entry["life_domains"][sub] = {}
-    assert lifelong_base_valid(entry) is False
+def test_lifelong_base_valid_rejects_empty_or_missing():
+    assert lifelong_base_valid({"life_theme": ""}) is False
+    assert lifelong_base_valid({}) is False
+    assert lifelong_base_valid("not a dict") is False
 
 
 def test_lifelong_stage_valid_requires_all_three_fields():
@@ -226,19 +203,10 @@ def test_coerce_lifelong_stage_strips_jargon_in_place():
     assert "인성" not in out["previous_diff"]
 
 
-def test_coerce_lifelong_base_strips_jargon_in_nested_domains():
-    entry = {
-        "core_nature": {"personality": "재성 중심의 성향이에요.", "life_theme": "주제"},
-        "life_domains": {
-            "wealth": {"style": "비겁 중심의 스타일이에요.", "management_tip": "팁"},
-            "career": {"best_fit_work": "w", "success_environment": "e"},
-            "family": {"relation_characteristics": "r", "harmony_key": "h"},
-            "social": {"connection_style": "c", "network_strategy": "n"},
-        },
-    }
+def test_coerce_lifelong_base_strips_jargon_in_life_theme():
+    entry = {"life_theme": "재성 중심의 성향을 오가는 삶입니다."}
     out = coerce_lifelong_base(entry)
-    assert "재성" not in out["core_nature"]["personality"]
-    assert "비겁" not in out["life_domains"]["wealth"]["style"]
+    assert "재성" not in out["life_theme"]
 
 
 # ------------------------------------------------------------------ 조회 기반 서비스(라이브 API 호출 없음)
