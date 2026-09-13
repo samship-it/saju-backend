@@ -29,18 +29,23 @@ def first_sentence(text: str) -> str:
     return (m.group(0) if m else t.split("\n")[0]).strip()
 
 
-def is_valid_headline(text: str) -> bool:
-    """오늘의 운세 한줄평 가드레일. 길이/인사말·감탄사/특수문자·미완성 문장을 걸러낸다."""
+def headline_invalid_reason(text: str) -> str:
+    """헤드라인이 가드레일을 통과하지 못한 사유(사람이 읽는 로그용). 유효하면 빈 문자열."""
     t = (text or "").strip()
     if len(t) < 10:
-        return False
+        return f"길이 미달({len(t)}자, 최소 10자)"
     if _GREETING_OR_INTERJECTION_ONLY.match(t):
-        return False
+        return "인사말/감탄사만 포함"
     if not _HAS_MEANINGFUL_CHAR.search(t):
-        return False
+        return "특수문자로만 구성"
     if _DANGLING_CLAUSE_END.search(t):
-        return False
-    return True
+        return "문장 미완성(연결어/쉼표로 종료)"
+    return ""
+
+
+def is_valid_headline(text: str) -> bool:
+    """오늘의 운세 한줄평 가드레일. 길이/인사말·감탄사/특수문자·미완성 문장을 걸러낸다."""
+    return headline_invalid_reason(text) == ""
 
 
 def paragraphize(text: str, sentences_per_paragraph: int = 3) -> str:

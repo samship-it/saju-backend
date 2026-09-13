@@ -69,7 +69,7 @@ from core.constants import (  # noqa: E402
 from core.sipsin import calculate_sipsin, sipsin_group  # noqa: E402
 from shared.persona_map import persona_prompt, GAN_PERSONA, JI_PERSONA  # noqa: E402
 from shared.ai_client import _extract_json as _extract_json_strict, _is_rate_limited, _retry_delay_sec  # noqa: E402
-from shared.text_format import is_valid_headline  # noqa: E402
+from shared.text_format import is_valid_headline, headline_invalid_reason  # noqa: E402
 
 
 def _extract_json(text: str) -> dict:
@@ -476,8 +476,9 @@ def daily_prompt(day_ganji: str, iljin_ganji: str) -> str:
   (싱글이든 커플이든 관계없이 love_single 과 love_couple 을 항상 둘 다 채웁니다.)
 - keywords 는 빈 문자열 없이 서로 다른 한국어 키워드 정확히 3개입니다.
 - 모든 값은 비어 있으면 안 됩니다.
-- headline(한줄평)은 반드시 15자 이상의 완결된 운세 요약 문장이어야 하며, '안녕하세요' 같은
-  인사말이나 '와', '아', '휴' 같은 단순 감탄사는 절대로 포함하지 마세요.
+- 오늘의 운세 결과를 바탕으로 유저에게 줄 20자~40자 사이의 완결된 한 줄 요약 평(headline)을
+  작성하세요. 절대 '안녕하세요', '반갑습니다' 같은 인사말이나 '와!' 같은 단순 감탄사를 포함하지
+  말고, 운세의 핵심 메시지만 단 한 문장으로 작성하세요.
 
 [출력 JSON — 이 구조와 키를 그대로, 이 JSON 객체 하나만 출력]
 {{
@@ -485,7 +486,7 @@ def daily_prompt(day_ganji: str, iljin_ganji: str) -> str:
   "money_score": <0-100 정수>,
   "love_score": <0-100 정수>,
   "work_study_score": <0-100 정수>,
-  "headline": "오늘의 운세 한줄평 (존댓말, 15자 이상, 완결된 문장, 인사말·감탄사 금지)",
+  "headline": "오늘의 운세 한줄평 (존댓말, 20~40자, 완결된 한 문장, 인사말·감탄사 금지)",
   "summary": {{
     "overall": "오늘 하루 종합 총평 (존댓말, 5줄 이상)",
     "money": "돈의 흐름과 오늘의 구체적 상황 (존댓말, 5줄 이상)",
@@ -562,6 +563,45 @@ def daily_valid(entry: Any) -> bool:
     if not is_valid_headline(str(entry.get("headline", ""))):
         return False
     return True
+
+
+def _daily_failure_reason(entry: Any) -> str:
+    """daily_valid() 가 False 를 반환한 원인을 사람이 읽을 수 있게 요약한다(진단 로그 전용).
+
+    헤드라인 원본 텍스트를 그대로 포함해서, "왜 fallback 으로 빠졌는지"를
+    로그만 보고 바로 알 수 있게 한다.
+    """
+    if not isinstance(entry, dict):
+        return f"응답이 dict 가 아님(type={type(entry).__name__}, raw={str(entry)[:200]!r})"
+    reasons = []
+    for k in ("overall_score", "money_score", "love_score", "work_study_score"):
+        try:
+            v = int(round(float(entry[k])))
+            if not (0 <= v <= 100):
+                reasons.append(f"{k} 범위밖(값={v})")
+        except Exception:
+            reasons.append(f"{k} 누락/파싱실패(raw={entry.get(k)!r})")
+    summ = entry.get("summary")
+    if not isinstance(summ, dict):
+        reasons.append(f"summary 형식 오류(raw={str(summ)[:120]!r})")
+    else:
+        missing = [k for k in _SUMMARY_SUBKEYS if not str(summ.get(k, "")).strip()]
+        if missing:
+            reasons.append(f"summary 빈 필드={missing}")
+    kws = entry.get("keywords")
+    if not isinstance(kws, list) or len([k for k in kws if str(k).strip()]) < 1:
+        reasons.append(f"keywords 부족(raw={kws!r})")
+    if not str(entry.get("recommended_action", "")).strip():
+        reasons.append("recommended_action 비어있음")
+    headline_raw = str(entry.get("headline", ""))
+    hl_reason = headline_invalid_reason(headline_raw)
+    if hl_reason:
+        reasons.append(f"headline: {hl_reason} · 원본 텍스트={headline_raw!r}")
+    return "; ".join(reasons) if reasons else "(알 수 없음 — daily_valid 재확인 필요)"
+
+
+def _daily_batch_debug(key: str, entry: Any) -> None:
+    print(f"    [진단] {key} 검증 실패 → {_daily_failure_reason(entry)}")
 
 
 def daily_keys(only: Optional[str]) -> List[Tuple[str, str, str]]:
@@ -748,7 +788,7 @@ def run_daily_concurrent(args, todo: List[Tuple[str, str, str]], db: Dict[str, A
             if not daily_valid(entry):
                 with stats_lock:
                     failed.append(key_label)
-                log(f"[{key_label}]  ✗ 스키마 불량(키 누락 등) → 건너뜀")
+                log(f"[{key_label}]  ✗ 검증 실패 → 건너뜀 | {_daily_failure_reason(entry)}")
                 continue
 
             entry["_model"] = model_name
@@ -816,7 +856,7 @@ _DAILY_SCHEMA_BLOCK = """{
     "money_score": <0-100 정수>,
     "love_score": <0-100 정수>,
     "work_study_score": <0-100 정수>,
-    "headline": "오늘의 운세 한줄평 (존댓말, 15자 이상, 완결된 문장, 인사말·감탄사 금지)",
+    "headline": "오늘의 운세 한줄평 (존댓말, 20~40자, 완결된 한 문장, 인사말·감탄사 금지)",
     "summary": {
       "overall": "오늘 하루 종합 총평 (존댓말, 5줄 이상)",
       "money": "돈의 흐름과 오늘의 구체적 상황 (존댓말, 5줄 이상)",
@@ -877,8 +917,9 @@ def daily_batch_prompt(items: List[Tuple[str, str, str]]) -> str:
   summary 를 문자열로 쓰거나, money·love_single·love_couple·work_study 를 조합 값의 최상위로 빼내지 마세요.
   (싱글이든 커플이든 love_single 과 love_couple 을 항상 둘 다 채웁니다.)
 - keywords 는 빈 문자열 없이 서로 다른 한국어 키워드 정확히 3개입니다.
-- headline(한줄평)은 반드시 15자 이상의 완결된 운세 요약 문장이어야 하며, '안녕하세요' 같은
-  인사말이나 '와', '아', '휴' 같은 단순 감탄사는 절대로 포함하지 마세요.
+- 각 조합의 오늘의 운세 결과를 바탕으로 유저에게 줄 20자~40자 사이의 완결된 한 줄 요약 평
+  (headline)을 작성하세요. 절대 '안녕하세요', '반갑습니다' 같은 인사말이나 '와!' 같은 단순
+  감탄사를 포함하지 말고, 운세의 핵심 메시지만 단 한 문장으로 작성하세요.
 - 모든 값은 비어 있으면 안 됩니다.
 
 [생성할 조합 — 총 {len(items)}개]
@@ -926,7 +967,7 @@ def _unwrap_batch_payload(raw: dict, want_keys: List[str]) -> dict:
 
 def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_fn,
                  models, max_output_tokens, total, system_instruction, banmal_fn,
-                 unit="조합", store_fn=None, count_fn=None, header="") -> None:
+                 unit="조합", store_fn=None, count_fn=None, header="", debug_fn=None) -> None:
     """1회 호출 = 여러 항목. 이미 있는 키는 상위 run_* 에서 이미 걸러진 상태.
 
     daily / personality 공용. 도메인 차이는 prompt_fn·valid_fn·coerce_fn·models·
@@ -935,6 +976,8 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
 
     store_fn(db, key, entry, model_name): 저장 방식(기본: db[key]=entry + _model).
     count_fn(db): 진행률 표시용 완료 수(기본: len(db)).
+    debug_fn(key, entry): valid_fn 이 False 를 반환했을 때(=검증 실패) 호출되는
+    선택적 진단 훅. 원본 텍스트·실패 사유를 콘솔에 남기고 싶은 도메인만 넘긴다.
     """
     batch_size = max(1, args.batch)
     if args.limit:
@@ -1069,7 +1112,10 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
                     miss.append(it); continue
                 entry = coerce_fn(entry)
                 if not valid_fn(entry):
-                    bad.append(it); continue
+                    bad.append(it)
+                    if debug_fn:
+                        debug_fn(key, entry)
+                    continue
                 store_fn(db, key, entry, models[mi])
                 got += 1
                 if banmal_fn and banmal_fn(entry):
@@ -1346,7 +1392,8 @@ def run_daily_batched(args, todo, db, out_path, keys) -> None:
                  prompt_fn=daily_batch_prompt, valid_fn=daily_valid,
                  coerce_fn=coerce_daily_entry, models=models,
                  max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=3600,
-                 system_instruction=None, banmal_fn=_has_banmal, unit="조합")
+                 system_instruction=None, banmal_fn=_has_banmal, unit="조합",
+                 debug_fn=_daily_batch_debug)
 
 
 # ─────────────────────────────────────────────── PERSONALITY (나의 성격/적성)

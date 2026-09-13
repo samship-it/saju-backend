@@ -111,6 +111,7 @@ def analyze_daily_finance(
     ai, is_fallback = call_gemini_json(prompt, _fallback(market), system_instruction=_SYSTEM)
     data = _shape(_fallback(market) if is_fallback else ai, market)
     return {
+        "content_type": CONTENT_TYPE,
         "target_date": saju.get("target_date"),
         "birth_time_known": saju.get("birth_time_known"),
         "day_master": saju.get("day_master"),
