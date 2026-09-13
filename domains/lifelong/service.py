@@ -2,28 +2,37 @@
 
 daily/yearly 와 마찬가지로 런타임 Gemini 호출 없이 사전 생성된 정적 DB에서 즉시
 조회한다(DB 생성은 scripts/generate_content_db.py --domain lifelong_base /
-lifelong_stage 참고).
+lifelong_domains / lifelong_stage 참고).
 
-한 사람의 원국 + 평생 대운 흐름을 다루므로 daily(일주×일진, 3,600)나
-yearly(일주×세운, 3,600)처럼 곧바로 60×60 격자에 대응되지 않는다. 대신:
+'나이 구간(달력 기준)'을 축으로 삼으면 사람마다 다른 대운수(대운이 시작되는 나이,
+1~10세 사이에서 개인마다 다름) 때문에 실제 대운 경계와 안 맞는 문제가 있어, 대신
+'대운 순번(1~8번째)'을 축으로 쓴다 — 순번은 대운수와 무관하게 항상 잘 정의된다.
+1900~2020년 전수조사로 (일주,월주,순역방향) 조합이 이론상 최대(7,200)와 정확히
+일치함을 실측 검증했다(사용자와 논의 후 확정).
 
-1) core_nature(타고난 본질) + life_domains(평생 재물/직업/가족/대인관계 성향)는
-   일주 60가지에만 의존한다고 본다(personality 도메인과 동일한 트레이드오프).
-2) life_stages 의 각 생애단계(1~19/20~29/30~49/50~69/70+) 서술은, 실제 개인의
-   정확한 대운 간지 대신 그 단계를 지배하는 십신 5분류(비겁/식상/재성/관성/인성)와
-   직전 단계의 십신 5분류로 추상화한다 — 일주(60) × 단계(5) × 지배군(5) × 직전군
-   (5, 첫 단계는 "없음" 1가지) = 6,300건. daily 의 "일주×일진" 트레이드오프와
-   같은 성격의 단순화다.
+세 개의 정적 테이블(domains/lifelong/content_db.py 참고):
+1) base_db: life_theme(인생을 관통하는 반복 과제) — 일주(60)당 1건.
+   personality(타고난 성향)는 domains/personality/data/personality_db.json 의
+   character.base_nature 를 그대로 재사용(다시 만들지 않음 — layer 분리 검증 완료).
+2) domains_db: 삶의 4대 영역(재물/직업/가족/사회) — (일주, 현재 대운의 지배
+   십신군, 대운 순번) = 60×5×8 = 2,400건. 재물↔재성/직업↔관성/가족↔인성/사회↔비겁
+   고정 앵커로 서로 겹치지 않게 한다.
+3) stage_db: 시기별 전환점(1~8번째 대운 전부) — (일주, 지배 십신군, 충형관계,
+   순번) = 14,000건(수학적 전체 곱이 아니라 실제 달력에서 나오는 조합만 — daily 의
+   "일주×일진" 과 같은 성격의 단순화).
 
-_build_stage_engine() 이 Python 만세력 엔진(core/daewoon.py, core/sipsin.py)으로
-이 '사실'(지배 간지·십신·십신군·직전군 대비 변화)을 계산한다. 이 함수는 배치 생성
-스크립트(콤보 키 열거)와 런타임 조회(실제 개인의 조회 키 산출) 양쪽에서 재사용된다.
+core/daewoon.py 의 daewoon_step_facts() 가 실제 개인의 8단계 각각에 대한 '사실'
+(간지·십신·십신군·충형관계)을 계산한다. API 응답은 8단계 전체를 반환하고, 그 사람의
+실제 나이로 계산한 "지금 몇 번째 대운인지"만 current_step 플래그로 표시한다 —
+평생운세의 핵심 가치는 "지금 이 순간"이 아니라 "인생 전체 흐름을 한눈에 보는 것"
+이기 때문(daily 와의 차별화 지점, 사용자 확정).
 """
 from typing import Dict, Any, List, Tuple, Optional
 
 from core.saju_base import calculate_saju
-from core.sipsin import calculate_sipsin, sipsin_group
-from domains.lifelong.content_db import lookup_base, lookup_stage
+from core.daewoon import daewoon_step_facts
+from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage
+from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
 
 CONTENT_TYPE = "lifelong_fortune"
@@ -38,6 +47,38 @@ _LIFE_STAGES: List[Tuple[str, int, int, str]] = [
 ]
 
 DOMINANT_GROUPS: List[str] = ["비겁", "식상", "재성", "관성", "인성"]
+
+# section3(4대 영역) 고정 앵커 십신 — 전통 명리 궁위 기준. 서로 다른 근거에서 출발해
+# 내용이 겹치지 않게 하는 핵심 장치(사용자 확인·승인됨).
+DOMAIN_ANCHOR: Dict[str, str] = {
+    "wealth": "재성",
+    "career": "관성",
+    "family": "인성",
+    "social": "비겁",
+}
+DOMAIN_FIELDS: Dict[str, Tuple[str, str]] = {
+    "wealth": ("style", "management_tip"),
+    "career": ("best_fit_work", "success_environment"),
+    "family": ("relation_characteristics", "harmony_key"),
+    "social": ("connection_style", "network_strategy"),
+}
+
+# 대운 순번(1~8) → 참고 인생국면 라벨(Python 고정, AI 관여 없음). 사용자 확인·승인됨.
+STAGE_LABELS: Dict[int, str] = {
+    1: "학업과 가정·교우관계",
+    2: "독립과 방향 설정",
+    3: "인생의 기회와 확장",
+    4: "인생의 기회와 확장",
+    5: "축적과 재정비",
+    6: "축적과 재정비",
+    7: "역할 전환과 정리",
+    8: "역할 전환과 정리",
+}
+# 순번 → SIPSIN_STAGE_HINTS 의 기존 연령대 키로 매핑(힌트 문구 재사용, 새로 안 만듦).
+_STEP_TO_HINT_KEY: Dict[int, str] = {
+    1: "stage_1_19", 2: "stage_20_29", 3: "stage_30_49", 4: "stage_30_49",
+    5: "stage_50_69", 6: "stage_50_69", 7: "stage_70_plus", 8: "stage_70_plus",
+}
 
 # 십신군 × 생애단계 — 배치 생성 프롬프트를 구체화시키는 참고 사건결(그대로 베끼지 말고
 # 자연스럽게 풀어 쓰게 유도하는 용도). scripts/generate_content_db.py 가 그대로 재사용한다.
@@ -80,94 +121,46 @@ SIPSIN_STAGE_HINTS: Dict[str, Dict[str, str]] = {
 }
 
 
-def _pillar_segments(
-    month_ganji: str, flow: List[Dict[str, Any]], daewoon_num: int
-) -> List[Tuple[int, int, str]]:
-    """나이 0부터 마지막 대운 끝까지 빈틈없이 이어지는 [(시작나이, 끝나이(제외), 간지), ...].
-
-    대운이 시작되기 전(0~daewoon_num세)은 월주가 그 사람의 초년 기운을 대행한다고 본다.
-    """
-    segs: List[Tuple[int, int, str]] = []
-    if daewoon_num > 0 and month_ganji:
-        segs.append((0, daewoon_num, month_ganji))
-    for item in flow:
-        start = item.get("start_age")
-        ganji = item.get("ganji")
-        if isinstance(start, int) and ganji:
-            segs.append((start, start + 10, ganji))
-    return segs
-
-
-def _dominant_ganji(segs: List[Tuple[int, int, str]], lo: int, hi: int) -> Optional[str]:
-    """[lo, hi] 구간과 겹치는 햇수가 가장 큰 대운(또는 월주) 간지를 고른다."""
-    best, best_overlap = None, -1
-    for seg_start, seg_end, ganji in segs:
-        overlap = min(seg_end, hi + 1) - max(seg_start, lo)
-        if overlap > best_overlap:
-            best_overlap, best = overlap, ganji
-    return best
-
-
-def _build_stage_engine(saju: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """생애단계별 지배 대운 간지·십신(그룹)·직전 단계 대비 변화 여부 — Python 이 계산하는 '사실'.
-
-    배치 생성 스크립트의 콤보 키 열거와, 실제 요청의 조회 키 산출 양쪽에서 쓰인다.
-    """
-    day_master = saju.get("day_master", "")
-    daewoon = saju.get("daewoon") or {}
-    flow = daewoon.get("flow") or []
-    daewoon_num = daewoon.get("daewoon_num", 1)
-    month_ganji = saju.get("month_ganji", "")
-    segs = _pillar_segments(month_ganji, flow, daewoon_num)
-
-    out: Dict[str, Dict[str, Any]] = {}
-    prev_group: Optional[str] = None
-    for key, lo, hi, label in _LIFE_STAGES:
-        ganji = _dominant_ganji(segs, lo, hi)
-        gan = ganji[0] if ganji else day_master
-        sipsin = calculate_sipsin(day_master, gan, is_gan=True)
-        group = sipsin_group(sipsin)
-        out[key] = {
-            "stage_name": label,
-            "age_range": [lo, None if hi >= 130 else hi],
-            "dominant_ganji": ganji,
-            "dominant_sipsin": sipsin,
-            "dominant_sipsin_group": group,
-            "hint": SIPSIN_STAGE_HINTS.get(group, {}).get(key, ""),
-            "prev_sipsin_group": prev_group,
-            "group_changed": prev_group is not None and group != prev_group,
-        }
-        prev_group = group
-    return out
+def hint_for_step(dominant_group: str, step: int) -> str:
+    """대운 순번(1~8) + 지배 십신군 → 참고 사건결 문구. _STEP_TO_HINT_KEY 로 기존
+    SIPSIN_STAGE_HINTS(연령대 키) 를 재사용한다."""
+    hint_key = _STEP_TO_HINT_KEY.get(step, "stage_1_19")
+    return SIPSIN_STAGE_HINTS.get(dominant_group, {}).get(hint_key, "")
 
 
 def _ilju(saju: Dict[str, Any]) -> str:
     return saju.get("day_ganji") or f"{saju.get('day_master', '')}{saju.get('day_branch', '')}"
 
 
-def _fallback_stage(s: Dict[str, Any]) -> dict:
-    hint = s["hint"] or "차분히 흐름을 따라가는 시기"
+def _current_step(daewoon_num: int, age: int) -> int:
+    """그 사람의 실제 나이가 몇 번째 대운에 해당하는지. 아직 첫 대운 전(어린 나이)이면
+    가장 가까운 다가올 시기인 1번째를 보여준다."""
+    if age < daewoon_num:
+        return 1
+    step = (age - daewoon_num) // 10 + 1
+    return max(1, min(8, step))
+
+
+def _fallback_stage_entry(dominant_group: str, step: int) -> dict:
+    hint = hint_for_step(dominant_group, step) or "차분히 흐름을 따라가는 시기"
     return {
-        "description": f"{s['stage_name']}는 {hint}입니다. 주어진 흐름에 맞춰 무리하지 않는 태도가 도움이 됩니다.",
-        "daeun_influence": "이 시기의 기운은 관련된 선택에서 신중함이 필요하다는 신호로 작용합니다.",
+        "theme_line": STAGE_LABELS.get(step, "인생의 한 시기"),
+        "event_narrative": f"{hint}입니다. 주어진 흐름에 맞춰 무리하지 않는 태도가 도움이 됩니다.",
         "previous_diff": (
-            "직전 단계와 비슷한 흐름이 이어집니다." if not s["group_changed"]
-            else "직전 단계와는 결이 다른 변화가 찾아오는 구간입니다."
+            "이전 국면 없이 시작되는 인생의 첫 전환점입니다." if step == 1
+            else "직전 시기와는 결이 다른 변화가 찾아오는 구간입니다."
         ),
+        "next_hint": "다음 시기로 넘어가며 지금의 흐름이 이어지거나 자연스럽게 전환될 수 있습니다.",
     }
 
 
-_FALLBACK_BASE = {
-    "core_nature": {
-        "personality": "안정적인 흐름 속에서 자기 페이스를 지키는 성향입니다.",
-        "life_theme": "꾸준함으로 신뢰를 쌓아가는 인생",
-    },
-    "life_domains": {
-        "wealth": {"style": "무리하지 않는 안정 지향형", "management_tip": "고정지출을 먼저 점검하세요."},
-        "career": {"best_fit_work": "꾸준함이 필요한 전문 분야", "success_environment": "신뢰를 기반으로 한 조직"},
-        "family": {"relation_characteristics": "가족과의 유대를 중요하게 여기는 편", "harmony_key": "정기적인 대화 시간"},
-        "social": {"connection_style": "소수와 깊게 사귀는 편", "network_strategy": "기존 인연을 꾸준히 관리하기"},
-    },
+_FALLBACK_LIFE_THEME = "꾸준함으로 신뢰를 쌓아가는 인생"
+_FALLBACK_PERSONALITY = "안정적인 흐름 속에서 자기 페이스를 지키는 성향입니다."
+_FALLBACK_DOMAINS = {
+    "wealth": {"style": "무리하지 않는 안정 지향형", "management_tip": "고정지출을 먼저 점검하세요."},
+    "career": {"best_fit_work": "꾸준함이 필요한 전문 분야", "success_environment": "신뢰를 기반으로 한 조직"},
+    "family": {"relation_characteristics": "가족과의 유대를 중요하게 여기는 편", "harmony_key": "정기적인 대화 시간"},
+    "social": {"connection_style": "소수와 깊게 사귀는 편", "network_strategy": "기존 인연을 꾸준히 관리하기"},
 }
 
 
@@ -175,34 +168,68 @@ def analyze_lifelong_fortune(
     year: int, month: int, day: int,
     hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
 ) -> Tuple[dict, bool]:
-    """(결과 dict, is_fallback) 반환. 정적 DB 조회만 — Gemini 호출 없음."""
+    """(결과 dict, is_fallback) 반환. 정적 DB 조회만 — Gemini 호출 없음.
+
+    평생운세는 "지금 이 순간"이 아니라 "인생 전체 흐름"이 핵심이므로 1~8번째 대운을
+    전부 반환하고, 그 사람의 실제 나이로 계산한 current_step 만 별도 표시한다.
+    """
     saju = calculate_saju(year, month, day, hour, minute, gender=gender, is_lunar=is_lunar)
     ilju = _ilju(saju)
-    stages = _build_stage_engine(saju)
+    day_master = saju.get("day_master", "")
+    day_branch = saju.get("day_branch", "")
+    month_ganji = saju.get("month_ganji", "")
+    daewoon = saju.get("daewoon") or {}
+    daewoon_num = daewoon.get("daewoon_num", 1)
+    is_forward = daewoon.get("direction") == "순행"
+    age = saju.get("age", 0) or 0
 
+    facts = daewoon_step_facts(day_master, day_branch, month_ganji, is_forward, count=8)
+    current_step = _current_step(daewoon_num, age)
+
+    is_fallback = False
+
+    # section1: life_theme(신규) + personality(personality_db 재사용)
     base = lookup_base(ilju)
-    is_fallback = base is None
+    life_theme = (base or {}).get("life_theme") or _FALLBACK_LIFE_THEME
     if base is None:
-        base = _FALLBACK_BASE
+        is_fallback = True
+    character = lookup_personality(ilju, "character")
+    personality = (character or {}).get("base_nature") or _FALLBACK_PERSONALITY
+    if character is None:
+        is_fallback = True
 
-    life_stages = {}
-    for key, s in stages.items():
-        entry = lookup_stage(ilju, key, s["dominant_sipsin_group"], s["prev_sipsin_group"])
+    # section2: 1~8번째 대운 전체
+    life_stages = []
+    for f in facts:
+        step = f["step"]
+        start_age = daewoon_num + (step - 1) * 10
+        entry = lookup_stage(ilju, f["sipsin_group"], f["branch_relation"], step)
         if entry is None:
             is_fallback = True
-            entry = _fallback_stage(s)
-        life_stages[key] = {
-            "stage_name": s["stage_name"],
-            "age_range": s["age_range"],
-            "description": entry.get("description", ""),
-            "daeun_influence": entry.get("daeun_influence", ""),
+            entry = _fallback_stage_entry(f["sipsin_group"], step)
+        life_stages.append({
+            "step": step,
+            "stage_label": STAGE_LABELS.get(step, ""),
+            "age_range": [start_age, start_age + 9],
+            "is_current": step == current_step,
+            "theme_line": entry.get("theme_line", ""),
+            "event_narrative": entry.get("event_narrative", ""),
             "previous_diff": entry.get("previous_diff", ""),
-        }
+            "next_hint": entry.get("next_hint", ""),
+        })
+
+    # section3: 삶의 4대 영역(현재 대운 기준)
+    current_fact = next((f for f in facts if f["step"] == current_step), facts[0])
+    domains_entry = lookup_domains(ilju, current_fact["sipsin_group"], current_step)
+    if domains_entry is None:
+        is_fallback = True
+    life_domains = domains_entry or _FALLBACK_DOMAINS
 
     data = {
-        "core_nature": base.get("core_nature", _FALLBACK_BASE["core_nature"]),
+        "core_nature": {"personality": personality, "life_theme": life_theme},
+        "life_domains": life_domains,
         "life_stages": life_stages,
-        "life_domains": base.get("life_domains", _FALLBACK_BASE["life_domains"]),
+        "current_step": current_step,
     }
 
     return {
