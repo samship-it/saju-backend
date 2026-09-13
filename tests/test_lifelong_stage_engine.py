@@ -9,11 +9,12 @@ import pytest
 from core.saju_base import calculate_saju
 from domains.lifelong.service import (
     _LIFE_STAGES,
+    DOMINANT_GROUPS,
     _build_stage_engine,
     _dominant_ganji,
     _pillar_segments,
-    _strip_jargon,
 )
+from scripts.generate_content_db import _strip_lifelong_jargon as _strip_jargon
 
 
 def test_stage_keys_match_spec_exactly():
@@ -125,3 +126,166 @@ def test_strip_jargon_does_not_touch_plain_korean_words():
     # "재물"은 사주 전문용어가 아니라 일상어이므로 지워지면 안 된다.
     text = "재물 중심의 삶을 살아가는 시기예요."
     assert "재물" in _strip_jargon(text)
+
+
+# ------------------------------------------------------------------ 배치 생성 콤보 키 열거
+from scripts.generate_content_db import (  # noqa: E402
+    _lifelong_base_keys,
+    _lifelong_stage_keys,
+    coerce_lifelong_base,
+    coerce_lifelong_stage,
+    lifelong_base_valid,
+    lifelong_stage_valid,
+)
+
+
+def test_lifelong_base_keys_are_exactly_60_ilju():
+    keys = _lifelong_base_keys(only=None)
+    assert len(keys) == 60
+    assert len({k for k, _ in keys}) == 60  # 전부 유일
+    for k, ilju in keys:
+        assert k == ilju
+        assert len(ilju) == 2
+
+
+def test_lifelong_stage_keys_total_matches_combo_space():
+    keys = _lifelong_stage_keys(only=None)
+    # 60 일주 × [stage_1_19: 5(dominant)×1(prev=none) + 4개 단계: 5×5] = 60×(5+100) = 6300
+    assert len(keys) == 60 * (len(DOMINANT_GROUPS) + 4 * len(DOMINANT_GROUPS) * len(DOMINANT_GROUPS))
+    assert len(keys) == 6300
+    assert len({k for k, *_ in keys}) == 6300  # 전부 유일
+
+
+def test_lifelong_stage_keys_stage_1_19_has_no_previous():
+    keys = _lifelong_stage_keys(only=None)
+    stage1 = [t for t in keys if t[2] == "stage_1_19"]
+    # 60개 일주 × dominant 5가지 (prev 없음 → 1가지만) = 300
+    assert len(stage1) == 60 * len(DOMINANT_GROUPS)
+    assert all(t[4] == "none" for t in stage1)
+
+
+def test_lifelong_stage_keys_only_filter():
+    all_keys = _lifelong_stage_keys(only=None)
+    target = all_keys[123][0]
+    filtered = _lifelong_stage_keys(only=target)
+    assert len(filtered) == 1
+    assert filtered[0][0] == target
+
+
+# ------------------------------------------------------------------ 검증/정제 함수
+def test_lifelong_base_valid_accepts_complete_entry():
+    entry = {
+        "core_nature": {"personality": "설명", "life_theme": "주제"},
+        "life_domains": {
+            "wealth": {"style": "s", "management_tip": "t"},
+            "career": {"best_fit_work": "w", "success_environment": "e"},
+            "family": {"relation_characteristics": "r", "harmony_key": "h"},
+            "social": {"connection_style": "c", "network_strategy": "n"},
+        },
+    }
+    assert lifelong_base_valid(entry) is True
+
+
+@pytest.mark.parametrize("missing_path", [
+    ("core_nature", "personality"), ("core_nature", "life_theme"),
+    ("life_domains", "wealth"), ("life_domains", "career"),
+])
+def test_lifelong_base_valid_rejects_missing_fields(missing_path):
+    entry = {
+        "core_nature": {"personality": "설명", "life_theme": "주제"},
+        "life_domains": {
+            "wealth": {"style": "s", "management_tip": "t"},
+            "career": {"best_fit_work": "w", "success_environment": "e"},
+            "family": {"relation_characteristics": "r", "harmony_key": "h"},
+            "social": {"connection_style": "c", "network_strategy": "n"},
+        },
+    }
+    top, sub = missing_path
+    if top == "core_nature":
+        entry["core_nature"][sub] = ""
+    else:
+        entry["life_domains"][sub] = {}
+    assert lifelong_base_valid(entry) is False
+
+
+def test_lifelong_stage_valid_requires_all_three_fields():
+    assert lifelong_stage_valid({"description": "a", "daeun_influence": "b", "previous_diff": "c"}) is True
+    assert lifelong_stage_valid({"description": "a", "daeun_influence": "b", "previous_diff": ""}) is False
+    assert lifelong_stage_valid({"description": "a", "daeun_influence": "b"}) is False
+    assert lifelong_stage_valid("not a dict") is False
+
+
+def test_coerce_lifelong_stage_strips_jargon_in_place():
+    entry = {
+        "description": "관성 중심의 흐름으로 진행돼요.",
+        "daeun_influence": "괜찮아요.",
+        "previous_diff": "인성 중심의 평온한 흐름으로 전환됩니다.",
+    }
+    out = coerce_lifelong_stage(entry)
+    assert "관성" not in out["description"]
+    assert "인성" not in out["previous_diff"]
+
+
+def test_coerce_lifelong_base_strips_jargon_in_nested_domains():
+    entry = {
+        "core_nature": {"personality": "재성 중심의 성향이에요.", "life_theme": "주제"},
+        "life_domains": {
+            "wealth": {"style": "비겁 중심의 스타일이에요.", "management_tip": "팁"},
+            "career": {"best_fit_work": "w", "success_environment": "e"},
+            "family": {"relation_characteristics": "r", "harmony_key": "h"},
+            "social": {"connection_style": "c", "network_strategy": "n"},
+        },
+    }
+    out = coerce_lifelong_base(entry)
+    assert "재성" not in out["core_nature"]["personality"]
+    assert "비겁" not in out["life_domains"]["wealth"]["style"]
+
+
+# ------------------------------------------------------------------ 조회 기반 서비스(라이브 API 호출 없음)
+import domains.lifelong.content_db as content_db  # noqa: E402
+from domains.lifelong.service import analyze_lifelong_fortune  # noqa: E402
+
+
+def test_analyze_lifelong_fortune_uses_looked_up_content(monkeypatch):
+    fake_base = {
+        "core_nature": {"personality": "테스트 성격", "life_theme": "테스트 주제"},
+        "life_domains": {
+            "wealth": {"style": "w", "management_tip": "wt"},
+            "career": {"best_fit_work": "c", "success_environment": "ce"},
+            "family": {"relation_characteristics": "f", "harmony_key": "fh"},
+            "social": {"connection_style": "s", "network_strategy": "sn"},
+        },
+    }
+    fake_stage = {"description": "테스트 설명", "daeun_influence": "테스트 영향", "previous_diff": "테스트 변화"}
+
+    monkeypatch.setattr(content_db, "lookup_base", lambda ilju: fake_base)
+    monkeypatch.setattr(content_db, "lookup_stage", lambda ilju, stage, dom, prev: fake_stage)
+    # analyze_lifelong_fortune 은 모듈 로드 시점에 lookup_base/lookup_stage 를 바인딩해 가져왔으므로 함께 패치.
+    import domains.lifelong.service as svc
+    monkeypatch.setattr(svc, "lookup_base", lambda ilju: fake_base)
+    monkeypatch.setattr(svc, "lookup_stage", lambda ilju, stage, dom, prev: fake_stage)
+
+    data, is_fallback = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
+    assert is_fallback is False
+    assert data["data"]["core_nature"]["personality"] == "테스트 성격"
+    assert set(data["data"]["life_stages"].keys()) == {
+        "stage_1_19", "stage_20_29", "stage_30_49", "stage_50_69", "stage_70_plus",
+    }
+    for s in data["data"]["life_stages"].values():
+        assert s["description"] == "테스트 설명"
+        assert s["previous_diff"] == "테스트 변화"
+
+
+def test_analyze_lifelong_fortune_falls_back_when_lookup_misses(monkeypatch):
+    import domains.lifelong.service as svc
+    monkeypatch.setattr(svc, "lookup_base", lambda ilju: None)
+    monkeypatch.setattr(svc, "lookup_stage", lambda ilju, stage, dom, prev: None)
+
+    data, is_fallback = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
+    assert is_fallback is True
+    # 폴백이어도 스키마는 동일하게 완전해야 한다.
+    assert set(data["data"]["life_stages"].keys()) == {
+        "stage_1_19", "stage_20_29", "stage_30_49", "stage_50_69", "stage_70_plus",
+    }
+    for s in data["data"]["life_stages"].values():
+        assert s["description"] and s["daeun_influence"] and s["previous_diff"]

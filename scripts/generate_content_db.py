@@ -3497,6 +3497,308 @@ def run_daily(args) -> None:
               + ", ".join(banmal[:30]) + (" ..." if len(banmal) > 30 else ""))
 
 
+# ─────────────────────────────────────────────────────────── LIFELONG (평생운세, 250P)
+#
+# daily/yearly 처럼 정확한 60×60 격자가 아니라, domains/lifelong/service.py 의
+# _build_stage_engine() 이 정의하는 두 콤보 공간을 그대로 채운다:
+#   - base : 일주(60) 당 1건 — core_nature + life_domains
+#   - stage: (일주, 생애단계, 지배 십신군, 직전 십신군) 당 1건 = 60×(5+4×5×5) = 6,300건
+# 실제 개인의 정확한 대운 간지 대신 십신 5분류로 추상화해 키 공간을 줄인 트레이드오프다
+# (domains/lifelong/service.py 모듈 docstring 참고).
+
+LIFELONG_BASE_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_base_db.json")
+LIFELONG_STAGE_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_stage_db.json")
+
+_LIFELONG_JARGON_TERMS = [
+    "비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인",
+    "비겁", "식상", "재성", "관성", "인성", "격국", "용신", "십신", "신강", "신약",
+]
+_LIFELONG_JARGON_RE = re.compile(r"(?:" + "|".join(_LIFELONG_JARGON_TERMS) + r")\s*(?:중심(?:으로|의)?)?")
+
+
+def _strip_lifelong_jargon(text: Any) -> Any:
+    """AI 가 previous_diff 등에 "관성 중심의 흐름으로" 처럼 사주 용어를 그대로 흘리는 경우가
+    실측 검증에서 나와서 안전망으로 제거한다(용어 + 뒤따르는 '중심'류만, 문장은 자연스럽게 유지)."""
+    if not isinstance(text, str) or not text:
+        return text
+    cleaned = _LIFELONG_JARGON_RE.sub("", text)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def _lifelong_has_banmal(entry: Dict[str, Any]) -> bool:
+    """daily 의 _has_banmal 은 summary/recommended_action 키 고정 — lifelong 은 스키마가
+    달라 모든 문자열 값을 재귀적으로 훑는 범용 버전."""
+    def _strings(v: Any):
+        if isinstance(v, str):
+            yield v
+        elif isinstance(v, dict):
+            for x in v.values():
+                yield from _strings(x)
+        elif isinstance(v, list):
+            for x in v:
+                yield from _strings(x)
+
+    hits = 0
+    for blob in _strings(entry):
+        for sent in _SENT_SPLIT.split(blob):
+            s = sent.strip().strip("\"'“”‘’()[]")
+            if len(s) < 3 or _JONDAE_END.search(s):
+                continue
+            if _BANMAL_END.search(s):
+                hits += 1
+    return hits >= 2
+
+
+def _lifelong_base_keys(only: Optional[str]) -> List[Tuple[str, str]]:
+    """(key, ilju) 목록. key == ilju."""
+    gapja = sixty_gapja()
+    if only:
+        if only not in gapja:
+            print(f"[에러] --only 값이 60갑자가 아닙니다: {only!r}")
+            sys.exit(2)
+        return [(only, only)]
+    return [(g, g) for g in gapja]
+
+
+def _lifelong_stage_keys(only: Optional[str]) -> List[Tuple[str, str, str, str, str]]:
+    """(key, ilju, stage, dominant_group, prev_group_or_'none') 전체 열거."""
+    from domains.lifelong.service import _LIFE_STAGES, DOMINANT_GROUPS
+    from domains.lifelong.content_db import stage_key
+
+    gapja = sixty_gapja()
+    out: List[Tuple[str, str, str, str, str]] = []
+    for ilju in gapja:
+        for i, (stage, _lo, _hi, _label) in enumerate(_LIFE_STAGES):
+            prev_options = ["none"] if i == 0 else DOMINANT_GROUPS
+            for dominant in DOMINANT_GROUPS:
+                for prev in prev_options:
+                    key = stage_key(ilju, stage, dominant, None if prev == "none" else prev)
+                    out.append((key, ilju, stage, dominant, prev))
+    if only:
+        out = [t for t in out if t[0] == only]
+        if not out:
+            print(f"[에러] --only 값이 lifelong_stage 키가 아닙니다: {only!r}")
+            sys.exit(2)
+    return out
+
+
+def _lifelong_base_item_block(ilju: str) -> str:
+    dm, db = ilju[0], ilju[1]
+    return f"── 조합 키: {ilju} ──\n{persona_prompt(dm, db)}\n- 일주(원국 대표): {ilju}"
+
+
+def lifelong_base_batch_prompt(items: List[Tuple[str, str]]) -> str:
+    keys = [k for k, _ in items]
+    blocks = "\n\n".join(_lifelong_base_item_block(ilju) for _, ilju in items)
+    return f"""아래 {len(items)}개의 일주 각각에 대해, 그 사람의 '타고난 본질'과 '평생에 걸친 삶의 성향'을 만듭니다.
+각 일주는 서로 완전히 독립입니다. 한 일주의 내용을 다른 일주에 복사하지 마세요.
+
+[말투 규칙 — 최우선, 절대 예외 없음]
+- 모든 문장을 '친근한 존댓말'로만 씁니다('~해요/~예요/~입니다' 등). 반말은 단 한 번도 쓰지 않습니다.
+- 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등)는 절대 그대로 쓰지 말고 일상 언어로 풀어 씁니다.
+
+[출력 스키마 규칙 — 반드시 준수]
+- 각 일주의 값은 정확히 core_nature, life_domains 2개 키만 가집니다.
+- core_nature.personality: 그 일주의 타고난 본질과 행동 패턴 (3~5문장).
+- core_nature.life_theme: 인생을 관통하는 핵심 대주제를 한 문장(15~30자)으로.
+- life_domains 는 특정 나이대에 국한하지 않는 평생 성향입니다. wealth/career/family/social
+  4개 키를 모두 채웁니다.
+
+[생성할 일주 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스(```)나 설명 문장 없이]
+- 최상위 key 는 위 '조합 키'(일주) 문자열을 그대로 사용합니다: {', '.join(keys)}
+
+{{
+  "{keys[0]}": {{
+    "core_nature": {{"personality": "...", "life_theme": "..."}},
+    "life_domains": {{
+      "wealth": {{"style": "...", "management_tip": "..."}},
+      "career": {{"best_fit_work": "...", "success_environment": "..."}},
+      "family": {{"relation_characteristics": "...", "harmony_key": "..."}},
+      "social": {{"connection_style": "...", "network_strategy": "..."}}
+    }}
+  }},
+  "{keys[1] if len(keys) > 1 else '일주키2'}": {{ "...위와 완전히 동일한 구조..." }}
+}}"""
+
+
+def coerce_lifelong_base(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    core = entry.get("core_nature")
+    if isinstance(core, dict):
+        for k in ("personality", "life_theme"):
+            if isinstance(core.get(k), str):
+                core[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(core[k])))
+    doms = entry.get("life_domains")
+    if isinstance(doms, dict):
+        for fields in doms.values():
+            if isinstance(fields, dict):
+                for k, v in list(fields.items()):
+                    if isinstance(v, str):
+                        fields[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(v)))
+    return entry
+
+
+def lifelong_base_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    core = entry.get("core_nature")
+    if not isinstance(core, dict) or not all(
+        str(core.get(k, "")).strip() for k in ("personality", "life_theme")
+    ):
+        return False
+    doms = entry.get("life_domains")
+    if not isinstance(doms, dict):
+        return False
+    required = {
+        "wealth": ("style", "management_tip"),
+        "career": ("best_fit_work", "success_environment"),
+        "family": ("relation_characteristics", "harmony_key"),
+        "social": ("connection_style", "network_strategy"),
+    }
+    for name, fields in required.items():
+        d = doms.get(name)
+        if not isinstance(d, dict) or not all(str(d.get(f, "")).strip() for f in fields):
+            return False
+    return True
+
+
+def _lifelong_stage_item_block(key: str, ilju: str, stage: str, dominant: str, prev: str) -> str:
+    from domains.lifelong.service import _LIFE_STAGES, SIPSIN_STAGE_HINTS
+
+    dm, db = ilju[0], ilju[1]
+    _, lo, hi, label = next(s for s in _LIFE_STAGES if s[0] == stage)
+    hint = SIPSIN_STAGE_HINTS.get(dominant, {}).get(stage, "")
+    if prev == "none":
+        prev_txt, changed_txt = "직전 단계 없음(첫 구간)", "첫 구간"
+    elif prev == dominant:
+        prev_txt, changed_txt = f"직전 단계 지배 기운: {prev}", "이전과 같은 흐름이 이어짐"
+    else:
+        prev_txt, changed_txt = f"직전 단계 지배 기운: {prev}", "이전과 다른 기운으로 전환됨"
+    return (
+        f"── 조합 키: {key} ──\n{persona_prompt(dm, db)}\n"
+        f"- 생애단계: {label} (만 {lo}~{hi if hi < 130 else '그 이상'}세)\n"
+        f"- 이 단계의 지배 기운: {dominant} · 참고 사건결: {hint}\n"
+        f"- {prev_txt} · {changed_txt}"
+    )
+
+
+def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, str]]) -> str:
+    keys = [it[0] for it in items]
+    blocks = "\n\n".join(_lifelong_stage_item_block(*it) for it in items)
+    return f"""아래 {len(items)}개의 (일주, 생애단계, 지배 기운, 직전 단계 기운) 조합 각각에 대해
+그 생애단계의 서술을 만듭니다. 각 조합은 서로 완전히 독립입니다. 복사하지 마세요.
+
+[말투 규칙 — 최우선, 절대 예외 없음]
+- 모든 문장을 '친근한 존댓말'로만 씁니다. 반말은 단 한 번도 쓰지 않습니다.
+- 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등, 위에 준 '지배 기운' 단어 자체도)는
+  출력 문장에 절대 그대로 쓰지 말고, 구체적인 사건·행동 수준의 일상 언어로 풀어 씁니다.
+
+[작성 규칙]
+- description: 그 단계의 전반적 흐름과 태도. 위 '참고 사건결'을 실제 사건 수준으로 구체화합니다
+  (4~6문장). 범용적이고 추상적인 문장은 금지합니다.
+- daeun_influence: 지배 기운이 구체적으로 어떤 사건/선택에 영향을 주는지 (3~5문장).
+- previous_diff: 직전 단계와 비교해 무엇이 달라지는지, 그 심리적/환경적 변화 계기를 설득력 있게
+  (3~5문장). 첫 구간(직전 단계 없음)이면 인생이 시작되는 첫걸음이라는 취지로 씁니다.
+
+[출력 스키마 규칙 — 반드시 준수]
+- 각 조합의 값은 정확히 description, daeun_influence, previous_diff 3개 키만 가집니다.
+- 모든 값은 비어 있으면 안 됩니다.
+
+[생성할 조합 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스(```)나 설명 문장 없이]
+- 최상위 key 는 위 '조합 키' 문자열을 그대로 사용합니다: {', '.join(keys)}
+
+{{
+  "{keys[0]}": {{"description": "...", "daeun_influence": "...", "previous_diff": "..."}},
+  "{keys[1] if len(keys) > 1 else '조합키2'}": {{ "...위와 완전히 동일한 구조..." }}
+}}"""
+
+
+def coerce_lifelong_stage(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    for k in ("description", "daeun_influence", "previous_diff"):
+        if isinstance(entry.get(k), str):
+            entry[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(entry[k])))
+    return entry
+
+
+def lifelong_stage_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return all(str(entry.get(k, "")).strip() for k in ("description", "daeun_influence", "previous_diff"))
+
+
+def run_lifelong_base(args) -> None:
+    out_path = args.out or LIFELONG_BASE_DB_PATH
+    db = _load_json(out_path)
+    print(f"DB: {out_path}")
+    print(f"기존 항목: {len(db)}개 / 목표 60개")
+
+    targets = _lifelong_base_keys(args.only)
+    todo = [t for t in targets if args.overwrite or t[0] not in db]
+    print(f"이번 실행 대상: {len(todo)}개" + (" [--overwrite]" if args.overwrite else ""))
+    if args.dry_run:
+        for key, _ilju in todo[: args.limit or 20]:
+            print(f"  - {key}")
+        print("dry-run 종료.")
+        return
+    if not todo:
+        print("생성할 항목이 없습니다. (모두 완료)")
+        return
+
+    keys = load_api_keys()
+    if not keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+    _run_batched(args, todo, db, out_path, keys,
+                 prompt_fn=lifelong_base_batch_prompt, valid_fn=lifelong_base_valid,
+                 coerce_fn=coerce_lifelong_base, models=models,
+                 max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=60,
+                 system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="일주")
+
+
+def run_lifelong_stage(args) -> None:
+    out_path = args.out or LIFELONG_STAGE_DB_PATH
+    db = _load_json(out_path)
+    print(f"DB: {out_path}")
+    print(f"기존 항목: {len(db)}개 / 목표 6300개")
+
+    targets = _lifelong_stage_keys(args.only)
+    todo = [t for t in targets if args.overwrite or t[0] not in db]
+    print(f"이번 실행 대상: {len(todo)}개" + (" [--overwrite]" if args.overwrite else ""))
+    if args.dry_run:
+        for t in todo[: args.limit or 20]:
+            print(f"  - {t[0]}")
+        print("dry-run 종료.")
+        return
+    if not todo:
+        print("생성할 항목이 없습니다. (모두 완료)")
+        return
+
+    keys = load_api_keys()
+    if not keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+    _run_batched(args, todo, db, out_path, keys,
+                 prompt_fn=lifelong_stage_batch_prompt, valid_fn=lifelong_stage_valid,
+                 coerce_fn=coerce_lifelong_stage, models=models,
+                 max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=6300,
+                 system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="조합")
+
+
 # ─────────────────────────────────────────────────────────── main
 
 def main() -> None:
@@ -3507,7 +3809,8 @@ def main() -> None:
                             "yearly_overall", "yearly_overall_extras",
                             "yearly_business", "yearly_career_change", "yearly_study",
                             "yearly_health", "yearly_travel", "yearly_hobby",
-                            "yearly_wealth", "yearly_love"],
+                            "yearly_wealth", "yearly_love",
+                            "lifelong_base", "lifelong_stage"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -3565,6 +3868,10 @@ def main() -> None:
         run_yearly_cat(args, "study")
     elif args.domain.startswith("yearly_") and args.domain[len("yearly_"):] in _YEARLY_V2:
         run_yearly_cat(args, args.domain[len("yearly_"):])
+    elif args.domain == "lifelong_base":
+        run_lifelong_base(args)
+    elif args.domain == "lifelong_stage":
+        run_lifelong_stage(args)
 
 
 if __name__ == "__main__":
