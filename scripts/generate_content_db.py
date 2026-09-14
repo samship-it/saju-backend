@@ -1173,11 +1173,16 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
 def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_fn,
                              models, max_output_tokens, total, system_instruction, banmal_fn,
                              unit="조합", store_fn=None, count_fn=None, header="") -> None:
-    """`_run_batched` 의 병렬판. (워커 스레드 × 고정 키 1개) 로 청크 호출을 동시에 여러 개 날린다.
+    """`_run_batched` 의 병렬판. 워커 스레드로 청크 호출을 동시에 여러 개 날린다.
 
     genai.configure() 가 프로세스 전역이라 워커마다 make_model() 로 독립 클라이언트를
-    만들어 키를 하나씩 고정 배정한다(run_daily_concurrent 와 동일 이유). 모델 로테이션은
-    지원하지 않고 최우선 모델 하나만 쓴다. DB 쓰기는 락 + 원자적 저장으로 보호한다.
+    만든다. 워커 수가 키 개수보다 많으면 `worker_id % len(keys)` 로 키를 순환
+    배정해 여러 워커가 같은 키를 나눠 쓴다(오버구독) — 키 개수에 관계없이
+    --workers 로 원하는 동시성(예: 10)을 낼 수 있다. 분당 429 는 죽이지 않고
+    RateLimited 예외로 잡아 서버가 알려준 대기시간만큼 자고 재큐잉한다(지수적으로
+    커지는 백오프는 generate_one() 의 일반 예외 재시도 쪽에 이미 있음).
+    모델 로테이션은 지원하지 않고 최우선 모델 하나만 쓴다. DB 쓰기는 락 + 원자적
+    저장으로 보호한다.
     """
     batch_size = max(1, args.batch)
     if args.limit:
@@ -1197,13 +1202,15 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
     if len(models) > 1:
         print(f"[알림] 병렬 모드는 모델 로테이션을 지원하지 않습니다 → {model_name} 고정 사용")
 
-    n_workers = max(1, min(args.workers, len(keys)))
+    n_workers = max(1, args.workers)
     chunks = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
     n_calls = len(chunks)
     if header:
         print(header)
+    share_note = f"키 {len(keys)}개를 순환 배정(워커당 평균 {n_workers / len(keys):.1f}개 워커/키)" \
+        if n_workers > len(keys) else f"키 {len(keys)}개 중 1개씩 고정 배정"
     print(f"병렬 배치 모드: {len(todo)}개 {unit} · {batch_size}개/호출 ≈ {n_calls}회 호출 "
-          f"· worker {n_workers}개(키 {len(keys)}개 중 1개씩 고정 배정) · 모델 {model_name}\n")
+          f"· worker {n_workers}개({share_note}) · 모델 {model_name}\n")
 
     work_q: "_queue.Queue[list]" = _queue.Queue()
     attempts: Dict[str, int] = {}
@@ -3970,7 +3977,8 @@ def main() -> None:
     p.add_argument("--regen-stale", action="store_true",
                    help="이미 있으나 최우선 모델(--model)로 만들어지지 않은 항목만 재생성 (일관성 정리)")
     p.add_argument("--workers", type=int, default=1,
-                   help="병렬 워커 수 (기본 1=순차). 2 이상이면 워커마다 키 1개씩 고정 배정해 동시 생성 "
+                   help="병렬 워커 수 (기본 1=순차). 2 이상이면 동시 생성. 키 개수보다 많으면 "
+                        "worker_id %% len(keys) 로 키를 순환 배정해 여러 워커가 키를 나눠 쓴다(오버구독) "
                         "(모델 로테이션 없이 --model/최우선 모델 고정)")
     p.add_argument("--batch", type=int, default=1,
                    help="1회 호출당 조합 개수 (기본 1). 2 이상이면 배치 비용절감 모드: "
