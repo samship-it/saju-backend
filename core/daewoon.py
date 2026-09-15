@@ -1,6 +1,10 @@
-﻿import math
+﻿import csv
+import math
 import logging
+import os
+from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Dict, Any, List, Tuple
 from korean_lunar_calendar import KoreanLunarCalendar
 
@@ -69,25 +73,67 @@ def get_saju_year_and_ganji(birth_dt: datetime) -> Tuple[int, str, str]:
 # ---------------------------------------------------------------------------
 # 해결책 3: 절기 시각 일수 기반 정밀 대운수(교운 나이) 산출 로직
 # ---------------------------------------------------------------------------
+# 월주(月柱)가 바뀌는 경계인 12절(節)만 대운수 계산에 쓴다. 24절기 중 나머지 12개
+# (우수/춘분/곡우/소만/하지/대서/처서/추분/상강/소설/동지/대한)는 "중기(中氣)"로,
+# 월이 바뀌는 시점이 아니므로 대운수 기준에서 제외한다.
+_JEOL_TERMS_KO = frozenset({
+    "입춘", "경칩", "청명", "입하", "망종", "소서",
+    "입추", "백로", "한로", "입동", "대설", "소한",
+})
+
+
+@lru_cache(maxsize=1)
+def _load_jeol_times() -> Tuple[datetime, ...]:
+    """sajupy 패키지에 내장된 1900~2100년 실제 24절기 정밀 시각(KASI 기준, 분 단위) 테이블에서
+    12절(節)의 절입 시각만 뽑아 정렬된 튜플로 캐시한다.
+
+    sajupy 는 이미 requirements.txt 에 있고 core/saju_base.py 가 원국 계산에 쓰는 검증된
+    의존성이므로, 별도로 skyfield/ephem 같은 천문 계산 라이브러리를 새로 추가하지 않고
+    이 패키지가 들고 있는 calendar_data.csv(연-월-일 단위 만세력 + 절기 정밀시각)를 재사용한다.
+    """
+    import sajupy
+    csv_path = os.path.join(os.path.dirname(sajupy.__file__), "calendar_data.csv")
+    times: List[datetime] = []
+    with open(csv_path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            term_ko = row.get("solar_term_korean")
+            term_time = row.get("term_time")
+            if term_ko not in _JEOL_TERMS_KO or not term_time:
+                continue
+            times.append(datetime.strptime(term_time, "%Y%m%d%H%M"))
+    times.sort()
+    return tuple(times)
+
+
 def calculate_exact_daewoon_num(birth_dt: datetime, is_forward: bool) -> int:
     """
-    생년월시와 전/후 절기(약 30일 간격) 간의 실제 일수를 계산하여 정밀 대운수를 산출합니다.
-    - 순행: 생일부터 '다음 절기'까지의 일수 / 3
-    - 역행: 생일부터 '이전 절기'까지의 일수 / 3
+    생년월시와 실제 절입(節入) 시각 사이의 정확한 일수를 계산하여 정밀 대운수를 산출합니다.
+    - 순행: 생일부터 '다음에 오는 절입일시'까지의 일수 / 3
+    - 역행: 생일부터 '직전에 지난 절입일시'까지의 일수 / 3
+    (전통 명리학 계산법: 3일 = 1년, 나머지는 반올림)
     """
-    # 월주 절기 간격(약 30일) 기준 가상 절기일 산출
-    if is_forward:
-        target_section_dt = birth_dt + timedelta(days=15)
-        diff_seconds = (target_section_dt - birth_dt).total_seconds()
+    times = _load_jeol_times()
+
+    if not times or birth_dt < times[0] or birth_dt > times[-1]:
+        # sajupy calendar_data.csv 수록 범위(1900~2100) 밖의 극단적 입력에 대한 안전망.
+        # 실제 서비스 대상 생년월일에서는 발생하지 않아야 정상이므로 경고를 남긴다.
+        logger.warning(
+            "calculate_exact_daewoon_num: %s 는 절기 테이블 범위(1900~2100) 밖입니다. "
+            "근사값(15일 간격)으로 대체합니다.", birth_dt,
+        )
+        days = 15.0
+    elif is_forward:
+        idx = bisect_left(times, birth_dt)  # 생일 이후(같은 시각 포함) 첫 절입
+        target = times[idx]
+        days = (target - birth_dt).total_seconds() / 86400.0
     else:
-        target_section_dt = birth_dt - timedelta(days=15)
-        diff_seconds = (birth_dt - target_section_dt).total_seconds()
-        
-    days = abs(diff_seconds) / 86400.0
-    
-    # 사주 명리학 계산법: 3일 = 1년 (나머지 2일 이상 올림)
-    daewoon_num = math.floor((days + 1) / 3)
-    return max(1, min(10, daewoon_num))  # 1~10세 범위 조정
+        idx = bisect_right(times, birth_dt) - 1  # 생일 이전(같은 시각 포함) 마지막 절입
+        target = times[idx]
+        days = (birth_dt - target).total_seconds() / 86400.0
+
+    # 사주 명리학 계산법: 3일 = 1년, 나머지는 반올림(사사오입)
+    daewoon_num = math.floor(days / 3.0 + 0.5)
+    return max(1, daewoon_num)
 
 # ---------------------------------------------------------------------------
 # 부가 로직: 10년 단위 대운 흐름 및 60갑자 세운 목록 생성

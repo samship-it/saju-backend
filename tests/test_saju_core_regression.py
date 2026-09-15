@@ -50,6 +50,12 @@ TEST_CASE_1 = {
         # 육합/충만 검출 가능한 현재 코드 기준. 寅-巳 형(刑)은 구현이 안 되어 있어
         # 아래 목록에는 포함되어 있지 않음 -> test_interactions_missing_hyeong이 이 격차를 명시적으로 잡아냄
         "ji_interactions": ["육합(寅-亥)", "충(巳-亥)"],
+        # daewoon_num 검증: 년간 癸(음간) + 여성 -> 음녀 = 순행.
+        # 순행이므로 다음 절입(1983-06-06 15:02 망종)까지 23.04일 -> 23.04/3 반올림 = 8.
+        # calculate_exact_daewoon_num()이 timedelta(days=15) 고정값 버그로 항상 5를 반환하던
+        # 것을 sajupy 내장 실제 절기 정밀시각(calendar_data.csv) 기반으로 수정한 뒤의 검증값.
+        "daewoon_num": 8,
+        "daewoon_direction": "순행",
     }
 }
 
@@ -256,6 +262,85 @@ class TestSajuBaseIntegration:
         assert result.get("year_ganji") == "癸亥"
         assert result.get("day_ganji") == "壬寅"
         assert result.get("five_elements") == TEST_CASE_1["expected"]["five_elements"]
+
+
+# ============================================================
+# E-2. 대운수(daewoon_num) - core/daewoon.py의 calculate_exact_daewoon_num()
+#
+# 과거 버그: 실제 절기 계산 대신 timedelta(days=15) 고정값을 써서 생년월일과
+# 무관하게 항상 daewoon_num=5가 나왔음. sajupy 패키지에 내장된 1900~2100년
+# 절기 정밀시각 테이블(calendar_data.csv, KASI 기준) 기반으로 수정.
+# 이 클래스가 실패하면 "항상 5" 버그가 재발했을 가능성이 높음.
+# ============================================================
+class TestDaewoonNum:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from core.daewoon import calculate_exact_daewoon_num, calculate_daewoon_info
+        self.calculate_exact_daewoon_num = calculate_exact_daewoon_num
+        self.calculate_daewoon_info = calculate_daewoon_info
+
+    def test_daewoon_num_matches_verified_value_for_test_case_1(self):
+        """
+        1983-05-14 14:00 여성 케이스. 순행이므로 다음 절입(1983-06-06 15:02 망종)까지
+        23.04일 -> 3일=1년 반올림 기준 daewoon_num=8. 타 만세력 서비스에서 8세 근처로
+        나온다는 사용자 보고와 일치.
+        """
+        from datetime import datetime
+        case = TEST_CASE_1["expected"]
+        birth_dt = datetime(1983, 5, 14, 14, 0)
+        assert self.calculate_exact_daewoon_num(birth_dt, is_forward=True) == case["daewoon_num"]
+
+    def test_daewoon_num_end_to_end_via_calculate_daewoon_info(self):
+        case = TEST_CASE_1["expected"]
+        result = self.calculate_daewoon_info(
+            1983, 5, 14, "female",
+            year_pillar=case["year_pillar"], month_pillar=case["month_pillar"],
+        )
+        assert result["daewoon_num"] == case["daewoon_num"]
+        assert result["direction"] == case["daewoon_direction"]
+
+    @pytest.mark.parametrize("year,month,day,hour,is_forward", [
+        (1983, 5, 14, 14, True),
+        (1983, 5, 14, 14, False),
+        (1990, 1, 1, 0, True),
+        (1975, 3, 15, 9, False),
+        (2001, 7, 20, 18, True),
+        (1965, 6, 6, 3, False),
+        (2010, 2, 3, 12, True),
+        (1955, 11, 11, 21, False),
+        (1999, 9, 9, 6, True),
+        (2020, 4, 30, 15, False),
+    ])
+    def test_daewoon_num_is_not_always_five(self, year, month, day, hour, is_forward):
+        """
+        회귀 방지의 핵심: 과거 버그는 '항상 5'였다. 서로 다른 절기 구간에 걸친
+        10개 생년월일 중 전부가 5로 뭉치면 안 되고, 각 값은 1~10 범위 안에 있어야 한다.
+        (이 테스트 하나만으로는 "우연히 전부 5"인 경우를 못 걸러내므로,
+        test_daewoon_num_values_are_not_all_identical 이 그 보완 역할을 한다.)
+        """
+        from datetime import datetime
+        num = self.calculate_exact_daewoon_num(datetime(year, month, day, hour), is_forward)
+        assert 1 <= num <= 10
+
+    def test_daewoon_num_values_are_not_all_identical(self):
+        """
+        서로 다른 10개 생년월일의 daewoon_num이 전부 같은 값(=버그였던 5)으로
+        뭉치지 않고 실제로 흩어지는지 확인 - 'timedelta(days=15) 고정값' 버그의
+        직접적인 재발 감시 테스트.
+        """
+        from datetime import datetime
+        inputs = [
+            (1983, 5, 14, 14, True), (1990, 1, 1, 0, True), (1975, 3, 15, 9, False),
+            (2001, 7, 20, 18, True), (1965, 6, 6, 3, False), (2010, 2, 3, 12, True),
+            (1955, 11, 11, 21, False), (1999, 9, 9, 6, True), (2020, 4, 30, 15, False),
+            (1970, 8, 8, 10, True),
+        ]
+        results = {
+            self.calculate_exact_daewoon_num(datetime(y, m, d, hh), fwd)
+            for y, m, d, hh, fwd in inputs
+        }
+        assert len(results) > 1, f"모든 daewoon_num이 동일한 값으로 뭉침: {results} (항상 5 버그 재발 의심)"
+        assert results != {5}, "daewoon_num이 항상 5 - timedelta(days=15) 고정값 버그가 재발한 것으로 보임"
 
 
 # ============================================================
