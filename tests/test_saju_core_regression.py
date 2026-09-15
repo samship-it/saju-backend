@@ -299,6 +299,25 @@ class TestDaewoonNum:
         assert result["daewoon_num"] == case["daewoon_num"]
         assert result["direction"] == case["daewoon_direction"]
 
+    def test_daewoon_num_flips_with_gender(self):
+        """같은 생년월일시(1983-05-14 14:00), 성별만 바꿨을 때
+        순행/역행과 daewoon_num이 실제로 달라지는지 확인.
+        여성=순행/8세, 남성=역행/3세로 직접 실행 검증됨."""
+        case = TEST_CASE_1["expected"]
+        female_result = self.calculate_daewoon_info(
+            1983, 5, 14, "female",
+            year_pillar=case["year_pillar"], month_pillar=case["month_pillar"],
+        )
+        male_result = self.calculate_daewoon_info(
+            1983, 5, 14, "male",
+            year_pillar=case["year_pillar"], month_pillar=case["month_pillar"],
+        )
+        assert female_result["direction"] == "순행"
+        assert female_result["daewoon_num"] == 8
+        assert male_result["direction"] == "역행"
+        assert male_result["daewoon_num"] == 3
+        assert female_result["direction"] != male_result["direction"]
+
     @pytest.mark.parametrize("year,month,day,hour,is_forward", [
         (1983, 5, 14, 14, True),
         (1983, 5, 14, 14, False),
