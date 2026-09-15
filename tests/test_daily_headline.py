@@ -97,6 +97,11 @@ def test_incomplete_sentence_fails(text):
 
 
 # ------------------------------------------------------------------ 파이프라인(service._shape) 통합
+# social 필드는 saju_data(십신군 × 지지관계)로 별도 계산되므로, _shape 호출 시 최소한의
+# saju_data 더미를 함께 넘긴다(day_master/day_branch/today_ganji 없으면 SOCIAL_FALLBACK).
+_SAJU_DATA = {"day_master": "壬", "day_branch": "寅", "today_ganji": {"day": "戊辰"}}
+
+
 def _ai(overall_score, headline=None, overall_summary="정상적인 요약 문장입니다."):
     return {
         "overall_score": overall_score,
@@ -118,7 +123,7 @@ def _ai(overall_score, headline=None, overall_summary="정상적인 요약 문�
 
 def test_shape_uses_valid_llm_headline_as_is():
     ai = _ai(75, headline="오늘은 마무리에 강한 하루가 될 거예요.")
-    out = _shape(ai)
+    out = _shape(ai, _SAJU_DATA)
     assert out["headline"] == "오늘은 마무리에 강한 하루가 될 거예요."
 
 
@@ -127,12 +132,12 @@ def test_shape_falls_back_to_band_text_when_headline_and_summary_invalid(lo, hi,
     score = (lo + hi) // 2
     # headline 자체가 가드레일 실패("와!") + summary 첫 문장도 인사말이라 이중으로 무효.
     ai = _ai(score, headline="와!", overall_summary="안녕하세요. 오늘 하루도 힘내봐요.")
-    out = _shape(ai)
+    out = _shape(ai, _SAJU_DATA)
     assert out["headline"] == text
     assert out["overall_score"] == score
 
 
 def test_shape_extracts_first_sentence_when_headline_missing_but_summary_valid():
     ai = _ai(65, headline=None, overall_summary="차분하게 정리하면 흐름이 매끄러워지는 하루입니다. 그리고 이어지는 문장.")
-    out = _shape(ai)
+    out = _shape(ai, _SAJU_DATA)
     assert out["headline"] == "차분하게 정리하면 흐름이 매끄러워지는 하루입니다."

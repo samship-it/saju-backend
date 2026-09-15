@@ -9,6 +9,7 @@ from typing import Dict, Any, Tuple
 from core.constants import score_to_emoji, score_to_band, daily_headline_fallback
 from shared.text_format import paragraphize, first_sentence, is_valid_headline
 from domains.daily.content_db import lookup
+from domains.daily.social_template import build_social_summary
 
 CONTENT_TYPE = "daily_fortune"
 
@@ -67,7 +68,7 @@ def _headline(ai: dict, overall_score: int) -> str:
     return daily_headline_fallback(overall_score)
 
 
-def _shape(ai: dict) -> dict:
+def _shape(ai: dict, saju_data: Dict[str, Any]) -> dict:
     def s(v, d=60):
         try:
             return max(0, min(100, int(round(float(v)))))
@@ -94,6 +95,10 @@ def _shape(ai: dict) -> dict:
             "love_single": paragraphize(str(summ.get("love_single", ""))),
             "love_couple": paragraphize(str(summ.get("love_couple", ""))),
             "work_study": paragraphize(str(summ.get("work_study", ""))),
+            # Social Network(사회운) - daily_db.json 정적 DB에는 없는 필드.
+            # Gemini 재생성 없이 core/sipsin·core/daewoon의 기존 계산값(십신군 × 지지관계)만으로
+            # 요청 시점에 Python 템플릿을 조합해 즉시 만든다(사용자 확정, 결정론적 결과).
+            "social": paragraphize(build_social_summary(saju_data)),
         },
         "keywords": kws,
         "recommended_action": str(ai.get("recommended_action", "")),
@@ -110,5 +115,5 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
 
     entry = lookup(day_ganji, iljin_ganji)
     if not entry:
-        return _shape(_fallback(saju_data)), True
-    return _shape(entry), False
+        return _shape(_fallback(saju_data), saju_data), True
+    return _shape(entry, saju_data), False
