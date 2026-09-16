@@ -43,6 +43,7 @@ Gemini 로 콘텐츠를 생성해 JSON 파일로 저장한다.
 ────────────────────────────────────────────────────────────────────────
 """
 import argparse
+import inspect
 import json
 import os
 import queue as _queue
@@ -355,14 +356,45 @@ _ENUM_MARKERS = [
 # 배열 인덱스/순번이 문장에 그대로 새는 것("첫번째 기운이...", "7번째 대운에서는...") 탐지.
 # lifelong 대운 순번(1~8번째)이 프롬프트 입력에 그대로 들어가 있어서 모델이 그 숫자를
 # 그대로 되읊는 사례가 실측에서 다수 발견됨(사용자 리포트) — 발견 시 저장하지 않고 재시도시킨다.
+# 최초 버전은 '대운/기운' 뒤에만 붙는 경우만 잡았는데, 모델이 '전환점/국면/관문/단계' 등 다른
+# 명사에 붙여서 우회하는 사례가 실측에서 다수 발견됨(8,867건 재생성분 검수, 사용자 리포트)
+# → 명사 범위를 넓혀서 어떤 명사와 붙어도 잡히게 함.
 _ORDINAL_LEAK_RE = re.compile(
-    r"(?:\d{1,2}|첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번\s*째\s*(?:기운|대운)"
+    r"(?:\d{1,2}|첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번\s*째"
+    r"[^.!?\n]{0,6}(?:대운|기운|전환점|전환|국면|관문|단계|시기|고비|매듭|챕터|무대|리듬|"
+    r"출발선|출발점|시절|순간)"
 )
+
+# 위 명사 목록으로도 못 잡는 표현을 대비한 2차 안전장치: 명사와 무관하게 텍스트에 등장하는
+# 모든 'N번째' 서수를 뽑아 실제 대운 순번(actual_step)과 숫자 자체를 직접 대조한다.
+_ORDINAL_ANY_RE = re.compile(r"(\d{1,2}|첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번\s*째")
+_ORDINAL_WORD_TO_NUM = {
+    "첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5,
+    "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10,
+}
 
 
 def has_mechanical_index_leak(s: Any) -> bool:
     """배열 인덱스/순번을 그대로 노출하는 기계적 표현이 섞여 있는지."""
     return isinstance(s, str) and bool(_ORDINAL_LEAK_RE.search(s))
+
+
+def ordinal_step_mismatches(entry: Dict[str, Any], actual_step: int) -> List[str]:
+    """텍스트 속 'N번째' 서수가 가리키는 숫자가 실제 대운 순번(actual_step)과 다른
+    필드명 목록을 반환한다. has_mechanical_index_leak() 은 미리 정해둔 명사 목록에
+    붙은 경우만 걸러내는 1차 방어선이고, 이건 어떤 명사에 붙어 있든(혹은 명사 없이
+    단독으로 쓰였든) 숫자만 뽑아 실제 순번과 직접 대조하는 2차 안전장치다."""
+    bad: List[str] = []
+    for field, text in entry.items():
+        if not isinstance(text, str):
+            continue
+        for m in _ORDINAL_ANY_RE.finditer(text):
+            raw = m.group(1)
+            claimed = int(raw) if raw.isdigit() else _ORDINAL_WORD_TO_NUM.get(raw)
+            if claimed is not None and claimed != actual_step:
+                bad.append(field)
+                break
+    return bad
 
 
 def strip_enumeration(s: Any) -> Any:
@@ -981,6 +1013,15 @@ def _unwrap_batch_payload(raw: dict, want_keys: List[str]) -> dict:
     return raw
 
 
+def _valid_fn_wants_item(valid_fn) -> bool:
+    """valid_fn(entry) 만 받는 도메인(대다수)과 valid_fn(entry, item) 로 실제 순번 등
+    조합 컨텍스트까지 검증하는 도메인(lifelong_stage)을 함수 시그니처만으로 구분한다."""
+    try:
+        return len(inspect.signature(valid_fn).parameters) >= 2
+    except (TypeError, ValueError):
+        return False
+
+
 def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_fn,
                  models, max_output_tokens, total, system_instruction, banmal_fn,
                  unit="조합", store_fn=None, count_fn=None, header="", debug_fn=None) -> None:
@@ -1001,6 +1042,8 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
     if not todo:
         print("생성할 항목이 없습니다. (모두 완료)")
         return
+
+    valid_wants_item = _valid_fn_wants_item(valid_fn)
 
     def _mk(mi_: int, ki_: int):
         return make_model(models[mi_], keys[ki_], max_output_tokens, system_instruction)
@@ -1127,7 +1170,7 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
                 if not isinstance(entry, dict):
                     miss.append(it); continue
                 entry = coerce_fn(entry)
-                if not valid_fn(entry):
+                if not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
                     bad.append(it)
                     if debug_fn:
                         debug_fn(key, entry)
@@ -1206,6 +1249,8 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
     if not todo:
         print("생성할 항목이 없습니다. (모두 완료)")
         return
+
+    valid_wants_item = _valid_fn_wants_item(valid_fn)
 
     if store_fn is None:
         def store_fn(_db, _key, _entry, _model):
@@ -1321,7 +1366,7 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
                 if not isinstance(entry, dict):
                     miss.append(it); continue
                 entry = coerce_fn(entry)
-                if not valid_fn(entry):
+                if not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
                     bad.append(it); continue
                 with db_lock:
                     store_fn(db, key, entry, model_name)
@@ -3674,12 +3719,12 @@ def _lifelong_stage_item_block(key: str, ilju: str, dominant: str, relation: str
     label = STAGE_LABELS[step]
     hint = hint_for_step(dominant, step)
     temperament_group = ilju_temperament_group(dm, db)
-    first_note = "이 사람 인생의 첫 대운(직전 국면 없음)" if step == 1 else "직전 국면이 있는 대운"
+    first_note = "이 사람 인생에서 가장 이른 시기의 대운(직전 국면 없음)" if step == 1 else "직전 국면이 있는 대운"
     return (
         f"── 조합 키: {key} ──\n{persona_prompt(dm, db)}\n"
         f"{fusion_prompt_block(temperament_group, dominant, title='공통 사주 판세(이 조합의 기본 뼈대)')}\n"
         f"- 이 시기: {first_note} · 참고 인생국면: {label} (이 국면 설명·순번 숫자를 문장에 그대로 "
-        f"쓰지 말 것 — '몇 번째'라는 표현 자체를 쓰지 말 것)\n"
+        f"쓰지 말 것 — '몇 번째'라는 표현 자체를 쓰지 말 것. '첫'이라는 낱말도 서수적으로 쓰지 말 것)\n"
         f"- 이 시기의 지배 기운: {dominant} · 참고 사건결: {hint}\n"
         f"- 일지 대비 충형 관계: {relation}"
     )
@@ -3696,8 +3741,11 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
 - 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등, 위에 준 '지배 기운'/'충형 관계'
   단어 자체도)는 출력 문장에 절대 그대로 쓰지 말고, 구체적인 사건·행동 수준의 일상 언어로 풀어 씁니다.
 - 이 시기가 인생에서 몇 번째 대운인지(숫자·서수)를 문장에 절대 쓰지 않습니다("첫번째 기운이",
-  "7번째 대운에서는", "이번이 세 번째라" 같은 표현 전부 금지). 순서를 말하지 않고 그 시기 자체의
-  흐름과 내용으로만 풉니다.
+  "7번째 대운에서는", "이번이 세 번째라", "다섯 번째 전환점", "두 번째 관문", "새로운 국면의
+  첫 단계" 같은 표현 전부 금지 — '대운/기운' 뒤에만 오는 게 아니라 전환점·국면·관문·단계·시기·
+  고비·챕터·무대·리듬·출발점 등 어떤 명사와 붙어도 순번을 가리키는 서수 표현은 절대 쓰지
+  않습니다. "첫"이라는 낱말 자체도 순번을 암시하는 용도로는 쓰지 않습니다). 순서를 말하지 않고
+  그 시기 자체의 흐름과 내용으로만 풉니다.
 - 위 '공통 사주 판세(융합 캐릭터)'를 이 시기 서술의 뼈대로 삼되 문장을 그대로 베끼지 말고
   자연스럽게 녹여 씁니다.
 
@@ -3714,10 +3762,11 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
   현실적인 행동 지침으로.
 - obstacle: 이 시기에 발목을 잡기 쉬운 방해 요소·주의할 태도(3~4문장). 두루뭉술한 경고가 아니라
   구체적 상황으로.
-- turning_point: 이 시기가 앞뒤로 어떻게 달라지는 전환점인지(3~5문장). 1번째 대운이면 "이전 국면
-  없이 시작되는 인생의 첫 전환점"이라는 취지로 시작을, 이후 대운이면 특정 직전 기운을 단정하지
-  않고 "지금까지와는 다른 리듬으로 접어드는 전환점"이라는 취지로 쓰고, 다음 시기로 이어지거나
-  전환될 방향성도 함께 암시합니다(숫자·서수 없이).
+- turning_point: 이 시기가 앞뒤로 어떻게 달라지는 전환점인지(3~5문장). 몇 번째 대운인지 숫자나
+  서수(첫/두/세…번째, "첫" 단독 포함)는 절대 쓰지 않습니다. 직전 국면이 없는 경우에는 "이전
+  국면 없이 새롭게 열리는 흐름"이라는 취지로, 직전 국면이 있는 경우에는 특정 직전 기운을
+  단정하지 않고 "지금까지와는 다른 리듬으로 접어드는 전환점"이라는 취지로 쓰고, 다음 시기로
+  이어지거나 전환될 방향성도 함께 암시합니다.
 
 [출력 스키마 규칙 — 반드시 준수]
 - 각 조합의 값은 정확히 theme_line, keyword, event_narrative, strategy, obstacle, turning_point
@@ -3746,7 +3795,9 @@ def coerce_lifelong_stage(entry: Any) -> Any:
     return entry
 
 
-def lifelong_stage_valid(entry: Any) -> bool:
+def lifelong_stage_valid(entry: Any, item: Optional[Tuple] = None) -> bool:
+    """item 은 (key, ilju, dominant_group, branch_relation, step) — 넘어오면 실제
+    대운 순번(step)과 텍스트 속 서수 표현이 일치하는지까지 검증한다(2차 안전장치)."""
     if not isinstance(entry, dict):
         return False
     fields = _LIFELONG_STAGE_TEASER_FIELDS + _LIFELONG_STAGE_DETAIL_FIELDS
@@ -3756,6 +3807,8 @@ def lifelong_stage_valid(entry: Any) -> bool:
         v = str(entry.get(k, "")).strip()
         if not v or has_mechanical_index_leak(v):
             return False
+    if item is not None and ordinal_step_mismatches(entry, item[4]):
+        return False
     return True
 
 

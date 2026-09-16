@@ -222,6 +222,29 @@ def test_lifelong_stage_valid_rejects_mechanical_index_leak():
     assert lifelong_stage_valid(leaked2) is False
 
 
+def test_lifelong_stage_valid_rejects_ordinal_leak_via_other_nouns():
+    """'대운/기운' 뒤가 아니라 '전환점/국면/관문' 등에 붙어 우회하는 표현도 잡히는지
+    (8,867건 재생성분 검수에서 발견된 실제 사각지대)."""
+    for noun in ("전환점", "국면", "관문", "단계"):
+        leaked = dict(_STAGE_COMPLETE)
+        leaked["turning_point"] = f"인생의 첫 번째 큰 {noun}입니다."
+        assert lifelong_stage_valid(leaked) is False, noun
+
+
+def test_lifelong_stage_valid_rejects_ordinal_step_mismatch_via_item():
+    """item=(key, ilju, dominant, relation, step) 을 넘기면 텍스트 속 서수가 실제
+    step 과 다를 때 명사 목록에 없어도 잡힌다(2차 안전장치)."""
+    entry = dict(_STAGE_COMPLETE)
+    entry["turning_point"] = "책임과 의무를 배우는 첫 번째 순간입니다."
+    item_step2 = ("키", "갑자", "비겁", "충", 2)
+    assert lifelong_stage_valid(entry, item_step2) is False
+
+    item_step1 = ("키", "갑자", "비겁", "충", 1)
+    entry_ok = dict(_STAGE_COMPLETE)
+    entry_ok["turning_point"] = "이전 국면 없이 새롭게 열리는 흐름입니다."
+    assert lifelong_stage_valid(entry_ok, item_step1) is True
+
+
 def test_coerce_lifelong_stage_strips_jargon_in_place():
     entry = {
         "theme_line": "관성 중심의 시기", "keyword": "안정",
