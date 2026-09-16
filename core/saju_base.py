@@ -12,6 +12,7 @@ from core.twelve_unseong import twelve_unseong_map
 from core.sinsal import analyze_sinsal
 from core.strength import analyze_strength, analyze_gyeokguk, spouse_star
 from core.domain_derived import analyze_domain_derived
+from core.fusion_character import analyze_fusion_character
 from core.daewoon import calculate_daewoon_info, get_seewoon_list, get_wolwoon_list
 
 GAN_FIVE_ELEMENTS = GAN_ELEM
@@ -190,6 +191,7 @@ def calculate_saju(
     }
 
     saju["derived"] = analyze_domain_derived(saju, overlay_sipsin=overlay)
+    saju["fusion"] = analyze_fusion_character(saju)
     return saju
 
 

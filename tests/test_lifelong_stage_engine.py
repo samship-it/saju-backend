@@ -200,28 +200,39 @@ def test_coerce_lifelong_domains_strips_jargon_across_all_domains():
 
 
 _STAGE_COMPLETE = {
-    "theme_line": "a", "event_narrative": "b", "previous_diff": "c", "next_hint": "d",
+    "theme_line": "a", "keyword": "e",
+    "event_narrative": "b", "strategy": "s", "obstacle": "o", "turning_point": "d",
 }
 
 
-def test_lifelong_stage_valid_requires_all_four_fields():
+def test_lifelong_stage_valid_requires_all_six_fields():
     assert lifelong_stage_valid(dict(_STAGE_COMPLETE)) is True
     missing = dict(_STAGE_COMPLETE)
-    missing["next_hint"] = ""
+    missing["turning_point"] = ""
     assert lifelong_stage_valid(missing) is False
     assert lifelong_stage_valid("not a dict") is False
 
 
+def test_lifelong_stage_valid_rejects_mechanical_index_leak():
+    leaked = dict(_STAGE_COMPLETE)
+    leaked["event_narrative"] = "첫번째 기운이 찾아옵니다."
+    assert lifelong_stage_valid(leaked) is False
+    leaked2 = dict(_STAGE_COMPLETE)
+    leaked2["strategy"] = "7번째 대운에서는 신중해야 합니다."
+    assert lifelong_stage_valid(leaked2) is False
+
+
 def test_coerce_lifelong_stage_strips_jargon_in_place():
     entry = {
-        "theme_line": "관성 중심의 시기",
+        "theme_line": "관성 중심의 시기", "keyword": "안정",
         "event_narrative": "괜찮아요.",
-        "previous_diff": "인성 중심의 평온한 흐름으로 전환됩니다.",
-        "next_hint": "괜찮아요.",
+        "strategy": "재성 중심으로 접근하세요.",
+        "obstacle": "괜찮아요.",
+        "turning_point": "인성 중심의 평온한 흐름으로 전환됩니다.",
     }
     out = coerce_lifelong_stage(entry)
     assert "관성" not in out["theme_line"]
-    assert "인성" not in out["previous_diff"]
+    assert "인성" not in out["turning_point"]
 
 
 # ------------------------------------------------------------------ 조회 기반 서비스(라이브 API 호출 없음)
@@ -249,6 +260,7 @@ def test_analyze_lifelong_fortune_returns_all_8_stages_with_current_flag(monkeyp
     assert data["data"]["current_step"] == next(s["step"] for s in stages if s["is_current"])
     for s in stages:
         assert s["theme_line"] == "a"
+        assert s["keyword"] == "e"
         assert s["age_range"][1] == s["age_range"][0] + 9
 
     assert data["data"]["life_domains"] == _DOMAINS_COMPLETE
@@ -267,7 +279,37 @@ def test_analyze_lifelong_fortune_falls_back_when_lookup_misses(monkeypatch):
     stages = data["data"]["life_stages"]
     assert len(stages) == 8
     for s in stages:
-        assert s["theme_line"] and s["event_narrative"] and s["previous_diff"] and s["next_hint"]
+        assert s["theme_line"] and s["keyword"]
     assert data["data"]["core_nature"]["personality"]
     assert data["data"]["core_nature"]["life_theme"]
     assert data["data"]["life_domains"]
+
+
+# ------------------------------------------------------------------ 대운 상세 리포트(분리 엔드포인트)
+from domains.lifelong.service import analyze_lifelong_stage_detail  # noqa: E402
+
+_STAGE_DETAIL_COMPLETE = {
+    "event_narrative": "b", "strategy": "s", "obstacle": "o", "turning_point": "d",
+}
+
+
+def test_analyze_lifelong_stage_detail_returns_requested_step(monkeypatch):
+    import domains.lifelong.service as svc
+
+    monkeypatch.setattr(svc, "lookup_stage_detail", lambda ilju, dom, rel, step: dict(_STAGE_DETAIL_COMPLETE))
+
+    data, is_fallback = analyze_lifelong_stage_detail(1990, 5, 15, 3, 10, 0, "male", False)
+    assert is_fallback is False
+    assert data["step"] == 3
+    assert data["data"] == _STAGE_DETAIL_COMPLETE
+
+
+def test_analyze_lifelong_stage_detail_falls_back_when_lookup_misses(monkeypatch):
+    import domains.lifelong.service as svc
+
+    monkeypatch.setattr(svc, "lookup_stage_detail", lambda ilju, dom, rel, step: None)
+
+    data, is_fallback = analyze_lifelong_stage_detail(1990, 5, 15, 1, 10, 0, "male", False)
+    assert is_fallback is True
+    assert data["data"]["event_narrative"] and data["data"]["strategy"]
+    assert data["data"]["obstacle"] and data["data"]["turning_point"]

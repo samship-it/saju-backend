@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from domains.lifelong.service import analyze_lifelong_fortune
+from domains.lifelong.service import analyze_lifelong_fortune, analyze_lifelong_stage_detail
 
 router = APIRouter()
 
@@ -18,6 +18,10 @@ class LifelongFortuneRequest(BaseModel):
     is_lunar: Optional[bool] = Field(False)
 
 
+class LifelongStageDetailRequest(LifelongFortuneRequest):
+    step: int = Field(..., example=3, description="대운 순번(1~8)")
+
+
 @router.post("/analysis", summary="평생운세 (원국+대운 흐름 종합, 250P)")
 def lifelong_analysis_endpoint(req: LifelongFortuneRequest):
     try:
@@ -28,3 +32,15 @@ def lifelong_analysis_endpoint(req: LifelongFortuneRequest):
         return {"status": "success", "is_fallback": is_fallback, **data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"평생운세 분석 실패: {str(e)}")
+
+
+@router.post("/stage-detail", summary="대운 상세 리포트 (특정 대운 1개의 전략/방해요소/전환점)")
+def lifelong_stage_detail_endpoint(req: LifelongStageDetailRequest):
+    try:
+        data, is_fallback = analyze_lifelong_stage_detail(
+            req.year, req.month, req.day, req.step, req.hour, req.minute or 0,
+            req.gender or "female", bool(req.is_lunar),
+        )
+        return {"status": "success", "is_fallback": is_fallback, **data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"대운 상세 리포트 분석 실패: {str(e)}")

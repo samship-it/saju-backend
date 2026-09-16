@@ -5,6 +5,8 @@
 import json
 from typing import Any, Dict, List, Optional
 
+from core.fusion_character import fusion_character_prompt
+
 
 def _j(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, default=str)
@@ -17,6 +19,8 @@ def engine_block(saju: Dict[str, Any], domains: Optional[List[str]] = None) -> s
         ds = {k: v for k, v in ds.items() if k in domains}
 
     lines = [
+        fusion_character_prompt(saju),
+        "",
         "[사주 정밀 데이터 — Python 만세력 엔진 산출값. 이 값만 근거로 사용]",
         f"- 일간/일지: {saju.get('day_master')}({saju.get('day_master_elem')}) / {saju.get('day_branch')}",
         f"- 원국 사주: 년 {saju.get('year_ganji')} · 월 {saju.get('month_ganji')} · 일 {saju.get('day_ganji')} · 시 {saju.get('time_ganji') or '미상'}",

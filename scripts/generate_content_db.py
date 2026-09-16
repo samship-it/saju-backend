@@ -67,6 +67,9 @@ from core.constants import (  # noqa: E402
     GAN_ELEM, JI_ELEM, JIJANGGAN, SHENG, KE,
 )
 from core.sipsin import calculate_sipsin, sipsin_group  # noqa: E402
+from core.fusion_character import (  # noqa: E402
+    ilju_temperament_group, fusion_lookup, fusion_prompt_block, FUSION_GUIDANCE,
+)
 from shared.persona_map import persona_prompt, GAN_PERSONA, JI_PERSONA  # noqa: E402
 from shared.ai_client import _extract_json as _extract_json_strict, _is_rate_limited, _retry_delay_sec  # noqa: E402
 from shared.text_format import is_valid_headline, headline_invalid_reason  # noqa: E402
@@ -347,6 +350,19 @@ _ENUM_MARKERS = [
     re.compile(r"(?<=[\s。.!?…])\d{1,2}\s*/\s*\d{1,2}(?=[\s:)]| )"),                      # 문장 중간의 " 1/6 "
     re.compile(r"[①-⑳➀-➉❶-❿]"),                                                          # 남은 동그라미 숫자
 ]
+
+
+# 배열 인덱스/순번이 문장에 그대로 새는 것("첫번째 기운이...", "7번째 대운에서는...") 탐지.
+# lifelong 대운 순번(1~8번째)이 프롬프트 입력에 그대로 들어가 있어서 모델이 그 숫자를
+# 그대로 되읊는 사례가 실측에서 다수 발견됨(사용자 리포트) — 발견 시 저장하지 않고 재시도시킨다.
+_ORDINAL_LEAK_RE = re.compile(
+    r"(?:\d{1,2}|첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번\s*째\s*(?:기운|대운)"
+)
+
+
+def has_mechanical_index_leak(s: Any) -> bool:
+    """배열 인덱스/순번을 그대로 노출하는 기계적 표현이 섞여 있는지."""
+    return isinstance(s, str) and bool(_ORDINAL_LEAK_RE.search(s))
 
 
 def strip_enumeration(s: Any) -> Any:
@@ -1415,20 +1431,28 @@ _PERSONALITY_APT_KEYS = ("fit_task", "fit_field", "good_env",
                          "org_style", "tiring_env", "favorable_direction")
 
 
-def _personality_item_block(ganji: str) -> str:
+def _personality_item_block(ganji: str, character_base_nature: str = "") -> str:
     dm, db = ganji[0], ganji[1]
     dm_elem = GAN_ELEM.get(dm, "?")
     db_elem = JI_ELEM.get(db, "?")
     ji_sipsin = calculate_sipsin(dm, db, is_gan=False)
     jjg = JIJANGGAN.get(db, []) or []
     jjg_desc = ", ".join(f"{c}({calculate_sipsin(dm, c, is_gan=True)})" for c, _ in jjg) or "-"
-    return (
-        f"── 일주 키: {ganji} ──\n"
-        f"{persona_prompt(dm, db)}\n"
-        f"- 일간(타고난 기질의 축): {dm} · 오행 {dm_elem}\n"
-        f"- 일지(받쳐주는 성향): {db} · 오행 {db_elem} · 일간과의 관계 {ji_sipsin}\n"
-        f"- 일지 속 숨은 기운: {jjg_desc}"
-    )
+    temperament_group = ilju_temperament_group(dm, db)
+    lines = [
+        f"── 일주 키: {ganji} ──",
+        persona_prompt(dm, db),
+        f"- 일간(타고난 기질의 축): {dm} · 오행 {dm_elem}",
+        f"- 일지(받쳐주는 성향): {db} · 오행 {db_elem} · 일간과의 관계 {ji_sipsin}",
+        f"- 일지 속 숨은 기운: {jjg_desc}",
+        f"- 기질 분류(내부 참고용 — 문장에 '{temperament_group}' 같은 용어를 그대로 쓰지 말 것): {temperament_group}",
+    ]
+    if character_base_nature:
+        lines.append(
+            "- 이미 확정된 '타고난 성격'(다른 화면에 이미 표시됨 — 적성·직업 설명이 이 성격과 "
+            f"논리적으로 모순되면 안 됨): {character_base_nature}"
+        )
+    return "\n".join(lines)
 
 
 # 두 개의 독립 결과물: 성격(character) 6필드 · 적성/직업운(aptitude) 6필드.
@@ -1463,12 +1487,27 @@ _PERSONALITY_GROUPS = {
 }
 
 
-def _personality_group_prompt(group: str, items: List[Tuple[str, str]]) -> str:
+def _personality_group_prompt(group: str, items: List[Tuple[str, str]],
+                               db: Optional[Dict[str, Any]] = None) -> str:
     g = _PERSONALITY_GROUPS[group]
     keys = [k for k, _ in items]
-    blocks = "\n\n".join(_personality_item_block(gj) for _, gj in items)
+
+    def _block(gj: str) -> str:
+        base_nature = ""
+        if group == "aptitude" and db is not None:
+            base_nature = ((db.get(gj, {}) or {}).get("character", {}) or {}).get("base_nature", "")
+        return _personality_item_block(gj, base_nature)
+
+    blocks = "\n\n".join(_block(gj) for _, gj in items)
     schema_lines = ",\n    ".join(
         f'"{k}": "{desc} (친근한 존댓말, 5~7문장으로 풍성하게)"' for k, desc in g["schema"]
+    )
+    consistency_rule = (
+        "- 일주 블록에 '이미 확정된 타고난 성격'이 함께 주어졌다면, 적성·직업 설명이 그 성격과 "
+        "논리적으로 모순되면 안 됩니다(예: 자유분방한 모험가형 성격인데 '위계질서가 뚜렷한 "
+        "공공기관'만 획일적으로 추천하는 식의 불일치 금지). 같은 성격이라도 잘 맞는 일의 "
+        "'방식'(자율성 수준, 속도, 협업 형태)으로 풀어 쓰고, 특정 기질이면 특정 직군만 정답이라는 "
+        "식의 기계적 1:1 매핑은 피합니다.\n" if group == "aptitude" else ""
     )
     return f"""아래 {len(items)}개 일주(일간·일지) 각각에 대해, 그 사람의 {g['title']}을 씁니다.
 초점: {g['focus']}.
@@ -1486,7 +1525,7 @@ def _personality_group_prompt(group: str, items: List[Tuple[str, str]]) -> str:
 - 형용사 나열이 아니라 구체적인 행동·상황·직무 예시를 넣습니다.
 - 사주 용어(십신·오행·격국·용신·지장간 등)는 절대 노출하지 않고 태도로만 드러냅니다.
 - 2030 세대가 공감할 현실 언어로 씁니다. 같은 일주는 늘 같은 캐릭터를 유지합니다.
-
+{consistency_rule}
 [생성할 일주 — 총 {len(items)}개]
 
 {blocks}
@@ -1519,6 +1558,13 @@ def _personality_group_valid(entry: Any, field_keys: Tuple[str, ...]) -> bool:
     return isinstance(entry, dict) and all(str(entry.get(k, "")).strip() for k in field_keys)
 
 
+# 공통 사주 판세 엔진(fusion_character) 도입 이후 다시 생성된 항목만 표시하는 버전 마커.
+# --overwrite 없이도 "이 프롬프트 버전으로 아직 안 만들어진 것만" 재생성하게 해서, 중간에
+# 인터넷이 끊기거나 프로세스가 죽어도 이미 끝난 항목을 다시 만들지 않고 이어서 진행한다
+# (--overwrite 는 매번 전체를 다시 도는 것이라 장시간 배치에는 위험 — 재시작 시 처음부터 다시 돔).
+_FUSION_PROMPT_VERSION = 1
+
+
 def _banmal_in_texts(texts) -> bool:
     hits = 0
     for blob in texts:
@@ -1549,9 +1595,12 @@ def run_personality(args) -> None:
 
     if args.dry_run:
         for group in ("character", "aptitude"):
+            fkeys = _PERSONALITY_GROUPS[group]["keys"]
             need = [g for g in gapja
-                    if args.overwrite or not _personality_group_valid(
-                        db.get(g, {}).get(group), _PERSONALITY_GROUPS[group]["keys"])]
+                    if args.overwrite or not (
+                        _personality_group_valid(db.get(g, {}).get(group), fkeys)
+                        and db.get(g, {}).get(f"_fusion_v_{group}") == _FUSION_PROMPT_VERSION
+                    )]
             print(f"[{group}] 대상 {len(need)}개: " + ", ".join(need[:20]) + (" ..." if len(need) > 20 else ""))
         print("dry-run 종료.")
         return
@@ -1565,8 +1614,15 @@ def run_personality(args) -> None:
     for group in ("character", "aptitude"):
         gconf = _PERSONALITY_GROUPS[group]
         fkeys = gconf["keys"]
-        todo = [(g, g) for g in gapja
-                if args.overwrite or not _personality_group_valid(db.get(g, {}).get(group), fkeys)]
+
+        def _is_current(g: str, _grp=group, _fk=fkeys) -> bool:
+            slot = db.get(g, {}) or {}
+            return (
+                _personality_group_valid(slot.get(_grp), _fk)
+                and slot.get(f"_fusion_v_{_grp}") == _FUSION_PROMPT_VERSION
+            )
+
+        todo = [(g, g) for g in gapja if args.overwrite or not _is_current(g)]
         if not todo:
             print(f"\n[{group}] 생성할 항목 없음 (모두 완료)")
             continue
@@ -1575,13 +1631,17 @@ def run_personality(args) -> None:
             slot = _db.setdefault(_key, {})
             slot[_grp] = _entry
             slot[f"_model_{_grp}"] = _model
+            slot[f"_fusion_v_{_grp}"] = _FUSION_PROMPT_VERSION
 
         def _count(_db, _grp=group, _fk=fkeys):
-            return sum(1 for v in _db.values() if _personality_group_valid(v.get(_grp), _fk))
+            return sum(
+                1 for v in _db.values()
+                if _personality_group_valid(v.get(_grp), _fk) and v.get(f"_fusion_v_{_grp}") == _FUSION_PROMPT_VERSION
+            )
 
         _run_batched(
             args, todo, db, out_path, keys,
-            prompt_fn=(lambda items, _grp=group: _personality_group_prompt(_grp, items)),
+            prompt_fn=(lambda items, _grp=group: _personality_group_prompt(_grp, items, db)),
             valid_fn=(lambda e, _fk=fkeys: _personality_group_valid(e, _fk)),
             coerce_fn=(lambda e, _fk=fkeys: _personality_group_coerce(e, _fk)),
             models=models, max_output_tokens=PERSONALITY_BATCH_MAX_OUTPUT_TOKENS, total=60,
@@ -3515,6 +3575,7 @@ def run_daily(args) -> None:
 
 LIFELONG_BASE_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_base_db.json")
 LIFELONG_STAGE_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_stage_db.json")
+LIFELONG_STAGE_DETAIL_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_stage_detail_db.json")
 LIFELONG_DOMAINS_DB_PATH = os.path.join(_ROOT, "domains", "lifelong", "data", "lifelong_domains_db.json")
 
 _LIFELONG_JARGON_TERMS = [
@@ -3598,16 +3659,27 @@ def _lifelong_stage_keys(only: Optional[str]) -> List[Tuple[str, str, str, str, 
     return out
 
 
+# theme_line/keyword = 메인 평생운세 화면에 바로 보이는 '한 줄 티저'.
+# event_narrative/strategy/obstacle/turning_point = 별도 '대운 상세 리포트' 전용(클릭해야 보임).
+# 한 번의 Gemini 호출로 6개 필드를 함께 만들고, 저장할 때 두 개의 DB 파일로 나눠 쓴다
+# (API 호출 비용을 두 배로 만들지 않으면서 화면/데이터는 분리하기 위함).
+_LIFELONG_STAGE_TEASER_FIELDS = ("theme_line", "keyword")
+_LIFELONG_STAGE_DETAIL_FIELDS = ("event_narrative", "strategy", "obstacle", "turning_point")
+
+
 def _lifelong_stage_item_block(key: str, ilju: str, dominant: str, relation: str, step: int) -> str:
     from domains.lifelong.service import STAGE_LABELS, hint_for_step
 
     dm, db = ilju[0], ilju[1]
     label = STAGE_LABELS[step]
     hint = hint_for_step(dominant, step)
-    first_note = "이 사람 인생의 첫 대운(직전 국면 없음)" if step == 1 else f"{step}번째 대운(직전 국면 있음)"
+    temperament_group = ilju_temperament_group(dm, db)
+    first_note = "이 사람 인생의 첫 대운(직전 국면 없음)" if step == 1 else "직전 국면이 있는 대운"
     return (
         f"── 조합 키: {key} ──\n{persona_prompt(dm, db)}\n"
-        f"- 대운 순번: {step}번째 ({first_note}) · 참고 인생국면: {label}\n"
+        f"{fusion_prompt_block(temperament_group, dominant, title='공통 사주 판세(이 조합의 기본 뼈대)')}\n"
+        f"- 이 시기: {first_note} · 참고 인생국면: {label} (이 국면 설명·순번 숫자를 문장에 그대로 "
+        f"쓰지 말 것 — '몇 번째'라는 표현 자체를 쓰지 말 것)\n"
         f"- 이 시기의 지배 기운: {dominant} · 참고 사건결: {hint}\n"
         f"- 일지 대비 충형 관계: {relation}"
     )
@@ -3623,20 +3695,33 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
 - 모든 문장을 '친근한 존댓말'로만 씁니다. 반말은 단 한 번도 쓰지 않습니다.
 - 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등, 위에 준 '지배 기운'/'충형 관계'
   단어 자체도)는 출력 문장에 절대 그대로 쓰지 말고, 구체적인 사건·행동 수준의 일상 언어로 풀어 씁니다.
+- 이 시기가 인생에서 몇 번째 대운인지(숫자·서수)를 문장에 절대 쓰지 않습니다("첫번째 기운이",
+  "7번째 대운에서는", "이번이 세 번째라" 같은 표현 전부 금지). 순서를 말하지 않고 그 시기 자체의
+  흐름과 내용으로만 풉니다.
+- 위 '공통 사주 판세(융합 캐릭터)'를 이 시기 서술의 뼈대로 삼되 문장을 그대로 베끼지 말고
+  자연스럽게 녹여 씁니다.
 
-[작성 규칙]
-- theme_line: 이 시기 핵심 주제 한 줄(15~30자).
+[작성 규칙 — 화면에 바로 보이는 '티저' 2개]
+- theme_line: 이 시기 핵심 주제 한 줄(15~30자). 호기심을 끄는 제목처럼.
+- keyword: 이 시기를 대표하는 짧은 키워드 문구(2~6자, 명사형. 예: "확장의 시기", "내실 다지기".
+  theme_line 을 요약 반복하지 말고 다른 각도의 한마디로).
+
+[작성 규칙 — 클릭해야 보이는 '대운 상세' 4개]
 - event_narrative: "[지배 기운]이 들어오는 시기라 [구체적 사건/성과]가 나타납니다" 처럼 지배 기운
   → 구체적 사건의 인과관계를 명시. 충형 관계도 함께 반영(육합=협력·인연, 충=마찰·이동, 파=어긋남,
   해=방해·구설, 형=긴장·조정, 무관/복음=마찰 없이 순조로움). 두루뭉술한 문장 절대 금지(4~6문장).
-- previous_diff: 이 대운이 몇 번째인지에 맞춰 씁니다. 1번째면 "이전 국면 없이 시작되는 인생의 첫
-  전환점"이라는 취지로. 2번째 이후면, 특정 직전 기운을 단정하지 말고 "지금까지와는 다른 리듬으로
-  접어드는 전환점"이라는 취지를 이 시기 고유의 기운과 엮어 구체적으로(3~5문장).
-- next_hint: 다음 대운으로 넘어가면서 예상되는 변화의 방향성(3~4문장). 특정 기운을 단정하지 말고
-  지금 흐름이 이어지거나 전환되는 큰 방향만 암시.
+- strategy: 이 시기에 취하면 좋은 구체적 행동 전략(3~5문장). 융합 캐릭터의 작동 방식에 맞는
+  현실적인 행동 지침으로.
+- obstacle: 이 시기에 발목을 잡기 쉬운 방해 요소·주의할 태도(3~4문장). 두루뭉술한 경고가 아니라
+  구체적 상황으로.
+- turning_point: 이 시기가 앞뒤로 어떻게 달라지는 전환점인지(3~5문장). 1번째 대운이면 "이전 국면
+  없이 시작되는 인생의 첫 전환점"이라는 취지로 시작을, 이후 대운이면 특정 직전 기운을 단정하지
+  않고 "지금까지와는 다른 리듬으로 접어드는 전환점"이라는 취지로 쓰고, 다음 시기로 이어지거나
+  전환될 방향성도 함께 암시합니다(숫자·서수 없이).
 
 [출력 스키마 규칙 — 반드시 준수]
-- 각 조합의 값은 정확히 theme_line, event_narrative, previous_diff, next_hint 4개 키만 가집니다.
+- 각 조합의 값은 정확히 theme_line, keyword, event_narrative, strategy, obstacle, turning_point
+  6개 키만 가집니다.
 - 모든 값은 비어 있으면 안 됩니다.
 
 [생성할 조합 — 총 {len(items)}개]
@@ -3647,7 +3732,7 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
 - 최상위 key 는 위 '조합 키' 문자열을 그대로 사용합니다: {', '.join(keys)}
 
 {{
-  "{keys[0]}": {{"theme_line": "...", "event_narrative": "...", "previous_diff": "...", "next_hint": "..."}},
+  "{keys[0]}": {{"theme_line": "...", "keyword": "...", "event_narrative": "...", "strategy": "...", "obstacle": "...", "turning_point": "..."}},
   "{keys[1] if len(keys) > 1 else '조합키2'}": {{ "...위와 완전히 동일한 구조..." }}
 }}"""
 
@@ -3655,7 +3740,7 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
 def coerce_lifelong_stage(entry: Any) -> Any:
     if not isinstance(entry, dict):
         return entry
-    for k in ("theme_line", "event_narrative", "previous_diff", "next_hint"):
+    for k in _LIFELONG_STAGE_TEASER_FIELDS + _LIFELONG_STAGE_DETAIL_FIELDS:
         if isinstance(entry.get(k), str):
             entry[k] = strip_enumeration(apply_text_fixups(_strip_lifelong_jargon(entry[k])))
     return entry
@@ -3664,8 +3749,14 @@ def coerce_lifelong_stage(entry: Any) -> Any:
 def lifelong_stage_valid(entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
-    fields = ("theme_line", "event_narrative", "previous_diff", "next_hint")
-    return set(entry.keys()) == set(fields) and all(str(entry.get(k, "")).strip() for k in fields)
+    fields = _LIFELONG_STAGE_TEASER_FIELDS + _LIFELONG_STAGE_DETAIL_FIELDS
+    if set(entry.keys()) != set(fields):
+        return False
+    for k in fields:
+        v = str(entry.get(k, "")).strip()
+        if not v or has_mechanical_index_leak(v):
+            return False
+    return True
 
 
 _personality_db_cache: Optional[Dict[str, Any]] = None
@@ -3771,10 +3862,12 @@ def _lifelong_domains_item_block(key: str, ilju: str, dominant: str, step: int) 
     from domains.lifelong.service import DOMAIN_ANCHOR
 
     dm, db = ilju[0], ilju[1]
+    temperament_group = ilju_temperament_group(dm, db)
     anchors = "\n".join(f"  - {name}: 앵커 기운={anchor}" for name, anchor in DOMAIN_ANCHOR.items())
     return (
         f"── 조합 키: {key} ──\n{persona_prompt(dm, db)}\n"
-        f"- 현재 대운({step}번째)의 지배 기운: {dominant}\n"
+        f"{fusion_prompt_block(temperament_group, dominant, title='공통 사주 판세(이 조합의 기본 뼈대)')}\n"
+        f"- 현재 대운({step}번째, 문장에 순번 숫자는 절대 쓰지 말 것)의 지배 기운: {dominant}\n"
         f"- 4대 영역별 앵커(원국 전체 기준 성향의 출발점, 서로 다르게 유지할 것):\n{anchors}"
     )
 
@@ -3788,6 +3881,8 @@ def lifelong_domains_batch_prompt(items: List[Tuple[str, str, str, int]]) -> str
 [말투 규칙 — 최우선, 절대 예외 없음]
 - 모든 문장을 '친근한 존댓말'로만 씁니다. 반말은 단 한 번도 쓰지 않습니다.
 - 사주 전문 용어(십신 이름·오행 이름·합충형파해·용신·격국명 등)는 절대 그대로 쓰지 말고 일상 언어로 풀어 씁니다.
+- 대운 순번을 문장에 숫자·서수로 그대로 쓰지 않습니다("첫번째 기운이", "7번째 대운에서는" 같은
+  표현 절대 금지). 숫자를 말하지 않고 그 시기의 흐름으로만 풀어 씁니다.
 
 [작성 규칙 — 반드시 서로 다른 근거에서 출발, 내용 겹치면 안 됨]
 - wealth(재물운, 재성 기준): 돈 버는/관리하는 방식 + 현재 대운 영향
@@ -3796,6 +3891,11 @@ def lifelong_domains_batch_prompt(items: List[Tuple[str, str, str, int]]) -> str
 - social(사회운, 비겁 기준): 사람들과 연결되는 방식 + 현재 대운 영향
 - 4개 영역이 같은 문장·소재를 재사용하면 안 됩니다. 각자의 앵커 기운에서만 출발하세요.
 - 두루뭉술한 문장 금지, 구체적인 행동/상황으로.
+- 위 '공통 사주 판세(융합 캐릭터)'와 모순되면 안 됩니다. 특히 career는 앵커 기운(관성)만 보고
+  기계적으로 "공공기관/대기업처럼 위계가 뚜렷한 조직"이라고만 단정하지 말고, 융합 캐릭터의
+  '작동 방식'(예: 모험가 기질이면 규칙 안에서도 자기 주도권을 쥐는 역할, 탐구가 기질이면
+  전문성을 인정받는 역할 등)에 맞춰 풀어 씁니다. 관성=공무원/경찰 같은 특정 기질과 무관한
+  획일적 직업 단정은 금지합니다.
 
 [출력 스키마 규칙 — 반드시 이 필드명만 사용, 다른 도메인의 필드명을 섞어 쓰지 말 것]
 - wealth: 정확히 style, management_tip 2개 키만
@@ -3845,8 +3945,10 @@ def lifelong_domains_valid(entry: Any) -> bool:
             return False
         if set(d.keys()) != set(fields):
             return False
-        if not all(str(d.get(f, "")).strip() for f in fields):
-            return False
+        for f in fields:
+            v = str(d.get(f, "")).strip()
+            if not v or has_mechanical_index_leak(v):
+                return False
     return True
 
 
@@ -3856,8 +3958,12 @@ def run_lifelong_domains(args) -> None:
     print(f"DB: {out_path}")
     print(f"기존 항목: {len(db)}개 / 목표 2400개")
 
+    def _is_current(key: str) -> bool:
+        v = db.get(key)
+        return bool(v) and lifelong_domains_valid(v) and v.get("_fusion_v") == _FUSION_PROMPT_VERSION
+
     targets = _lifelong_domains_keys(args.only)
-    todo = [t for t in targets if args.overwrite or t[0] not in db]
+    todo = [t for t in targets if args.overwrite or not _is_current(t[0])]
     print(f"이번 실행 대상: {len(todo)}개" + (" [--overwrite]" if args.overwrite else ""))
     if args.dry_run:
         for t in todo[: args.limit or 20]:
@@ -3873,12 +3979,22 @@ def run_lifelong_domains(args) -> None:
         print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
         sys.exit(1)
 
+    def _store(_db, _key, _entry, _model):
+        _entry["_model"] = _model
+        _entry["_fusion_v"] = _FUSION_PROMPT_VERSION
+        _db[_key] = _entry
+
+    def _count(_db) -> int:
+        return sum(1 for v in _db.values() if lifelong_domains_valid(v) and v.get("_fusion_v") == _FUSION_PROMPT_VERSION)
+
     models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
-    _run_batched(args, todo, db, out_path, keys,
-                 prompt_fn=lifelong_domains_batch_prompt, valid_fn=lifelong_domains_valid,
-                 coerce_fn=coerce_lifelong_domains, models=models,
-                 max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=2400,
-                 system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="조합")
+    runner = _run_batched_concurrent if (args.workers and args.workers > 1) else _run_batched
+    runner(args, todo, db, out_path, keys,
+           prompt_fn=lifelong_domains_batch_prompt, valid_fn=lifelong_domains_valid,
+           coerce_fn=coerce_lifelong_domains, models=models,
+           max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=2400,
+           system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="조합",
+           store_fn=_store, count_fn=_count)
 
 
 def run_lifelong_base(args) -> None:
@@ -3913,13 +4029,18 @@ def run_lifelong_base(args) -> None:
 
 
 def run_lifelong_stage(args) -> None:
+    """theme_line/keyword(티저) → LIFELONG_STAGE_DB_PATH, event_narrative/strategy/obstacle/
+    turning_point(대운 상세) → LIFELONG_STAGE_DETAIL_DB_PATH. 한 번의 Gemini 호출로 6개 필드를
+    함께 받아 두 파일로 나눠 저장한다(호출 횟수를 두 배로 늘리지 않기 위함)."""
     out_path = args.out or LIFELONG_STAGE_DB_PATH
+    detail_path = LIFELONG_STAGE_DETAIL_DB_PATH
     db = _load_json(out_path)
-    print(f"DB: {out_path}")
+    detail_db = _load_json(detail_path)
+    print(f"DB: {out_path}  (+ 상세: {detail_path})")
     print(f"기존 항목: {len(db)}개 / 목표 14000개")
 
     targets = _lifelong_stage_keys(args.only)
-    todo = [t for t in targets if args.overwrite or t[0] not in db]
+    todo = [t for t in targets if args.overwrite or t[0] not in db or t[0] not in detail_db]
     print(f"이번 실행 대상: {len(todo)}개" + (" [--overwrite]" if args.overwrite else ""))
     if args.dry_run:
         for t in todo[: args.limit or 20]:
@@ -3935,13 +4056,26 @@ def run_lifelong_stage(args) -> None:
         print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
         sys.exit(1)
 
+    def _store(_db, _key, _entry, _model):
+        teaser = {k: _entry[k] for k in _LIFELONG_STAGE_TEASER_FIELDS}
+        teaser["_model"] = _model
+        db[_key] = teaser
+        detail = {k: _entry[k] for k in _LIFELONG_STAGE_DETAIL_FIELDS}
+        detail["_model"] = _model
+        detail_db[_key] = detail
+        _atomic_write_json(detail_path, detail_db)
+
+    def _count(_db) -> int:
+        return sum(1 for k in db if k in detail_db)
+
     models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
     runner = _run_batched_concurrent if (args.workers and args.workers > 1) else _run_batched
     runner(args, todo, db, out_path, keys,
            prompt_fn=lifelong_stage_batch_prompt, valid_fn=lifelong_stage_valid,
            coerce_fn=coerce_lifelong_stage, models=models,
            max_output_tokens=DAILY_BATCH_MAX_OUTPUT_TOKENS, total=14000,
-           system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="조합")
+           system_instruction=None, banmal_fn=_lifelong_has_banmal, unit="조합",
+           store_fn=_store, count_fn=_count)
 
 
 # ─────────────────────────────────────────────────────────── main

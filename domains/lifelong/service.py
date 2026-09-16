@@ -31,7 +31,7 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from core.saju_base import calculate_saju
 from core.daewoon import daewoon_step_facts
-from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage
+from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
 from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
 
@@ -142,15 +142,23 @@ def _current_step(daewoon_num: int, age: int) -> int:
 
 
 def _fallback_stage_entry(dominant_group: str, step: int) -> dict:
-    hint = hint_for_step(dominant_group, step) or "차분히 흐름을 따라가는 시기"
     return {
         "theme_line": STAGE_LABELS.get(step, "인생의 한 시기"),
+        "keyword": "차분한 흐름",
+    }
+
+
+def _fallback_stage_detail(dominant_group: str, step: int) -> dict:
+    hint = hint_for_step(dominant_group, step) or "차분히 흐름을 따라가는 시기"
+    return {
         "event_narrative": f"{hint}입니다. 주어진 흐름에 맞춰 무리하지 않는 태도가 도움이 됩니다.",
-        "previous_diff": (
+        "strategy": "지금 맡은 일에 충실하면서, 무리한 확장보다 기본기를 다지는 선택이 유리합니다.",
+        "obstacle": "조급한 마음에 성급히 결정을 내리면 오히려 되돌리는 데 시간이 더 걸릴 수 있습니다.",
+        "turning_point": (
             "이전 국면 없이 시작되는 인생의 첫 전환점입니다." if step == 1
-            else "직전 시기와는 결이 다른 변화가 찾아오는 구간입니다."
+            else "직전 시기와는 결이 다른 변화가 찾아오는 구간이며, 다음 시기로 넘어가며 지금의 "
+                 "흐름이 이어지거나 자연스럽게 전환될 수 있습니다."
         ),
-        "next_hint": "다음 시기로 넘어가며 지금의 흐름이 이어지거나 자연스럽게 전환될 수 있습니다.",
     }
 
 
@@ -213,9 +221,7 @@ def analyze_lifelong_fortune(
             "age_range": [start_age, start_age + 9],
             "is_current": step == current_step,
             "theme_line": entry.get("theme_line", ""),
-            "event_narrative": entry.get("event_narrative", ""),
-            "previous_diff": entry.get("previous_diff", ""),
-            "next_hint": entry.get("next_hint", ""),
+            "keyword": entry.get("keyword", ""),
         })
 
     # section3: 삶의 4대 영역(현재 대운 기준)
@@ -238,4 +244,43 @@ def analyze_lifelong_fortune(
         "day_master": saju.get("day_master"),
         "saju_info": person_summary(saju),
         "data": data,
+    }, is_fallback
+
+
+CONTENT_TYPE_STAGE_DETAIL = "lifelong_stage_detail"
+
+
+def analyze_lifelong_stage_detail(
+    year: int, month: int, day: int, step: int,
+    hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
+) -> Tuple[dict, bool]:
+    """특정 대운(1~8번째)의 '상세 리포트'(전략/방해요소/전환점 등). 메인 평생운세 응답에는
+    포함되지 않고, 유저가 해당 시기를 클릭했을 때만 별도로 조회한다."""
+    saju = calculate_saju(year, month, day, hour, minute, gender=gender, is_lunar=is_lunar)
+    ilju = _ilju(saju)
+    day_master = saju.get("day_master", "")
+    day_branch = saju.get("day_branch", "")
+    month_ganji = saju.get("month_ganji", "")
+    daewoon = saju.get("daewoon") or {}
+    is_forward = daewoon.get("direction") == "순행"
+
+    step = max(1, min(8, int(step)))
+    facts = daewoon_step_facts(day_master, day_branch, month_ganji, is_forward, count=8)
+    fact = next((f for f in facts if f["step"] == step), facts[0])
+
+    entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
+    is_fallback = entry is None
+    detail = entry or _fallback_stage_detail(fact["sipsin_group"], step)
+
+    return {
+        "content_type": CONTENT_TYPE_STAGE_DETAIL,
+        "step": step,
+        "stage_label": STAGE_LABELS.get(step, ""),
+        "saju_info": person_summary(saju),
+        "data": {
+            "event_narrative": detail.get("event_narrative", ""),
+            "strategy": detail.get("strategy", ""),
+            "obstacle": detail.get("obstacle", ""),
+            "turning_point": detail.get("turning_point", ""),
+        },
     }, is_fallback
