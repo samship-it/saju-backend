@@ -397,6 +397,18 @@ def ordinal_step_mismatches(entry: Dict[str, Any], actual_step: int) -> List[str
     return bad
 
 
+def ordinal_expression_present(entry: Dict[str, Any]) -> List[str]:
+    """실제 순번과 맞고 틀리고는 완전히 무관하게, '말투 규칙'이 애초에 전면 금지한
+    서수 표현("다섯 번째 전환점" 등, 숫자가 실제와 정확히 맞는 경우 포함) 자체가
+    남아있는 필드명 목록을 반환한다. ordinal_step_mismatches() 는 '숫자가 틀렸는가'만
+    보고, 이 함수는 '숫자와 무관하게 서수 표현 자체가 있는가'를 본다 — 8,887건
+    재생성분 감사에서 숫자는 맞는데 표현만 남은 사례가 320건 발견되어 분리함."""
+    return [
+        field for field, text in entry.items()
+        if isinstance(text, str) and has_mechanical_index_leak(text)
+    ]
+
+
 def strip_enumeration(s: Any) -> Any:
     """열거 번호 표기(1. / 1) / 1/6 / [1] / ① 등)를 제거하고 공백을 정리한다."""
     if not isinstance(s, str):
@@ -3797,16 +3809,21 @@ def coerce_lifelong_stage(entry: Any) -> Any:
 
 def lifelong_stage_valid(entry: Any, item: Optional[Tuple] = None) -> bool:
     """item 은 (key, ilju, dominant_group, branch_relation, step) — 넘어오면 실제
-    대운 순번(step)과 텍스트 속 서수 표현이 일치하는지까지 검증한다(2차 안전장치)."""
+    대운 순번(step)과 텍스트 속 서수 표현이 일치하는지까지 검증한다(2차 안전장치).
+
+    서수 관련 검증은 두 겹이다: ordinal_expression_present() 는 숫자가 맞고 틀리고와
+    무관하게 서수 표현 자체가 남아있으면 무조건 reject(말투 규칙 원칙), item 이 있으면
+    거기에 더해 ordinal_step_mismatches() 로 명사 목록 밖의 표현까지 숫자로 대조한다."""
     if not isinstance(entry, dict):
         return False
     fields = _LIFELONG_STAGE_TEASER_FIELDS + _LIFELONG_STAGE_DETAIL_FIELDS
     if set(entry.keys()) != set(fields):
         return False
     for k in fields:
-        v = str(entry.get(k, "")).strip()
-        if not v or has_mechanical_index_leak(v):
+        if not str(entry.get(k, "")).strip():
             return False
+    if ordinal_expression_present(entry):
+        return False
     if item is not None and ordinal_step_mismatches(entry, item[4]):
         return False
     return True

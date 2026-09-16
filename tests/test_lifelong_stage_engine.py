@@ -106,6 +106,8 @@ from scripts.generate_content_db import (  # noqa: E402
     lifelong_base_valid,
     lifelong_domains_valid,
     lifelong_stage_valid,
+    ordinal_expression_present,
+    ordinal_step_mismatches,
 )
 
 
@@ -243,6 +245,19 @@ def test_lifelong_stage_valid_rejects_ordinal_step_mismatch_via_item():
     entry_ok = dict(_STAGE_COMPLETE)
     entry_ok["turning_point"] = "이전 국면 없이 새롭게 열리는 흐름입니다."
     assert lifelong_stage_valid(entry_ok, item_step1) is True
+
+
+def test_lifelong_stage_valid_rejects_correct_but_present_ordinal():
+    """숫자 자체는 실제 순번과 정확히 맞아도('다섯 번째 전환점' == 진짜 step=5),
+    서수 표현이 아예 남아있으면 말투 규칙 위반으로 reject 되어야 한다
+    (숫자 정합성과 별개로 '표현 자체의 존재 여부'를 보는 조건)."""
+    entry = dict(_STAGE_COMPLETE)
+    entry["turning_point"] = "다섯 번째 전환점을 맞이합니다."
+    item_step5 = ("키", "갑자", "비겁", "충", 5)
+
+    assert ordinal_step_mismatches(entry, 5) == []          # 숫자는 맞음
+    assert ordinal_expression_present(entry) == ["turning_point"]  # 그래도 표현 자체가 남음
+    assert lifelong_stage_valid(entry, item_step5) is False        # 최종 검증은 reject
 
 
 def test_coerce_lifelong_stage_strips_jargon_in_place():
