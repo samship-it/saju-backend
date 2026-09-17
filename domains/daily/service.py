@@ -57,9 +57,22 @@ def _fallback(saju: Dict[str, Any]) -> dict:
     }
 
 
-def _headline(ai: dict, overall_score: int) -> str:
+# |score_delta| 가 이 값 이상이면 원본 static headline 대신 woon_state 기반 문구를 쓴다.
+# 원본 headline은 daily_db.json 생성 시점(대운/세운/일운을 전혀 모름)에 고정된 텍스트라,
+# 델타가 크게 움직인 날엔 "재능이 꽃피는 찬란한 하루"처럼 실제 보정 방향과 반대로 읽힐 수 있다.
+_HEADLINE_DELTA_THRESHOLD = 10
+
+
+def _headline(ai: dict, overall_score: int, state_label: str = "", score_delta: int = 0) -> str:
     """한줄평 가드레일: LLM(정적 DB)이 준 headline 이 없거나 무효하면 요약 첫 문장을,
-    그마저 무효하면 점수대별 기본 문구로 100% 대체한다."""
+    그마저 무효하면 점수대별 기본 문구로 100% 대체한다.
+
+    단, 대운/세운/일운 보정치(|score_delta|)가 임계값 이상이면 원본 static 문구가
+    실제 방향과 어긋날 위험이 크므로, woon_state.state_label 기반 문구로 먼저 대체한다.
+    """
+    if abs(score_delta) >= _HEADLINE_DELTA_THRESHOLD and state_label:
+        return f"오늘의 핵심 기운: {state_label}"
+
     candidate = str(ai.get("headline") or "").strip()
     if not candidate:
         summ = ai.get("summary") or {}
@@ -69,7 +82,7 @@ def _headline(ai: dict, overall_score: int) -> str:
     return daily_headline_fallback(overall_score)
 
 
-def _shape(ai: dict, saju_data: Dict[str, Any]) -> dict:
+def _shape(ai: dict, saju_data: Dict[str, Any], modifier: Dict[str, Any]) -> dict:
     def s(v, d=60):
         try:
             return max(0, min(100, int(round(float(v)))))
@@ -89,7 +102,7 @@ def _shape(ai: dict, saju_data: Dict[str, Any]) -> dict:
         "work_study_score": s(ai.get("work_study_score")),
         "score_emoji": score_to_emoji(overall),
         "score_band": score_to_band(overall),
-        "headline": _headline(ai, overall),
+        "headline": _headline(ai, overall, modifier["state_label"], modifier["score_delta"]),
         "summary": {
             "overall": paragraphize(str(summ.get("overall", ""))),
             "money": paragraphize(str(summ.get("money", ""))),
@@ -148,7 +161,7 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     modifier = compute_woon_modifier(saju_data)
     adjusted = _apply_woon_modifier(entry, modifier)
 
-    shaped = _shape(adjusted, saju_data)
+    shaped = _shape(adjusted, saju_data, modifier)
     shaped["summary"]["social"] = paragraphize(
         build_social_summary(modifier["trigger_group"], modifier["trigger_bucket"])
     )

@@ -101,6 +101,9 @@ def test_incomplete_sentence_fails(text):
 # saju_data 더미를 함께 넘긴다(day_master/day_branch/today_ganji 없으면 SOCIAL_FALLBACK).
 _SAJU_DATA = {"day_master": "壬", "day_branch": "寅", "today_ganji": {"day": "戊辰"}}
 
+# |score_delta| < 임계값이라 woon 기반 오버라이드가 발동하지 않는, 이 파일 테스트들의 기본값.
+_NO_WOON_OVERRIDE = {"state_label": "", "score_delta": 0}
+
 
 def _ai(overall_score, headline=None, overall_summary="정상적인 요약 문장입니다."):
     return {
@@ -123,7 +126,7 @@ def _ai(overall_score, headline=None, overall_summary="정상적인 요약 문�
 
 def test_shape_uses_valid_llm_headline_as_is():
     ai = _ai(75, headline="오늘은 마무리에 강한 하루가 될 거예요.")
-    out = _shape(ai, _SAJU_DATA)
+    out = _shape(ai, _SAJU_DATA, _NO_WOON_OVERRIDE)
     assert out["headline"] == "오늘은 마무리에 강한 하루가 될 거예요."
 
 
@@ -132,12 +135,40 @@ def test_shape_falls_back_to_band_text_when_headline_and_summary_invalid(lo, hi,
     score = (lo + hi) // 2
     # headline 자체가 가드레일 실패("와!") + summary 첫 문장도 인사말이라 이중으로 무효.
     ai = _ai(score, headline="와!", overall_summary="안녕하세요. 오늘 하루도 힘내봐요.")
-    out = _shape(ai, _SAJU_DATA)
+    out = _shape(ai, _SAJU_DATA, _NO_WOON_OVERRIDE)
     assert out["headline"] == text
     assert out["overall_score"] == score
 
 
 def test_shape_extracts_first_sentence_when_headline_missing_but_summary_valid():
     ai = _ai(65, headline=None, overall_summary="차분하게 정리하면 흐름이 매끄러워지는 하루입니다. 그리고 이어지는 문장.")
-    out = _shape(ai, _SAJU_DATA)
+    out = _shape(ai, _SAJU_DATA, _NO_WOON_OVERRIDE)
     assert out["headline"] == "차분하게 정리하면 흐름이 매끄러워지는 하루입니다."
+
+
+# ------------------------------------------------------------------ woon_state 기반 headline 오버라이드
+def test_shape_overrides_headline_when_delta_large_positive():
+    ai = _ai(75, headline="원본 static headline 문장입니다.")
+    out = _shape(ai, _SAJU_DATA, {"state_label": "명예/승진운", "score_delta": 12})
+    assert out["headline"] == "오늘의 핵심 기운: 명예/승진운"
+
+
+def test_shape_overrides_headline_when_delta_large_negative():
+    ai = _ai(75, headline="원본 static headline 문장입니다.")
+    out = _shape(ai, _SAJU_DATA, {"state_label": "지출/구설 주의", "score_delta": -15})
+    assert out["headline"] == "오늘의 핵심 기운: 지출/구설 주의"
+
+
+def test_shape_keeps_original_headline_when_delta_below_threshold():
+    ai = _ai(75, headline="원본 static headline 문장입니다.")
+    out = _shape(ai, _SAJU_DATA, {"state_label": "무난한 흐름", "score_delta": 9})
+    assert out["headline"] == "원본 static headline 문장입니다."
+
+
+def test_headline_threshold_is_exactly_ten():
+    from domains.daily.service import _headline
+
+    assert _headline({}, 70, "지출/구설 주의", 10) == "오늘의 핵심 기운: 지출/구설 주의"
+    assert _headline({}, 70, "지출/구설 주의", -10) == "오늘의 핵심 기운: 지출/구설 주의"
+    original = "오늘은 차분하게 하루를 마무리하는 게 좋은 날이에요."
+    assert _headline({"headline": original}, 70, "지출/구설 주의", 9) == original
