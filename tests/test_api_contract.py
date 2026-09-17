@@ -73,6 +73,7 @@ def test_daily_fortune_structure():
     assert isinstance(d["summary"]["woon_today"], str) and d["summary"]["woon_today"]
     assert isinstance(d["woon_state"], str) and d["woon_state"]
     assert isinstance(d["woon_score_delta"], int) and -40 <= d["woon_score_delta"] <= 40
+    assert isinstance(d["sinsal_hits"], list)
     assert len(d["keywords"]) == 3
     assert isinstance(d["recommended_action"], str)
     assert d["score_emoji"] and re.match(r"^\d+-\d+$", d["score_band"])

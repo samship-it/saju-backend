@@ -145,5 +145,6 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     shaped["summary"]["woon_today"] = paragraphize(modifier["state_comment"])
     shaped["woon_state"] = modifier["state_label"]
     shaped["woon_score_delta"] = modifier["score_delta"]
+    shaped["sinsal_hits"] = [{"layer": h["layer"], "name": h["name"]} for h in modifier["sinsal_hits"]]
 
     return shaped, is_fallback
