@@ -121,6 +121,63 @@ def test_sinsal_penalty_and_note_flow_into_modifier():
     assert "재살" in mod["state_comment"] or "양인" in mod["state_comment"]
 
 
+def test_resolve_bucket_sign_overrides_relation_type():
+    # 1961년생 남 실측 버그 재현: 관계는 '해'(friction)지만 희기가 강하게 긍정이면
+    # "주의" 계열이 아니라 harmony로 재분류돼야 한다.
+    from domains.daily.woon_modifier import _resolve_bucket
+
+    assert _resolve_bucket("friction", 0.36) == "harmony"
+    assert _resolve_bucket("harmony", -0.36) == "conflict"  # 반대 방향도 성립
+    assert _resolve_bucket("conflict", -0.9) == "conflict"  # 이미 강한 부정은 그대로
+    assert _resolve_bucket("repeat", 0.05) == "repeat"  # 약한 신호는 관계 타입 유지
+
+
+def test_1961_regression_label_matches_positive_delta():
+    # 원래 버그: overall=86, delta=+8(순증가)인데 woon_state="보고/전달 주의"가 떴었음.
+    from core.saju_base import calculate_saju
+    import datetime
+
+    saju = calculate_saju(1961, 6, 15, 10, 0, gender="male", is_lunar=False,
+                           target_date=datetime.date(2026, 9, 17))
+    mod = compute_woon_modifier(saju)
+    assert mod["score_delta"] > 0
+    assert mod["state_label"] == "명예/승진운"  # "보고/전달 주의" 아님
+
+
+def test_domain_deltas_are_not_uniform_copy():
+    # 관성이 트리거인 케이스 - money/love/work_study가 서로 달라야 한다(예전엔 전부 동일).
+    from core.saju_base import calculate_saju
+    import datetime
+
+    saju = calculate_saju(1961, 6, 15, 10, 0, gender="male", is_lunar=False,
+                           target_date=datetime.date(2026, 9, 17))
+    mod = compute_woon_modifier(saju)
+    deltas = (mod["money_delta"], mod["love_delta"], mod["work_study_delta"])
+    assert len(set(deltas)) > 1  # 최소 하나는 달라야 함(균등 복사 아님)
+    for d in deltas:
+        assert -40 <= d <= 40
+
+
+def test_domain_delta_excludes_unrelated_groups():
+    from domains.daily.woon_modifier import _domain_delta, DOMAIN_GROUPS, _layer_facts
+
+    # 천간=재성(money·love 공통), 지지=인성(love 전용) 조합 - money와 love가 겹치지 않는
+    # 성분(지지·관계)이 있어서 서로 다른 값이 나와야 한다.
+    strength = {"verdict": "신강", "yongsin": ["토"], "gisin": [], "heesin": []}
+    facts = _layer_facts("甲", "午", "戊子", strength)  # 戊=재성(토=용신), 子=인성(+일지 午와 충)
+    layers = {"ilwoon": facts}
+    money = _domain_delta(layers, DOMAIN_GROUPS["money"])  # 재성만 해당(천간만)
+    love = _domain_delta(layers, DOMAIN_GROUPS["love"])    # 재성(천간)+인성(지지+관계) 둘 다 해당
+    assert money != love
+
+
+def test_build_social_summary_is_pure_lookup_passthrough():
+    from domains.daily.social_template import build_social_summary, SOCIAL_TEMPLATES
+
+    assert build_social_summary("관성", "harmony") == SOCIAL_TEMPLATES["관성"]["harmony"]
+    assert build_social_summary("존재안함", "harmony") != ""  # 폴백 문구로 대체
+
+
 def test_relation_bucket_mapping():
     assert _relation_bucket("육합(협력·인연)") == "harmony"
     assert _relation_bucket("충(충돌·이동)") == "conflict"

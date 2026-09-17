@@ -96,30 +96,37 @@ def _shape(ai: dict, saju_data: Dict[str, Any]) -> dict:
             "love_single": paragraphize(str(summ.get("love_single", ""))),
             "love_couple": paragraphize(str(summ.get("love_couple", ""))),
             "work_study": paragraphize(str(summ.get("work_study", ""))),
-            # Social Network(사회운) - daily_db.json 정적 DB에는 없는 필드.
-            # Gemini 재생성 없이 core/sipsin·core/daewoon의 기존 계산값(십신군 × 지지관계)만으로
-            # 요청 시점에 Python 템플릿을 조합해 즉시 만든다(사용자 확정, 결정론적 결과).
-            "social": paragraphize(build_social_summary(saju_data)),
+            # Social Network(사회운) - daily_db.json 정적 DB에는 없는 필드. woon_modifier가
+            # 계산한 trigger_group/trigger_bucket으로 generate_daily_fortune()에서 채운다
+            # (woon_state와 항상 같은 방향을 보도록 - 여기서 자체 계산 안 함).
+            "social": "",
         },
         "keywords": kws,
         "recommended_action": str(ai.get("recommended_action", "")),
     }
 
 
-_ADJUSTABLE_SCORES = ("overall_score", "money_score", "love_score", "work_study_score")
+# 각 점수를 어떤 델타로 조정할지 - overall만 3레이어 전체 합(score_delta)을 쓰고,
+# money/love/work_study는 그 점수와 관련된 십신군만 반영한 도메인별 델타를 쓴다
+# (예전엔 score_delta 하나를 4개에 균등 복사했었음 - woon_state가 가리키는 영역과
+# 무관하게 다 같이 움직이는 문제가 있었다).
+_SCORE_DELTA_KEY = {
+    "overall_score": "score_delta",
+    "money_score": "money_delta",
+    "love_score": "love_delta",
+    "work_study_score": "work_study_delta",
+}
 
 
 def _apply_woon_modifier(entry: Dict[str, Any], modifier: Dict[str, Any]) -> Dict[str, Any]:
-    """(A) 단순안: 4개 점수에 동일 가감치 적용, [0,100] 클리핑. 텍스트는 원본 그대로."""
-    delta = modifier["score_delta"]
     out = dict(entry)
-    for key in _ADJUSTABLE_SCORES:
+    for key, delta_key in _SCORE_DELTA_KEY.items():
         base = out.get(key, 60)
         try:
             base = int(round(float(base)))
         except (TypeError, ValueError):
             base = 60
-        out[key] = max(0, min(100, base + delta))
+        out[key] = max(0, min(100, base + modifier[delta_key]))
     return out
 
 
@@ -142,6 +149,9 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     adjusted = _apply_woon_modifier(entry, modifier)
 
     shaped = _shape(adjusted, saju_data)
+    shaped["summary"]["social"] = paragraphize(
+        build_social_summary(modifier["trigger_group"], modifier["trigger_bucket"])
+    )
     shaped["summary"]["woon_today"] = paragraphize(modifier["state_comment"])
     shaped["woon_state"] = modifier["state_label"]
     shaped["woon_score_delta"] = modifier["score_delta"]

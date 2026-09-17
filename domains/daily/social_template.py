@@ -1,24 +1,16 @@
 """오늘의 운세 - Social Network(사회운) 문장 생성.
 
-Gemini 를 호출하지 않고, 이미 계산되어 있는 두 가지 '사실'만으로 Python 템플릿을
-조합해 즉시 문장을 만든다(daily_db.json 3,600개 조합에는 social 필드가 없으므로,
-정적 DB 확장 대신 요청 시점에 가볍게 생성하는 방식을 택함 - 사용자 확정).
+Gemini 를 호출하지 않고, 5(십신군) × 6(관계버킷) = 30가지 조합의 문장을 미리 써 둔
+표에서 골라 반환하는 순수 lookup 이다.
 
-1) 십신군(오늘 일진의 천간이 내 일간 기준 어떤 십신군인지) - 비겁/식상/재성/관성/인성.
-   전통 명리에서 대인관계·사회성을 보는 기본 축(특히 비겁=또래·동료, 인성=윗사람·조력자).
-   core/sipsin.calculate_sipsin + sipsin_group 로 계산 - core/daewoon.daewoon_step_facts 가
-   대운 단계별 사실을 뽑을 때 쓰는 것과 동일한 함수를 재사용한다.
-2) 지지관계(오늘 일진의 지지 vs 내 일지) - 육합/충/파/해/형/복음/무관.
-   core/daewoon.branch_relation 재사용(daily 의 "일주×일진"과 같은 사실 기반 조합).
-
-두 축을 곱하면 5(십신군) × 6(관계버킷) = 30가지 조합의 문장을 미리 써 둔 표에서 골라
-반환한다. AI 생성이 아니므로 매번 같은 (십신군, 관계버킷) 조합이면 같은 문장이 나오는
-결정론적(deterministic) 결과다.
+원래는 "오늘 일진 vs 일지"만 독자적으로 재계산해 (그룹,버킷)을 구했었는데, 그 결과
+woon_state(대운/세운/일운·신강약 희기·12신살까지 반영)와 summary.social이 서로
+다른 근거로 계산되어 톤이 어긋나는 문제가 있었다(예: woon_state="구설/말실수 주의"인데
+social은 무난한 톤). 지금은 domains/daily/woon_modifier.compute_woon_modifier() 가
+이미 계산한 trigger_group/trigger_bucket을 그대로 받아써서, woon_state와 항상 같은
+방향을 보도록 통일했다 - 이 파일은 더 이상 saju_data 를 직접 읽지 않는다.
 """
-from typing import Any, Dict
-
-from core.daewoon import branch_relation
-from core.sipsin import calculate_sipsin, sipsin_group
+from typing import Dict
 
 SOCIAL_FALLBACK = (
     "오늘은 인간관계에서 특별한 굴곡 없이 잔잔하게 흘러가는 날이에요. "
@@ -27,23 +19,8 @@ SOCIAL_FALLBACK = (
 )
 
 
-def _relation_bucket(relation: str) -> str:
-    """core.daewoon.branch_relation() 의 반환 문자열 -> 6가지 관계 버킷."""
-    r = relation or ""
-    if r.startswith("육합"):
-        return "harmony"
-    if r.startswith("충"):
-        return "conflict"
-    if r.startswith("형"):
-        return "adjustment"
-    if r.startswith("파") or r.startswith("해"):
-        return "friction"
-    if r.startswith("복음"):
-        return "repeat"
-    return "neutral"
-
-
 # (십신군, 관계버킷) -> 사회운 문장. AI 관여 없이 Python 이 그대로 박아 넣는 고정 문구.
+# 그룹/버킷은 woon_modifier.compute_woon_modifier() 가 계산해서 넘겨준다(단일 소스).
 SOCIAL_TEMPLATES: Dict[str, Dict[str, str]] = {
     "비겁": {
         "harmony": (
@@ -198,22 +175,7 @@ SOCIAL_TEMPLATES: Dict[str, Dict[str, str]] = {
 }
 
 
-def build_social_summary(saju_data: Dict[str, Any]) -> str:
-    """(내 일간·일지) × (오늘 일진 간지) 로 사회운 문장을 즉시 조합한다. Gemini 호출 없음.
-
-    daily_db.json 조회(다른 4개 카테고리)와 달리 요청마다 가볍게 계산하는 방식이라
-    별도의 정적 DB가 필요 없다 - core/sipsin, core/daewoon 의 이미 검증된 순수 함수만 쓴다.
-    """
-    day_master = saju_data.get("day_master") or ""
-    day_branch = saju_data.get("day_branch") or ""
-    today_day_ganji = (saju_data.get("today_ganji") or {}).get("day") or ""
-
-    if not day_master or len(today_day_ganji) < 2:
-        return SOCIAL_FALLBACK
-
-    iljin_gan, iljin_ji = today_day_ganji[0], today_day_ganji[1]
-    sipsin = calculate_sipsin(day_master, iljin_gan, is_gan=True)
-    group = sipsin_group(sipsin)
-    bucket = _relation_bucket(branch_relation(day_branch, iljin_ji))
-
-    return SOCIAL_TEMPLATES.get(group, {}).get(bucket) or SOCIAL_FALLBACK
+def build_social_summary(group: str, bucket: str) -> str:
+    """woon_modifier.compute_woon_modifier() 가 계산한 (trigger_group, trigger_bucket)을
+    그대로 받아 고정 문구를 조회한다. Gemini 호출 없음, 별도 계산 없음."""
+    return SOCIAL_TEMPLATES.get(group or "", {}).get(bucket or "") or SOCIAL_FALLBACK

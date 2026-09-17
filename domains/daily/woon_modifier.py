@@ -102,6 +102,32 @@ SINSAL_PENALTY: Dict[str, int] = {
 }
 _SINSAL_LAYER_SCALE = {"ilwoon": 1.0, "daewoon": 0.75, "sewoon": 0.75}
 
+# ── 6. 영역별 십신군 소속 — core/domain_derived.py의 domains 딕셔너리와 동일(단일
+# 소스 유지 위해 반드시 동기화). money/love/work_study 각 점수는 이제 score_delta를
+# 균등 복사하지 않고, 그 점수와 관련 없는 십신군의 기여는 제외한 별도 델타를 쓴다.
+DOMAIN_GROUPS: Dict[str, set] = {
+    "money": {"재성", "식상", "비겁"},
+    "love": {"관성", "재성", "인성"},
+    "work_study": {"관성", "인성", "식상"},
+}
+
+
+def _domain_delta(layers: Dict[str, Dict[str, Any]], domain_groups: set) -> int:
+    """도메인 소속 십신군에 해당하는 글자(천간/지지)의 기여만 합산 — 지지관계는
+    지지(ji)가 속한 그룹을 따른다. 신살 감점은 도메인별로 안 쪼개고 overall에만 반영."""
+    total = 0.0
+    for layer, w in LAYER_WEIGHTS.items():
+        f = layers.get(layer)
+        if not f:
+            continue
+        if f["group_gan"] in domain_groups:
+            total += w["gan"] * f["polarity_gan"]
+        if f["group_ji"] in domain_groups:
+            total += w["ji"] * f["polarity_ji"]
+            rel_key = _relation_key(f["relation"])
+            total += w["relation"] * BRANCH_RELATION_SCORE.get(rel_key, 0.0)
+    return max(-40, min(40, round(total)))
+
 
 def _relation_key(relation: str) -> str:
     """branch_relation() 의 '충(충돌·이동)' 같은 라벨을 점수표 키로 정규화."""
@@ -160,12 +186,18 @@ def _layer_score(layer: str, facts: Dict[str, Any]) -> float:
 
 
 def _resolve_bucket(relation_bucket: str, layer_intensity: float) -> str:
-    """관계가 무관/복음이어도 억부용신 희기가 뚜렷하면 conflict/harmony 문구를 재사용."""
-    if relation_bucket in ("neutral", "repeat"):
-        if layer_intensity <= -_NEUTRAL_OVERRIDE_THRESHOLD:
-            return "conflict"
-        if layer_intensity >= _NEUTRAL_OVERRIDE_THRESHOLD:
-            return "harmony"
+    """실제 신호 부호(희기 반영된 layer_intensity)가 항상 우선한다.
+
+    예전 버전은 관계가 '무관/복음'일 때만 부호를 재확인했는데, 그 결과 관계가
+    '해'(friction) 같은 비-중립 버킷이면 부호가 실제로 양수여도 무조건 "주의" 문구가
+    나가는 버그가 있었다(1961년생 남 실측: intensity +0.36인데도 relation_bucket이
+    friction이라 "보고/전달 주의"가 뜸). 이제 모든 버킷에서 강도가 임계값을 넘으면
+    부호가 이긴다 — 관계 타입은 "부정일 때 어떤 종류의 부정인지"만 고른다.
+    """
+    if layer_intensity >= _NEUTRAL_OVERRIDE_THRESHOLD:
+        return "harmony"
+    if layer_intensity <= -_NEUTRAL_OVERRIDE_THRESHOLD:
+        return relation_bucket if relation_bucket in ("conflict", "adjustment", "friction") else "conflict"
     return relation_bucket
 
 
@@ -283,10 +315,13 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
             key=lambda layer: (abs(layers[layer]["layer_intensity"]), -_LAYER_PRIORITY.index(layer)),
         )
 
+    trigger_group = None
+    bucket = None
     if trigger_layer and trigger_layer in layers:
         facts = layers[trigger_layer]
+        trigger_group = facts["group_gan"]
         bucket = _resolve_bucket(facts["relation_bucket"], facts["layer_intensity"])
-        state = WOON_STATE_TABLE.get(facts["group_gan"], {}).get(bucket, _DEFAULT_STATE)
+        state = WOON_STATE_TABLE.get(trigger_group, {}).get(bucket, _DEFAULT_STATE)
     else:
         state = _DEFAULT_STATE
 
@@ -296,9 +331,16 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "score_delta": score_delta,
+        "money_delta": _domain_delta(layers, DOMAIN_GROUPS["money"]),
+        "love_delta": _domain_delta(layers, DOMAIN_GROUPS["love"]),
+        "work_study_delta": _domain_delta(layers, DOMAIN_GROUPS["work_study"]),
         "state_label": state["label"],
         "state_comment": state_comment,
         "trigger_layer": trigger_layer,
+        # social_template.py 가 자체적으로 (그룹,버킷)을 재계산하지 않고 이 값을
+        # 그대로 받아쓴다 — woon_state와 summary.social이 항상 같은 방향을 보도록.
+        "trigger_group": trigger_group,
+        "trigger_bucket": bucket,
         "layers": layers,
         "sinsal_hits": sinsal["hits"],
         "sinsal_penalty": sinsal["penalty"],
