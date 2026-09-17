@@ -10,6 +10,7 @@ from core.constants import score_to_emoji, score_to_band, daily_headline_fallbac
 from shared.text_format import paragraphize, first_sentence, is_valid_headline
 from domains.daily.content_db import lookup
 from domains.daily.social_template import build_social_summary
+from domains.daily.woon_modifier import compute_woon_modifier
 
 CONTENT_TYPE = "daily_fortune"
 
@@ -105,15 +106,44 @@ def _shape(ai: dict, saju_data: Dict[str, Any]) -> dict:
     }
 
 
+_ADJUSTABLE_SCORES = ("overall_score", "money_score", "love_score", "work_study_score")
+
+
+def _apply_woon_modifier(entry: Dict[str, Any], modifier: Dict[str, Any]) -> Dict[str, Any]:
+    """(A) 단순안: 4개 점수에 동일 가감치 적용, [0,100] 클리핑. 텍스트는 원본 그대로."""
+    delta = modifier["score_delta"]
+    out = dict(entry)
+    for key in _ADJUSTABLE_SCORES:
+        base = out.get(key, 60)
+        try:
+            base = int(round(float(base)))
+        except (TypeError, ValueError):
+            base = 60
+        out[key] = max(0, min(100, base + delta))
+    return out
+
+
 def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     """(결과 dict, is_fallback) 반환.
 
     (내 일주 × 오늘 일진) 조합으로 사전 생성 DB 에서 조회한다. Gemini 호출 없음.
+    대운/세운/일운 보정은 core/daewoon·core/sipsin 순수 함수로 요청 시점에 계산해
+    점수 가감치(-40~+40)와 짧은 상태 코멘트를 얹는다(daily_db.json 3,600건은 불변).
     """
     day_ganji = saju_data.get("day_ganji") or ""
     iljin_ganji = (saju_data.get("today_ganji") or {}).get("day") or ""
 
     entry = lookup(day_ganji, iljin_ganji)
+    is_fallback = False
     if not entry:
-        return _shape(_fallback(saju_data), saju_data), True
-    return _shape(entry, saju_data), False
+        entry, is_fallback = _fallback(saju_data), True
+
+    modifier = compute_woon_modifier(saju_data)
+    adjusted = _apply_woon_modifier(entry, modifier)
+
+    shaped = _shape(adjusted, saju_data)
+    shaped["summary"]["woon_today"] = paragraphize(modifier["state_comment"])
+    shaped["woon_state"] = modifier["state_label"]
+    shaped["woon_score_delta"] = modifier["score_delta"]
+
+    return shaped, is_fallback
