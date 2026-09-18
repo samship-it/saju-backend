@@ -1,17 +1,17 @@
 """오늘의 운세 한줄평(headline) — HEADLINE_TABLE 기반 합성 검증.
 
+headline은 순수하게 "오늘 하루 한 줄 요약"만 한다: 항상 정확히 한 문장(마침표 1개),
+신살 경고는 절대 안 붙는다(그건 today_energy 몫 — test_woon_modifier.py 참고).
 예전에는 static DB 원문을 쓰다가 |score_delta|가 크면 "오늘의 핵심 기운: {라벨}"로
 라벨을 그대로 복붙했다(headline·woon_today·social 3중 반복 문제). 지금은 항상
 woon_modifier.HEADLINE_TABLE에서 (trigger_group, trigger_bucket) 조합의 자연스러운
-문장을 가져오고, 신살이 있으면 짧은 한 줄을 덧붙인다 — static DB의 headline 필드는
-더 이상 화면에 쓰이지 않는다.
+한 문장을 그대로 쓴다 — static DB의 headline 필드는 더 이상 화면에 쓰이지 않는다.
 """
 import pytest
 
 from domains.daily.woon_modifier import (
     HEADLINE_TABLE,
     WOON_STATE_TABLE,
-    SINSAL_HEADLINE_SUFFIX,
     _DEFAULT_HEADLINE,
     _resolve_headline,
 )
@@ -36,29 +36,30 @@ def test_headline_table_text_differs_from_state_table_comment():
             assert HEADLINE_TABLE[g][b] != WOON_STATE_TABLE[g][b]["label"]
 
 
+@pytest.mark.parametrize(
+    "group,bucket",
+    [(g, b) for g in HEADLINE_TABLE for b in HEADLINE_TABLE[g]] + [(None, None)],
+)
+def test_headline_table_entries_are_exactly_one_sentence(group, bucket):
+    text = HEADLINE_TABLE.get(group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
+    assert text.count(".") == 1 and text.endswith(".")
+
+
 def test_resolve_headline_picks_group_bucket_sentence():
-    assert _resolve_headline("재성", "conflict", []) == HEADLINE_TABLE["재성"]["conflict"]
-    assert _resolve_headline("관성", "harmony", []) == HEADLINE_TABLE["관성"]["harmony"]
+    assert _resolve_headline("재성", "conflict") == HEADLINE_TABLE["재성"]["conflict"]
+    assert _resolve_headline("관성", "harmony") == HEADLINE_TABLE["관성"]["harmony"]
 
 
 def test_resolve_headline_falls_back_when_no_trigger():
-    assert _resolve_headline(None, None, []) == _DEFAULT_HEADLINE
+    assert _resolve_headline(None, None) == _DEFAULT_HEADLINE
 
 
-def test_resolve_headline_appends_worst_sinsal_only():
-    hits = [
-        {"layer": "ilwoon", "name": "백호", "penalty": -10},
-        {"layer": "ilwoon", "name": "겁살", "penalty": -8},
-    ]
-    out = _resolve_headline("재성", "conflict", hits)
-    assert out.startswith(HEADLINE_TABLE["재성"]["conflict"])
-    assert SINSAL_HEADLINE_SUFFIX["백호"] in out  # 감점이 더 큰(-10) 백호만 붙는다
-    assert SINSAL_HEADLINE_SUFFIX["겁살"] not in out
+def test_resolve_headline_never_appends_sinsal():
+    # headline은 신살을 받는 파라미터 자체가 없다 — 시그니처로 강제.
+    import inspect
 
-
-def test_resolve_headline_no_sinsal_no_suffix():
-    out = _resolve_headline("인성", "harmony", [])
-    assert out == HEADLINE_TABLE["인성"]["harmony"]
+    params = inspect.signature(_resolve_headline).parameters
+    assert "sinsal_hits" not in params and len(params) == 2
 
 
 # ------------------------------------------------------------------ 파이프라인(service._shape) 통합
@@ -100,4 +101,4 @@ def test_shape_no_longer_reads_static_db_headline():
     [(g, b) for g in HEADLINE_TABLE for b in HEADLINE_TABLE[g]],
 )
 def test_resolve_headline_matches_table_for_every_state(group, bucket):
-    assert _resolve_headline(group, bucket, []) == HEADLINE_TABLE[group][bucket]
+    assert _resolve_headline(group, bucket) == HEADLINE_TABLE[group][bucket]

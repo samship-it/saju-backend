@@ -335,9 +335,15 @@ HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
 _DEFAULT_HEADLINE = "오늘은 큰 굴곡 없이 잔잔하게 흘러가는 하루예요."
 
 
-def _resolve_headline(trigger_group: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]]) -> str:
-    """(trigger_group,bucket) 조합의 고정 headline + (있으면) 가장 강한 신살 한 줄만 덧붙인다."""
-    base = HEADLINE_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
+def _resolve_headline(trigger_group: Optional[str], bucket: Optional[str]) -> str:
+    """(trigger_group,bucket) 조합의 고정 headline 한 문장. 신살은 절대 안 붙인다 —
+    headline은 "오늘 하루 한 줄 요약" 전용이고, 신살 경고는 today_energy 쪽 몫이다."""
+    return HEADLINE_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
+
+
+def _resolve_today_energy(trigger_group: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]]) -> str:
+    """오늘(ilwoon) 한 줄 + (있으면) 가장 강한 신살 한 줄만 짧게 덧붙인다."""
+    base = _resolve_headline(trigger_group, bucket)
     if sinsal_hits:
         worst = min(sinsal_hits, key=lambda h: h["penalty"])  # penalty가 가장 큰(가장 음수인) 것
         suffix = SINSAL_HEADLINE_SUFFIX.get(worst["name"])
@@ -410,7 +416,7 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         today_group = f["group_gan"]
         today_bucket = _resolve_bucket(f["relation_bucket"], f["layer_intensity"])
     ilwoon_sinsal_hits = [h for h in sinsal["hits"] if h["layer"] == "ilwoon"]
-    today_energy = _resolve_headline(today_group, today_bucket, ilwoon_sinsal_hits)
+    today_energy = _resolve_today_energy(today_group, today_bucket, ilwoon_sinsal_hits)
 
     return {
         "score_delta": score_delta,
@@ -419,9 +425,9 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         "work_study_delta": _domain_delta(layers, DOMAIN_GROUPS["work_study"]),
         "state_label": state["label"],
         "state_comment": state_comment,
-        # 대운/세운/일운/신살/영역별 델타를 전부 종합한 한줄평(headline). 라벨을 그대로
-        # 복붙("오늘의 핵심 기운: {라벨}")하지 않고, HEADLINE_TABLE의 자연스러운 문장을 쓴다.
-        "headline": _resolve_headline(trigger_group, bucket, sinsal["hits"]),
+        # 대운/세운/일운/영역별 델타를 종합한 한줄평(headline) — 순수하게 "오늘 하루 한 줄
+        # 요약"만 한다(한 문장, 마침표 1개). 신살 경고는 여기 안 붙인다 - today_energy 몫.
+        "headline": _resolve_headline(trigger_group, bucket),
         # 오늘 일진(ilwoon) 하나만 놓고 본 한줄평 — "Today Energy Movement" 섹션 전용.
         # headline은 대운/세운/일운 중 가장 강한 레이어를 쓰지만 이건 항상 오늘(ilwoon)만 본다.
         "today_energy": today_energy,
