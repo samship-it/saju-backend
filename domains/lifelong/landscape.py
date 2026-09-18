@@ -34,9 +34,11 @@ ENV_IMAGE: Dict[str, str] = {
     "수": "깊고 어두운 밤바다",
 }
 
-# 개운 팁(TIP) — strength.yongsin(용신, 부족해서 필요한 오행) 1순위가 상징하는 조언.
-# 평생운세 전용 — daily의 "오늘 하루 행동 팁"과 달리, 삶의 관조적 태도·장기적 환경
-# 조성·심상 관리 위주로 쓴다(단발성 행동 지시 금지, 구체적 daily 행동 예시 금지).
+# 개운법(TIP) — strength.yongsin(용신, 부족해서 필요한 오행) 1순위가 상징하는 조언.
+# 섹션2(core_nature)에서 [강점/성향 -> 단점/주의점 -> 개운법] 흐름의 마지막 요소로
+# 쓰인다(build_tip() 참고, service.py 가 core_nature 에 붙여 반환). 평생운세 전용 —
+# daily의 "오늘 하루 행동 팁"과 달리, 삶의 관조적 태도·장기적 환경 조성·심상 관리
+# 위주로 쓴다(단발성 행동 지시 금지, 구체적 daily 행동 예시 금지).
 TIP: Dict[str, str] = {
     "목": (
         "🌱 평생에 걸쳐 배움과 성장을 놓지 않는 태도가 이 사람을 지탱하는 힘이 됩니다. "
@@ -132,13 +134,15 @@ def build_reason(saju: Dict[str, Any], env_elem: str, yongsin: List[str]) -> Opt
 
 
 def build_landscape(saju: Dict[str, Any]) -> Dict[str, Any]:
-    """saju_data(calculate_saju 산출물) -> {scene, reason, tip, day_master_elem, env_elem, yongsin}."""
+    """saju_data(calculate_saju 산출물) -> {scene, reason, day_master_elem, env_elem, yongsin}.
+
+    개운법(tip)은 섹션2(core_nature) 몫이라 여기 포함하지 않는다 — build_tip() 참고.
+    """
     day_elem = saju.get("day_master_elem") or ""
     strength = saju.get("strength") or {}
     elem_power: Dict[str, float] = strength.get("elem_power") or {}
     env_elem = max(elem_power, key=elem_power.get) if elem_power else day_elem
     yongsin: List[str] = strength.get("yongsin") or []
-    tip_elem = yongsin[0] if yongsin else None
 
     subject = SUBJECT_IMAGE.get(day_elem, "고요히 서 있는 존재")
     env = ENV_IMAGE.get(env_elem, "잔잔한 풍경")
@@ -146,8 +150,18 @@ def build_landscape(saju: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "scene": f"{env} 아래 {subject}",
         "reason": build_reason(saju, env_elem, yongsin),
-        "tip": TIP.get(tip_elem, _DEFAULT_TIP) if tip_elem else _DEFAULT_TIP,
         "day_master_elem": day_elem or None,
         "env_elem": env_elem or None,
         "yongsin": yongsin,
     }
+
+
+def build_tip(saju: Dict[str, Any]) -> str:
+    """saju_data -> 개운법 한 문단(섹션2 core_nature 의 마지막 요소).
+
+    strength.yongsin(용신, 부족해서 필요한 오행) 1순위가 상징하는 조언을 고른다.
+    """
+    strength = saju.get("strength") or {}
+    yongsin: List[str] = strength.get("yongsin") or []
+    tip_elem = yongsin[0] if yongsin else None
+    return TIP.get(tip_elem, _DEFAULT_TIP) if tip_elem else _DEFAULT_TIP

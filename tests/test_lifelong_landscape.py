@@ -1,13 +1,14 @@
 """평생운세 섹션1 '사주적 풍경' — AI/DB 없이 실시간 오행 조합인지 검증.
 
 reason(풍경 근거) 서술과, daily풍 단발성 행동 팁이 섞이지 않는지도 함께 검증한다.
+개운법(TIP)은 섹션2(core_nature)로 이동했으므로 build_tip() 으로 별도 검증한다.
 """
 import datetime
 
 import pytest
 
 from core.saju_base import calculate_saju
-from domains.lifelong.landscape import SUBJECT_IMAGE, ENV_IMAGE, TIP, build_landscape, build_reason
+from domains.lifelong.landscape import SUBJECT_IMAGE, ENV_IMAGE, TIP, build_landscape, build_reason, build_tip
 from domains.lifelong.service import analyze_lifelong_fortune
 
 ELEMENTS = ["목", "화", "토", "금", "수"]
@@ -32,13 +33,13 @@ def test_build_landscape_uses_day_master_and_strongest_elem_power():
     assert out["day_master_elem"] == "목"
     assert out["env_elem"] == "화"  # elem_power 최댓값
     assert out["scene"] == f"{ENV_IMAGE['화']} 아래 {SUBJECT_IMAGE['목']}"
-    assert out["tip"] == TIP["수"]
+    assert "tip" not in out
+    assert build_tip(saju) == TIP["수"]
 
 
 def test_build_landscape_no_yongsin_falls_back():
     saju = {"day_master_elem": "금", "strength": {"elem_power": {"금": 1.0}, "yongsin": []}}
-    out = build_landscape(saju)
-    assert out["tip"] == "지금의 균형을 오래도록 잘 유지해 나가는 것만으로도 충분합니다."
+    assert build_tip(saju) == "지금의 균형을 오래도록 잘 유지해 나가는 것만으로도 충분합니다."
 
 
 def test_tip_text_has_no_daily_style_action_phrases():
@@ -96,7 +97,7 @@ def test_full_pipeline_landscape_is_internally_consistent(birth):
     assert SUBJECT_IMAGE[out["day_master_elem"]] in out["scene"]
     assert ENV_IMAGE[out["env_elem"]] in out["scene"]
     if out["yongsin"]:
-        assert out["tip"] == TIP[out["yongsin"][0]]
+        assert build_tip(saju) == TIP[out["yongsin"][0]]
 
 
 def test_three_different_people_get_different_landscapes():
@@ -115,4 +116,12 @@ def test_three_different_people_get_different_landscapes():
 def test_analyze_lifelong_fortune_includes_landscape():
     data, _ = analyze_lifelong_fortune(1983, 5, 14, 14, 0, "female", False)
     landscape = data["data"]["landscape"]
-    assert landscape["scene"] and landscape["tip"] and landscape["reason"]
+    assert landscape["scene"] and landscape["reason"]
+    assert "tip" not in landscape
+
+
+def test_analyze_lifelong_fortune_core_nature_has_strength_weakness_tip_order():
+    data, _ = analyze_lifelong_fortune(1983, 5, 14, 14, 0, "female", False)
+    core = data["data"]["core_nature"]
+    assert list(core.keys()) == ["personality", "life_theme", "weaknesses", "tip"]
+    assert core["personality"] and core["life_theme"] and core["weaknesses"] and core["tip"]

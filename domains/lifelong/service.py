@@ -32,7 +32,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from core.saju_base import calculate_saju
 from core.daewoon import daewoon_step_facts
 from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
-from domains.lifelong.landscape import build_landscape
+from domains.lifelong.landscape import build_landscape, build_tip
 from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
 
@@ -165,6 +165,7 @@ def _fallback_stage_detail(dominant_group: str, step: int) -> dict:
 
 _FALLBACK_LIFE_THEME = "꾸준함으로 신뢰를 쌓아가는 인생"
 _FALLBACK_PERSONALITY = "안정적인 흐름 속에서 자기 페이스를 지키는 성향입니다."
+_FALLBACK_WEAKNESS = "한번 자리 잡은 방식을 바꾸는 데 시간이 걸려 변화의 타이밍을 놓치기 쉽습니다."
 _FALLBACK_DOMAINS = {
     "wealth": {"style": "무리하지 않는 안정 지향형", "management_tip": "고정지출을 먼저 점검하세요."},
     "career": {"best_fit_work": "꾸준함이 필요한 전문 분야", "success_environment": "신뢰를 기반으로 한 조직"},
@@ -197,13 +198,15 @@ def analyze_lifelong_fortune(
 
     is_fallback = False
 
-    # section1: life_theme(신규) + personality(personality_db 재사용)
+    # section2(core_nature): life_theme(신규) + personality/weaknesses(personality_db 재사용)
+    # + tip(개운법, landscape 에서 이동). [강점/성향 -> 단점/주의점 -> 개운법] 순으로 구성한다.
     base = lookup_base(ilju)
     life_theme = (base or {}).get("life_theme") or _FALLBACK_LIFE_THEME
     if base is None:
         is_fallback = True
     character = lookup_personality(ilju, "character")
     personality = (character or {}).get("base_nature") or _FALLBACK_PERSONALITY
+    weaknesses = (character or {}).get("weaknesses") or _FALLBACK_WEAKNESS
     if character is None:
         is_fallback = True
 
@@ -233,9 +236,16 @@ def analyze_lifelong_fortune(
     life_domains = domains_entry or _FALLBACK_DOMAINS
 
     data = {
-        # 섹션1: 사주적 풍경(AI/DB 없음 — day_master_elem·elem_power·yongsin 실시간 조합)
+        # 섹션1: 사주적 풍경(AI/DB 없음 — day_master_elem·elem_power·yongsin 실시간 조합). 개운법(tip)은
+        # 섹션2로 이동했으므로 여기 없음.
         "landscape": build_landscape(saju),
-        "core_nature": {"personality": personality, "life_theme": life_theme},
+        # 섹션2: [타고난 강점/성향 -> 경계해야 할 단점/주의점 -> 이를 극복하는 맞춤 개운법] 순으로 구성.
+        "core_nature": {
+            "personality": personality,
+            "life_theme": life_theme,
+            "weaknesses": weaknesses,
+            "tip": build_tip(saju),
+        },
         "life_domains": life_domains,
         "life_stages": life_stages,
         "current_step": current_step,
