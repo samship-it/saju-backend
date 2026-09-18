@@ -24,8 +24,8 @@ class DailyFortuneRequest(BaseModel):
     gender: Optional[str] = "female"
     is_lunar: Optional[bool] = False
     target_date: Optional[str] = None    # 미지정 시 오늘(KST)
-    love_status: Optional[str] = None    # 'solo' | 'in_relationship' | 'married' (미지정/모르는 값=폴백)
-    job_status: Optional[str] = None     # 'employee' | 'business_freelancer' | 'job_seeker' |
+    love_status: Optional[str] = None    # 'single' | 'dating' | 'married' (미지정/모르는 값=폴백)
+    job_status: Optional[str] = None     # 'employee' | 'self_employed' | 'job_seeker' |
                                           # 'student' | 'homemaker' | 'retired' (미지정/모르는 값=폴백)
 
 

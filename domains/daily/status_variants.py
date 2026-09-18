@@ -3,8 +3,8 @@
 daily_db.json(3,600건, 일주×일진)에는 이미 love_single/love_couple 두 갈래가 함께
 생성되어 있다(같은 호출에서 함께 만들어짐 — 새 축 아님). 이 둘은 그대로 두고 여기서는:
 
-- love_status='solo'          -> love_single 재사용(이미 실측 개인화 콘텐츠, 새로 안 만듦)
-- love_status='in_relationship' -> love_couple 재사용(위와 동일 이유)
+- love_status='single'          -> love_single 재사용(이미 실측 개인화 콘텐츠, 새로 안 만듦)
+- love_status='dating' -> love_couple 재사용(위와 동일 이유)
 - love_status='married'       -> DB에 없는 새 상태라 정적 문구가 필요. 일주×일진 축을
   새로 추가하면 3,600건을 다시 만들어야 하므로, 대신 이미 매 요청마다 실시간 계산되는
   trigger_bucket(woon_modifier.compute_woon_modifier() 이 대운/세운/일운을 종합해 뽑아낸
@@ -20,8 +20,8 @@ job_status(6종)는 daily_db.json에 상태별 분기가 아예 없던 축이라
 """
 from typing import Dict, Optional
 
-LOVE_STATUSES = ("solo", "in_relationship", "married")
-JOB_STATUSES = ("employee", "business_freelancer", "job_seeker", "student", "homemaker", "retired")
+LOVE_STATUSES = ("single", "dating", "married")
+JOB_STATUSES = ("employee", "self_employed", "job_seeker", "student", "homemaker", "retired")
 
 _MARRIED_LOVE_FALLBACK = (
     "배우자와는 큰 이벤트보다 오늘 하루를 함께 매만지는 작은 순간들이 더 중요한 날이에요. "
@@ -69,7 +69,7 @@ def resolve_married_love(trigger_bucket: Optional[str]) -> str:
 
 _JOB_STATUS_FALLBACK: Dict[str, str] = {
     "employee": "회사에서는 무리한 확장보다 맡은 일을 매듭짓는 데 집중하면 좋은 흐름을 탈 수 있는 날입니다.",
-    "business_freelancer": "사업·프리랜서 활동에서는 새 판을 벌이기보다 지금 진행 중인 일을 다지는 편이 유리한 날입니다.",
+    "self_employed": "사업·프리랜서 활동에서는 새 판을 벌이기보다 지금 진행 중인 일을 다지는 편이 유리한 날입니다.",
     "job_seeker": "구직 활동에서는 조급해하기보다 지원서 하나를 더 꼼꼼히 다듬는 쪽이 결과로 이어지기 쉬운 날입니다.",
     "student": "공부에서는 새 진도보다 이미 배운 내용을 복습하고 정리할 때 성취감이 큰 날입니다.",
     "homemaker": "집안 살림과 가족 일정에서는 무리하게 벌이기보다 하나씩 정리해나갈 때 흐름이 매끄러운 날입니다.",
@@ -107,7 +107,7 @@ JOB_STATUS_TEMPLATES: Dict[str, Dict[str, str]] = {
             "드러내기보다, 밀린 정리나 검토에 시간을 쓰면 실속을 챙길 수 있습니다."
         ),
     },
-    "business_freelancer": {
+    "self_employed": {
         "harmony": (
             "클라이언트·거래처와의 합이 잘 맞는 날이에요. 새로운 제안이나 견적을 던져보기 좋은 "
             "타이밍이니, 미뤄둔 연락이 있다면 오늘 먼저 움직여 보세요."

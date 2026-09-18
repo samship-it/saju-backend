@@ -71,15 +71,15 @@ def test_generate_daily_fortune_love_status_populates_summary_love(love_status):
     assert data["summary"]["love"]
 
 
-def test_generate_daily_fortune_love_solo_matches_love_single():
+def test_generate_daily_fortune_love_single_matches_love_single_field():
     saju = _saju_for_test()
-    data, _ = generate_daily_fortune(saju, love_status="solo")
+    data, _ = generate_daily_fortune(saju, love_status="single")
     assert data["summary"]["love"] == data["summary"]["love_single"]
 
 
-def test_generate_daily_fortune_love_in_relationship_matches_love_couple():
+def test_generate_daily_fortune_love_dating_matches_love_couple():
     saju = _saju_for_test()
-    data, _ = generate_daily_fortune(saju, love_status="in_relationship")
+    data, _ = generate_daily_fortune(saju, love_status="dating")
     assert data["summary"]["love"] == data["summary"]["love_couple"]
 
 

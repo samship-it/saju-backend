@@ -130,9 +130,9 @@ def _resolve_love_text(summ: Dict[str, str], love_status: Optional[str], trigger
     """love_status 별 1:1 문구. 모르는 값/미지정이면 기존 방식(single+couple 병기)으로 폴백."""
     single = summ.get("love_single", "")
     couple = summ.get("love_couple", "")
-    if love_status == "solo":
+    if love_status == "single":
         return single
-    if love_status == "in_relationship":
+    if love_status == "dating":
         return couple
     if love_status == "married":
         return resolve_married_love(trigger_bucket)
