@@ -37,6 +37,7 @@ from core.daewoon import daewoon_step_facts
 from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
 from domains.lifelong.highlight import build_highlight
 from domains.lifelong.landscape import build_landscape, build_tip
+from domains.lifelong.life_periods import build_early_life, build_late_life, build_middle_life
 from domains.lifelong.spouse_outlook import build_spouse_outlook
 from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
@@ -306,6 +307,12 @@ def analyze_lifelong_fortune(
             "tip": build_tip(saju),
         },
         "life_domains": life_domains,
+        # 섹션8~10: 생애주기별 분석(초년/중년/말년) — life_stages(대운 8단계 나열)보다
+        # 앞에 둔다. domains/lifelong/life_periods.py 참고(년/월/시주·실제 대운 나이로
+        # 실시간 합성, 새 정적 DB 없음).
+        "early_life": build_early_life(saju),
+        "middle_life": build_middle_life(saju, facts, daewoon_num),
+        "late_life": build_late_life(saju, facts, daewoon_num),
         "life_stages": life_stages,
         "current_step": current_step,
         # 사전 질문(selected_concern) 답변 전용 4단계 하이라이트 — 질문을 안 받았으면
