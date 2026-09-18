@@ -6,8 +6,8 @@
 """
 from typing import Dict, Any, Tuple
 
-from core.constants import score_to_emoji, score_to_band, daily_headline_fallback
-from shared.text_format import paragraphize, first_sentence, is_valid_headline
+from core.constants import score_to_emoji, score_to_band
+from shared.text_format import paragraphize
 from domains.daily.content_db import lookup
 from domains.daily.social_template import build_social_summary
 from domains.daily.woon_modifier import compute_woon_modifier
@@ -57,31 +57,6 @@ def _fallback(saju: Dict[str, Any]) -> dict:
     }
 
 
-# |score_delta| 가 이 값 이상이면 원본 static headline 대신 woon_state 기반 문구를 쓴다.
-# 원본 headline은 daily_db.json 생성 시점(대운/세운/일운을 전혀 모름)에 고정된 텍스트라,
-# 델타가 크게 움직인 날엔 "재능이 꽃피는 찬란한 하루"처럼 실제 보정 방향과 반대로 읽힐 수 있다.
-_HEADLINE_DELTA_THRESHOLD = 10
-
-
-def _headline(ai: dict, overall_score: int, state_label: str = "", score_delta: int = 0) -> str:
-    """한줄평 가드레일: LLM(정적 DB)이 준 headline 이 없거나 무효하면 요약 첫 문장을,
-    그마저 무효하면 점수대별 기본 문구로 100% 대체한다.
-
-    단, 대운/세운/일운 보정치(|score_delta|)가 임계값 이상이면 원본 static 문구가
-    실제 방향과 어긋날 위험이 크므로, woon_state.state_label 기반 문구로 먼저 대체한다.
-    """
-    if abs(score_delta) >= _HEADLINE_DELTA_THRESHOLD and state_label:
-        return f"오늘의 핵심 기운: {state_label}"
-
-    candidate = str(ai.get("headline") or "").strip()
-    if not candidate:
-        summ = ai.get("summary") or {}
-        candidate = first_sentence(str(summ.get("overall", "")))
-    if is_valid_headline(candidate):
-        return candidate
-    return daily_headline_fallback(overall_score)
-
-
 def _shape(ai: dict, saju_data: Dict[str, Any], modifier: Dict[str, Any]) -> dict:
     def s(v, d=60):
         try:
@@ -102,7 +77,9 @@ def _shape(ai: dict, saju_data: Dict[str, Any], modifier: Dict[str, Any]) -> dic
         "work_study_score": s(ai.get("work_study_score")),
         "score_emoji": score_to_emoji(overall),
         "score_band": score_to_band(overall),
-        "headline": _headline(ai, overall, modifier["state_label"], modifier["score_delta"]),
+        # 한줄평은 이제 static DB 원문이 아니라 woon_modifier가 대운/세운/일운/신살/영역별
+        # delta를 전부 종합해 만든 문장을 100% 사용한다(HEADLINE_TABLE, AI 미관여).
+        "headline": modifier["headline"],
         "summary": {
             "overall": paragraphize(str(summ.get("overall", ""))),
             "money": paragraphize(str(summ.get("money", ""))),
@@ -110,8 +87,9 @@ def _shape(ai: dict, saju_data: Dict[str, Any], modifier: Dict[str, Any]) -> dic
             "love_couple": paragraphize(str(summ.get("love_couple", ""))),
             "work_study": paragraphize(str(summ.get("work_study", ""))),
             # Social Network(사회운) - daily_db.json 정적 DB에는 없는 필드. woon_modifier가
-            # 계산한 trigger_group/trigger_bucket으로 generate_daily_fortune()에서 채운다
-            # (woon_state와 항상 같은 방향을 보도록 - 여기서 자체 계산 안 함).
+            # 계산한 trigger_group/trigger_bucket으로 generate_daily_fortune()에서 채운다.
+            # headline과는 서로 다른 문구 세트(HEADLINE_TABLE vs SOCIAL_TEMPLATES)를 쓰므로
+            # 같은 신호를 가리켜도 문장이 겹치지 않는다.
             "social": "",
         },
         "keywords": kws,
@@ -165,8 +143,6 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     shaped["summary"]["social"] = paragraphize(
         build_social_summary(modifier["trigger_group"], modifier["trigger_bucket"])
     )
-    shaped["summary"]["woon_today"] = paragraphize(modifier["state_comment"])
-    shaped["woon_state"] = modifier["state_label"]
     shaped["woon_score_delta"] = modifier["score_delta"]
     shaped["sinsal_hits"] = [{"layer": h["layer"], "name": h["name"]} for h in modifier["sinsal_hits"]]
 

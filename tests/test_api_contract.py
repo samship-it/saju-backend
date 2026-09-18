@@ -67,11 +67,10 @@ def test_daily_fortune_structure():
     for k in ("overall_score", "money_score", "love_score", "work_study_score"):
         assert isinstance(d[k], int) and 0 <= d[k] <= 100
     assert set(d["summary"].keys()) == {
-        "overall", "money", "love_single", "love_couple", "work_study", "social", "woon_today",
+        "overall", "money", "love_single", "love_couple", "work_study", "social",
     }
     assert isinstance(d["summary"]["social"], str) and d["summary"]["social"]
-    assert isinstance(d["summary"]["woon_today"], str) and d["summary"]["woon_today"]
-    assert isinstance(d["woon_state"], str) and d["woon_state"]
+    assert isinstance(d["headline"], str) and d["headline"]
     assert isinstance(d["woon_score_delta"], int) and -40 <= d["woon_score_delta"] <= 40
     assert isinstance(d["sinsal_hits"], list)
     assert len(d["keywords"]) == 3

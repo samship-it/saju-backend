@@ -102,6 +102,17 @@ SINSAL_PENALTY: Dict[str, int] = {
 }
 _SINSAL_LAYER_SCALE = {"ilwoon": 1.0, "daewoon": 0.75, "sewoon": 0.75}
 
+# 헤드라인에 신살을 짧게 덧붙일 때 쓰는 절(clause) — SINSAL_NOTE(두 문장, woon_today용)보다
+# 짧게 한 구절로 줄인 버전. 신살이 여러 개 겹치면 감점이 가장 큰(=가장 강한) 것 하나만 붙인다.
+SINSAL_HEADLINE_SUFFIX: Dict[str, str] = {
+    "겁살": "겁살(劫煞)까지 겹치니 지출·손실에 유의하세요.",
+    "재살": "재살(災煞)까지 겹치니 사고·다툼에 유의하세요.",
+    "천살": "천살(天煞)까지 겹치니 뜻대로 안 풀려도 순리대로 받아들이세요.",
+    "망신살": "망신살(亡身煞)까지 겹치니 말과 행동에 신경 쓰세요.",
+    "백호": "백호살(白虎殺)까지 겹치니 안전·건강에 더 유의하세요.",
+    "양인": "양인살(陽刃殺)까지 겹치니 감정 조절에 신경 쓰세요.",
+}
+
 # ── 6. 영역별 십신군 소속 — core/domain_derived.py의 domains 딕셔너리와 동일(단일
 # 소스 유지 위해 반드시 동기화). money/love/work_study 각 점수는 이제 score_delta를
 # 균등 복사하지 않고, 그 점수와 관련 없는 십신군의 기여는 제외한 별도 델타를 쓴다.
@@ -274,6 +285,66 @@ WOON_STATE_TABLE: Dict[str, Dict[str, Dict[str, str]]] = {
     },
 }
 
+# ── 7. 상태별 한줄평(headline) 고정 문구 (5 십신군 × 6 관계버킷 = 30종, AI 미관여) ──
+# WOON_STATE_TABLE의 label/comment와는 다른 각도(느낌/행동 팁 중심)로 새로 쓴 문장이다.
+# headline·woon_today·social이 같은 (group,bucket) 신호를 그대로 복붙해 3중 반복되던
+# 문제를 고치기 위해, 세 필드가 서로 다른 단어·구조로 같은 신호를 전달하도록 분리했다.
+HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
+    "비겁": {
+        "harmony": "함께하면 시너지가 나는 날이니 협업 제안이 있다면 적극적으로 받아들이세요.",
+        "conflict": "괜히 경쟁심이 발동하기 쉬운 날이니 힘 빼고 가는 게 이득이에요.",
+        "adjustment": "역할 분담을 다시 맞춰보면 훨씬 수월해지는 하루예요.",
+        "friction": "타이밍이 살짝 어긋나도 서두르지 않으면 무난히 지나가는 하루예요.",
+        "repeat": "익숙한 리듬 그대로, 무리하지 않아도 되는 편안한 하루예요.",
+        "neutral": "특별한 사건 없이 잔잔하게 흘러가는 하루예요.",
+    },
+    "식상": {
+        "harmony": "아이디어가 술술 풀리는 날이니 적극적으로 표현해 보세요.",
+        "conflict": "말이 많아지기 쉬운 날이니 하고 싶은 말은 한 번 걸러서 꺼내보세요.",
+        "adjustment": "의도와 다르게 전달될 수 있으니 표현을 한 번 더 점검해보는 하루예요.",
+        "friction": "사소한 착오가 생길 수 있으니 중요한 이야기는 명확하게 짚고 가세요.",
+        "repeat": "늘 하던 방식 그대로 편안하게 흘러가는 하루예요.",
+        "neutral": "표현이나 활동 면에서 튀는 일 없이 흘러가는 하루예요.",
+    },
+    "재성": {
+        "harmony": "생각보다 좋은 제안이 들어올 수 있는 날이니 기회다 싶으면 잡아보세요.",
+        "conflict": "돈 씀씀이에 예민해지기 쉬운 날이니 큰 지출은 하루 미뤄보세요.",
+        "adjustment": "수입·지출 구조를 한번 점검해보면 도움이 되는 하루예요.",
+        "friction": "정산이나 계산에서 사소하게 안 맞을 수 있으니 미리 확인해두세요.",
+        "repeat": "지금 흐름 그대로 안정적으로 이어지는 하루예요.",
+        "neutral": "재물 면에서 특별한 이슈 없이 평이하게 흘러가는 하루예요.",
+    },
+    "관성": {
+        "harmony": "책임진 일이 좋은 평가로 돌아오는 날이니 나서야 할 자리에서 존재감을 보여도 좋아요.",
+        "conflict": "윗선이나 공적인 일에서 부딪힐 수 있으니 서류나 약속은 한 번 더 챙겨보세요.",
+        "adjustment": "맡은 역할과 책임을 다시 정리해두면 든든해지는 하루예요.",
+        "friction": "보고나 전달 타이밍이 살짝 어긋날 수 있으니 조금 더 명확하게 전해보세요.",
+        "repeat": "지금 자리를 꾸준히 지키는 것만으로 충분한 하루예요.",
+        "neutral": "조직이나 공적인 관계에서 평온하게 흘러가는 하루예요.",
+    },
+    "인성": {
+        "harmony": "귀인이나 배움의 기회를 만나기 좋은 날이니 고민이 있다면 오늘 털어놔 보세요.",
+        "conflict": "조언이 부담스럽게 느껴질 수 있으니 일단 듣고 판단은 천천히 해도 괜찮아요.",
+        "adjustment": "기대치를 서로 맞춰보면 관계가 한결 편해지는 하루예요.",
+        "friction": "조언을 주고받는 결이 살짝 안 맞을 수 있으니 가볍게 확인해보세요.",
+        "repeat": "의지하던 관계가 꾸준히 이어지는 편안한 하루예요.",
+        "neutral": "조력자·배움 면에서 특별한 일 없이 잔잔한 하루예요.",
+    },
+}
+
+_DEFAULT_HEADLINE = "오늘은 큰 굴곡 없이 잔잔하게 흘러가는 하루예요."
+
+
+def _resolve_headline(trigger_group: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]]) -> str:
+    """(trigger_group,bucket) 조합의 고정 headline + (있으면) 가장 강한 신살 한 줄만 덧붙인다."""
+    base = HEADLINE_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
+    if sinsal_hits:
+        worst = min(sinsal_hits, key=lambda h: h["penalty"])  # penalty가 가장 큰(가장 음수인) 것
+        suffix = SINSAL_HEADLINE_SUFFIX.get(worst["name"])
+        if suffix:
+            return f"{base} {suffix}"
+    return base
+
 _DEFAULT_STATE = {"label": "무난한 흐름", "comment": "특별한 이슈 없이 잔잔하게 흘러가는 시기예요."}
 
 
@@ -336,6 +407,9 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         "work_study_delta": _domain_delta(layers, DOMAIN_GROUPS["work_study"]),
         "state_label": state["label"],
         "state_comment": state_comment,
+        # 대운/세운/일운/신살/영역별 델타를 전부 종합한 한줄평(headline). 라벨을 그대로
+        # 복붙("오늘의 핵심 기운: {라벨}")하지 않고, HEADLINE_TABLE의 자연스러운 문장을 쓴다.
+        "headline": _resolve_headline(trigger_group, bucket, sinsal["hits"]),
         "trigger_layer": trigger_layer,
         # social_template.py 가 자체적으로 (그룹,버킷)을 재계산하지 않고 이 값을
         # 그대로 받아쓴다 — woon_state와 summary.social이 항상 같은 방향을 보도록.
