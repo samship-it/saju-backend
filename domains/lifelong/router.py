@@ -16,6 +16,11 @@ class LifelongFortuneRequest(BaseModel):
     minute: Optional[int] = Field(0, example=30)
     gender: Optional[str] = Field("female", example="female")
     is_lunar: Optional[bool] = Field(False)
+    selected_concern: Optional[str] = Field(
+        None, example="money",
+        description="사전 질문(LifelongIntakeSheet) 답변 — 'money'|'wealth'|'career'|'social'|'family'. "
+                     "주면 data.highlight 에 그 영역 집중 분석 카드가 채워진다.",
+    )
 
 
 class LifelongStageDetailRequest(LifelongFortuneRequest):
@@ -28,6 +33,7 @@ def lifelong_analysis_endpoint(req: LifelongFortuneRequest):
         data, is_fallback = analyze_lifelong_fortune(
             req.year, req.month, req.day, req.hour, req.minute or 0,
             req.gender or "female", bool(req.is_lunar),
+            selected_concern=req.selected_concern,
         )
         return {"status": "success", "is_fallback": is_fallback, **data}
     except Exception as e:

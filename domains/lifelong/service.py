@@ -222,9 +222,59 @@ def _shape_domains(domains_entry: Optional[Dict[str, Any]]) -> Tuple[Dict[str, A
     return shaped, used_fallback
 
 
+# 사전 질문(selected_concern, LifelongIntakeSheet.tsx) -> 4대 영역 키. "money"/"wealth"
+# 둘 다 wealth 로 받는다(프론트 CONCERN_DOMAIN 매핑과 동일 어휘 유지).
+CONCERN_TO_DOMAIN: Dict[str, str] = {
+    "money": "wealth", "wealth": "wealth",
+    "career": "career", "social": "social", "family": "family",
+}
+CONCERN_LABELS: Dict[str, str] = {
+    "wealth": "돈과 재물", "career": "일과 커리어", "social": "사람과 인맥", "family": "가족 관계",
+}
+# 도메인별로 '핵심 총평'/'맞춤 액션 플랜'에 합성할 필드 — 서로 다른 두 필드를 묶어 하나의
+# 흐름 있는 문단으로 만든다(단순 필드 나열이 아니라 총평/플랜 관점으로 재구성).
+CONCERN_SYNTHESIS_FIELDS: Dict[str, Dict[str, List[str]]] = {
+    "wealth": {"overview": ["style", "money_timing"], "action": ["management_tip", "wealth_method"]},
+    "career": {"overview": ["best_fit_work", "career_direction"], "action": ["success_environment", "career_strength"]},
+    "social": {"overview": ["connection_style", "lucky_person_type"], "action": ["network_strategy", "recommended_activity"]},
+    "family": {"overview": ["relation_characteristics", "spouse_outlook"], "action": ["harmony_key"]},
+}
+
+
+def _build_highlight(
+    selected_concern: Optional[str], life_domains: Dict[str, Any], weaknesses: str,
+) -> Optional[Dict[str, Any]]:
+    """사전 질문(selected_concern)에 대한 답변 전용 심화 하이라이트. 질문을 안 받았으면
+    None(카드 자체를 안 보여준다 — '고민 집중 분석'은 답변 용도로만 쓴다).
+
+    핵심 총평/맞춤 액션 플랜은 life_domains(이미 조회·병합된 4대 영역)에서 관련 필드
+    2개씩을 이어 붙여 만들고, 절대 피해야 할 주의점은 core_nature.weaknesses(이미
+    개인화된 성향 단점)를 그대로 쓴다 — 도메인별 전용 '주의점' 필드는 아직 없어서(2,400
+    조합 신규 배치가 필요), 이미 실측 개인화된 약점 텍스트를 재사용하는 쪽이 매 도메인
+    똑같은 문구를 새로 지어내는 것보다 정직하다(사용자 확인·승인).
+    """
+    domain_key = CONCERN_TO_DOMAIN.get((selected_concern or "").strip().lower())
+    if not domain_key:
+        return None
+    entry = life_domains.get(domain_key) or {}
+    fields = CONCERN_SYNTHESIS_FIELDS[domain_key]
+
+    def _join(keys: List[str]) -> str:
+        return " ".join(str(entry[k]) for k in keys if entry.get(k))
+
+    return {
+        "selected_concern": selected_concern,
+        "title": f"선택하신 [{CONCERN_LABELS[domain_key]}] 영역 집중 분석",
+        "overview": _join(fields["overview"]),
+        "must_avoid": weaknesses,
+        "action_plan": _join(fields["action"]),
+    }
+
+
 def analyze_lifelong_fortune(
     year: int, month: int, day: int,
     hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
+    selected_concern: Optional[str] = None,
 ) -> Tuple[dict, bool]:
     """(결과 dict, is_fallback) 반환. 정적 DB 조회만 — Gemini 호출 없음.
 
@@ -302,6 +352,8 @@ def analyze_lifelong_fortune(
         "life_domains": life_domains,
         "life_stages": life_stages,
         "current_step": current_step,
+        # 사전 질문(selected_concern) 답변 전용 — 질문을 안 받았으면 None(카드 자체를 숨김).
+        "highlight": _build_highlight(selected_concern, life_domains, weaknesses),
     }
 
     return {
