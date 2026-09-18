@@ -1,13 +1,20 @@
-"""평생운세 섹션1 '사주적 풍경' — AI/DB 없이 실시간 오행 조합인지 검증."""
+"""평생운세 섹션1 '사주적 풍경' — AI/DB 없이 실시간 오행 조합인지 검증.
+
+reason(풍경 근거) 서술과, daily풍 단발성 행동 팁이 섞이지 않는지도 함께 검증한다.
+"""
 import datetime
 
 import pytest
 
 from core.saju_base import calculate_saju
-from domains.lifelong.landscape import SUBJECT_IMAGE, ENV_IMAGE, TIP, build_landscape
+from domains.lifelong.landscape import SUBJECT_IMAGE, ENV_IMAGE, TIP, build_landscape, build_reason
 from domains.lifelong.service import analyze_lifelong_fortune
 
 ELEMENTS = ["목", "화", "토", "금", "수"]
+
+# daily woon_modifier 쪽에서 쓰던 "오늘 하루" 단발성 행동 지시 어휘 — 평생운세 TIP엔
+# 절대 섞이면 안 된다(예전에 "책상 정리처럼 작은 정돈부터" 같은 문구가 섞여 있었음).
+_DAILY_STYLE_PHRASES = ["책상 정리", "오늘 하루", "오늘은", "당장"]
 
 
 def test_tables_cover_all_five_elements():
@@ -31,7 +38,48 @@ def test_build_landscape_uses_day_master_and_strongest_elem_power():
 def test_build_landscape_no_yongsin_falls_back():
     saju = {"day_master_elem": "금", "strength": {"elem_power": {"금": 1.0}, "yongsin": []}}
     out = build_landscape(saju)
-    assert out["tip"] == "지금의 균형을 잘 유지하는 것만으로도 충분해요."
+    assert out["tip"] == "지금의 균형을 오래도록 잘 유지해 나가는 것만으로도 충분합니다."
+
+
+def test_tip_text_has_no_daily_style_action_phrases():
+    for elem, text in TIP.items():
+        for phrase in _DAILY_STYLE_PHRASES:
+            assert phrase not in text, f"{elem} 팁에 daily풍 문구 잔존: {phrase!r}"
+
+
+def test_reason_cites_month_season_and_env_elem():
+    saju = {
+        "day_master": "壬", "day_master_elem": "수",
+        "month_ganji": "丁巳", "time_ganji": "丁未", "birth_time_known": True,
+    }
+    reason = build_reason(saju, env_elem="화", yongsin=["금", "수"])
+    assert reason is not None
+    assert "壬" in reason and "수" in reason
+    assert "여름" in reason  # 巳월 = 여름
+    assert "미" in reason  # 시지(未) 한글 표기
+    assert "화" in reason  # env_elem
+    assert "금·수" in reason  # yongsin 결합 표기
+
+
+def test_reason_skips_hour_sentence_when_birth_time_unknown():
+    saju = {
+        "day_master": "壬", "day_master_elem": "수",
+        "month_ganji": "丁巳", "time_ganji": "", "birth_time_known": False,
+    }
+    reason = build_reason(saju, env_elem="화", yongsin=["금"])
+    assert reason is not None
+    assert "시(時)생" not in reason
+
+
+def test_build_landscape_includes_reason():
+    saju = {
+        "day_master": "壬", "day_master_elem": "수",
+        "month_ganji": "丁巳", "time_ganji": "丁未", "birth_time_known": True,
+        "strength": {"elem_power": {"목": 1.1, "화": 3.1, "토": 0.8, "금": 0.3, "수": 2.7}, "yongsin": ["금", "수"]},
+    }
+    out = build_landscape(saju)
+    assert out["reason"]
+    assert "여름" in out["reason"]
 
 
 @pytest.mark.parametrize(
@@ -67,4 +115,4 @@ def test_three_different_people_get_different_landscapes():
 def test_analyze_lifelong_fortune_includes_landscape():
     data, _ = analyze_lifelong_fortune(1983, 5, 14, 14, 0, "female", False)
     landscape = data["data"]["landscape"]
-    assert landscape["scene"] and landscape["tip"]
+    assert landscape["scene"] and landscape["tip"] and landscape["reason"]
