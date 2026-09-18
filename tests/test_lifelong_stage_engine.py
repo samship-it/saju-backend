@@ -369,31 +369,22 @@ def test_analyze_lifelong_fortune_falls_back_when_lookup_misses(monkeypatch):
     assert data["data"]["life_domains"]
 
 
-# ------------------------------------------------------------------ 대운 상세 리포트(분리 엔드포인트)
-from domains.lifelong.service import analyze_lifelong_stage_detail  # noqa: E402
+def test_analyze_lifelong_fortune_life_stages_include_ganji_but_no_long_text():
+    """대운 카드 '자세히 보기'는 domains/daewoon 으로 완전 이관됐다 — life_stages 에는
+    카드에 필요한 짧은 필드(간지·연령대·theme_line·keyword)만 있고, 예전에 별도
+    엔드포인트로만 내려주던 장문 필드(event_narrative/strategy/obstacle/turning_point)는
+    없어야 한다."""
+    data, _ = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
+    for s in data["data"]["life_stages"]:
+        assert set(s.keys()) == {
+            "step", "stage_label", "age_range", "is_current", "theme_line", "keyword", "ganji",
+        }
+        assert s["ganji"] and len(s["ganji"]) == 2
 
-_STAGE_DETAIL_COMPLETE = {
-    "event_narrative": "b", "strategy": "s", "obstacle": "o", "turning_point": "d",
-}
 
-
-def test_analyze_lifelong_stage_detail_returns_requested_step(monkeypatch):
+def test_analyze_lifelong_stage_detail_no_longer_exists_on_service_module():
+    """대운 상세 리포트(전략/방해요소/전환점)는 domains/daewoon/service.py 로 완전
+    이관됐다 — lifelong/service.py 에는 더 이상 남아있으면 안 된다."""
     import domains.lifelong.service as svc
 
-    monkeypatch.setattr(svc, "lookup_stage_detail", lambda ilju, dom, rel, step: dict(_STAGE_DETAIL_COMPLETE))
-
-    data, is_fallback = analyze_lifelong_stage_detail(1990, 5, 15, 3, 10, 0, "male", False)
-    assert is_fallback is False
-    assert data["step"] == 3
-    assert data["data"] == _STAGE_DETAIL_COMPLETE
-
-
-def test_analyze_lifelong_stage_detail_falls_back_when_lookup_misses(monkeypatch):
-    import domains.lifelong.service as svc
-
-    monkeypatch.setattr(svc, "lookup_stage_detail", lambda ilju, dom, rel, step: None)
-
-    data, is_fallback = analyze_lifelong_stage_detail(1990, 5, 15, 1, 10, 0, "male", False)
-    assert is_fallback is True
-    assert data["data"]["event_narrative"] and data["data"]["strategy"]
-    assert data["data"]["obstacle"] and data["data"]["turning_point"]
+    assert not hasattr(svc, "analyze_lifelong_stage_detail")

@@ -14,6 +14,7 @@ from domains.compatibility.router import router as compatibility_router
 from domains.relationship.router import router as relationship_router
 from domains.yearly.router import router as yearly_router
 from domains.lifelong.router import router as lifelong_router
+from domains.daewoon.router import router as daewoon_router
 
 app = FastAPI(
     title="Saju Fortune Engine",
@@ -58,6 +59,7 @@ app.include_router(relationship_router, prefix="/api/v1/relationship", tags=["�
 app.include_router(yearly_router, prefix="/api/v1/yearly", tags=["연간 운세 9종"])
 # LIFELONG
 app.include_router(lifelong_router, prefix="/api/v1/lifelong", tags=["평생운세"])
+app.include_router(daewoon_router, prefix="/api/v1/daewoon", tags=["10년 대운"])
 
 # 타로 이미지 정적 서빙
 TAROT_IMAGE_DIR = os.environ.get(

@@ -34,7 +34,7 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from core.saju_base import calculate_saju
 from core.daewoon import daewoon_step_facts
-from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
+from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage
 from domains.lifelong.highlight import build_highlight
 from domains.lifelong.landscape import build_landscape, build_tip
 from domains.lifelong.life_periods import build_early_life, build_late_life, build_middle_life
@@ -281,6 +281,10 @@ def analyze_lifelong_fortune(
             "is_current": step == current_step,
             "theme_line": entry.get("theme_line", ""),
             "keyword": entry.get("keyword", ""),
+            # 카드에 원국 색깔칩으로 표시하기 위한 이 대운 간지. 상세 텍스트(전략/방해요소/
+            # 전환점)는 더 이상 여기서 안 주고 domains/daewoon 모듈로 완전 이관했다 —
+            # 카드 클릭 시 "대운 보러가기"로 그 모듈을 연다(평생운세 화면엔 장문 텍스트 없음).
+            "ganji": f["ganji"],
         })
 
     # section4~7: 삶의 4대 영역(재물/직업/가족/사회, 현재 대운 기준)
@@ -337,40 +341,6 @@ def analyze_lifelong_fortune(
     }, is_fallback
 
 
-CONTENT_TYPE_STAGE_DETAIL = "lifelong_stage_detail"
-
-
-def analyze_lifelong_stage_detail(
-    year: int, month: int, day: int, step: int,
-    hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
-) -> Tuple[dict, bool]:
-    """특정 대운(1~8번째)의 '상세 리포트'(전략/방해요소/전환점 등). 메인 평생운세 응답에는
-    포함되지 않고, 유저가 해당 시기를 클릭했을 때만 별도로 조회한다."""
-    saju = calculate_saju(year, month, day, hour, minute, gender=gender, is_lunar=is_lunar)
-    ilju = _ilju(saju)
-    day_master = saju.get("day_master", "")
-    day_branch = saju.get("day_branch", "")
-    month_ganji = saju.get("month_ganji", "")
-    daewoon = saju.get("daewoon") or {}
-    is_forward = daewoon.get("direction") == "순행"
-
-    step = max(1, min(8, int(step)))
-    facts = daewoon_step_facts(day_master, day_branch, month_ganji, is_forward, count=8)
-    fact = next((f for f in facts if f["step"] == step), facts[0])
-
-    entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
-    is_fallback = entry is None
-    detail = entry or _fallback_stage_detail(fact["sipsin_group"], step)
-
-    return {
-        "content_type": CONTENT_TYPE_STAGE_DETAIL,
-        "step": step,
-        "stage_label": STAGE_LABELS.get(step, ""),
-        "saju_info": person_summary(saju),
-        "data": {
-            "event_narrative": detail.get("event_narrative", ""),
-            "strategy": detail.get("strategy", ""),
-            "obstacle": detail.get("obstacle", ""),
-            "turning_point": detail.get("turning_point", ""),
-        },
-    }, is_fallback
+# analyze_lifelong_stage_detail() 는 제거했다 — 대운 카드 '자세히 보기'(전략/방해요소/
+# 전환점)를 domains/daewoon 모듈로 완전 이관(사용자 확인·승인). _fallback_stage_detail()
+# 은 domains/daewoon/service.py 가 재사용하므로 그대로 남겨둔다(단일 소스 유지).
