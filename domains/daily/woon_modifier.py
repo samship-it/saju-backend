@@ -478,13 +478,19 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         "money_delta": _domain_delta(layers, DOMAIN_GROUPS["money"]),
         "love_delta": _domain_delta(layers, DOMAIN_GROUPS["love"]),
         "work_study_delta": _domain_delta(layers, DOMAIN_GROUPS["work_study"]),
+        # 대운/세운 중심 "전체 흐름" 라벨/코멘트 — 며칠~몇 년 단위로 안 바뀔 수 있는 배경
+        # 정보라 headline(오늘 한 줄)이 아니라 여기(보조 설명 몫)에만 남겨둔다.
         "state_label": state["label"],
         "state_comment": state_comment,
-        # 대운/세운/일운/영역별 델타를 종합한 한줄평(headline) — 순수하게 "오늘 하루 한 줄
-        # 요약"만 한다(한 문장, 마침표 1개). 신살 경고는 여기 안 붙인다 - today_energy 몫.
-        "headline": _resolve_headline(trigger_group, bucket),
+        # 한줄평(headline) — "오늘의 운세"이므로 매일 바뀌는 일진(ilwoon)을 최우선 트리거로
+        # 쓴다. 대운/세운은 며칠~몇 년 단위로 고정돼 있어 이걸 트리거로 쓰면 여러 날 동안
+        # headline이 똑같이 나가는 문제가 있었다(사용자 실측 리포트: 2026-09-15~17 동일
+        # 문장). 대운/세운의 영향은 score_delta(점수)와 state_label/state_comment(보조
+        # 설명)에만 반영되고, headline 자체는 today_energy와 같은 신호(오늘 일진)를 쓰되
+        # 서로 다른 표(HEADLINE_TABLE vs TODAY_ENERGY_TABLE)라 문장은 겹치지 않는다.
+        "headline": _resolve_headline(today_group, today_bucket),
         # 오늘 일진(ilwoon) 하나만 놓고 본 한줄평 — "Today Energy Movement" 섹션 전용.
-        # headline은 대운/세운/일운 중 가장 강한 레이어를 쓰지만 이건 항상 오늘(ilwoon)만 본다.
+        # headline과 정확히 같은 (group,bucket) 신호를 쓰지만 표가 달라 문장은 다르다.
         "today_energy": today_energy,
         "trigger_layer": trigger_layer,
         # social_template.py 가 자체적으로 (그룹,버킷)을 재계산하지 않고 이 값을

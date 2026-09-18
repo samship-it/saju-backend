@@ -211,6 +211,38 @@ def test_headline_and_today_energy_differ_when_ilwoon_is_overall_trigger():
     assert mod["headline"] != mod["today_energy"]
 
 
+def test_headline_uses_ilwoon_signal_not_overall_trigger():
+    """headline은 '오늘의 운세'이므로 대운이 트리거로 뽑혀도(가중치가 커서 항상 이김)
+    오늘 일진(ilwoon) 신호를 써야 한다 — 안 그러면 대운/세운이 안 바뀌는 며칠 내내
+    headline이 고정되는 버그가 생긴다(사용자 실측 리포트로 발견)."""
+    from domains.daily.woon_modifier import HEADLINE_TABLE
+
+    mod = compute_woon_modifier(_saju("壬", "寅", daewoon="己丑", sewoon="", ilwoon="乙未"))
+    assert mod["trigger_layer"] == "daewoon"  # 트리거 자체는 여전히 대운(레이블/코멘트용)
+    ilwoon_facts = mod["layers"]["ilwoon"]
+    from domains.daily.woon_modifier import _resolve_bucket
+    expected_bucket = _resolve_bucket(ilwoon_facts["relation_bucket"], ilwoon_facts["layer_intensity"])
+    expected = HEADLINE_TABLE[ilwoon_facts["group_gan"]][expected_bucket]
+    assert mod["headline"] == expected
+
+
+def test_headline_varies_across_consecutive_days_for_real_birth():
+    """실측 리포트: 1983-05-14 14시 여성 기준 2026-09-15~17 headline이 3일 내내 동일한
+    문장("돈 씀씀이에 예민해지기 쉬운 날...")으로 나오던 버그의 재현 방지 테스트."""
+    import datetime
+    from core.saju_base import calculate_saju
+
+    headlines = []
+    for d in (15, 16, 17):
+        saju = calculate_saju(
+            1983, 5, 14, 14, 0, gender="female", is_lunar=False,
+            target_date=datetime.date(2026, 9, d),
+        )
+        mod = compute_woon_modifier(saju)
+        headlines.append(mod["headline"])
+    assert len(set(headlines)) == 3, headlines
+
+
 def test_today_energy_differs_between_people_with_different_yongsin():
     # 같은 오늘 일진(乙未)이라도 사람마다 용신/기신이 달라 today_energy가 달라야 한다.
     strength_a = {"verdict": "신약", "yongsin": ["금", "수"], "gisin": ["화", "토"], "heesin": []}
