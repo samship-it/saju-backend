@@ -67,7 +67,7 @@ def test_daily_fortune_structure():
     for k in ("overall_score", "money_score", "love_score", "work_study_score"):
         assert isinstance(d[k], int) and 0 <= d[k] <= 100
     assert set(d["summary"].keys()) == {
-        "overall", "money", "love_single", "love_couple", "work_study", "social",
+        "overall", "money", "love_single", "love_couple", "love", "work_study", "job_levelup", "social",
     }
     assert isinstance(d["summary"]["social"], str) and d["summary"]["social"]
     assert isinstance(d["headline"], str) and d["headline"]
@@ -77,7 +77,36 @@ def test_daily_fortune_structure():
     assert len(d["keywords"]) == 3
     assert isinstance(d["recommended_action"], str)
     assert d["score_emoji"] and re.match(r"^\d+-\d+$", d["score_band"])
+    # love_status/job_status 미지정 시 폴백: love는 기존 single+couple 병기, job_levelup은 work_study 그대로.
+    assert d["love_status"] is None and d["job_status"] is None
+    assert d["summary"]["love"] == d["summary"]["love_single"] + "\n\n" + d["summary"]["love_couple"]
+    assert d["summary"]["job_levelup"] == d["summary"]["work_study"]
     _no_forbidden(body)
+
+
+def test_daily_fortune_status_params_branch_love_and_job_text():
+    r = client.post("/api/v1/daily/fortune", headers=API_KEY, json={
+        "user_id": "t1", **BIRTH_A, "target_date": "2026-09-03",
+        "love_status": "married", "job_status": "student",
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["love_status"] == "married"
+    assert d["job_status"] == "student"
+    assert d["summary"]["love"] != d["summary"]["love_single"]
+    assert d["summary"]["love"] != d["summary"]["love_couple"]
+    assert d["summary"]["job_levelup"] != d["summary"]["work_study"]
+
+
+def test_daily_fortune_unknown_status_params_fall_back_safely():
+    r = client.post("/api/v1/daily/fortune", headers=API_KEY, json={
+        "user_id": "t1", **BIRTH_A, "target_date": "2026-09-03",
+        "love_status": "wat", "job_status": "wat",
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["love_status"] is None and d["job_status"] is None
+    assert d["summary"]["job_levelup"] == d["summary"]["work_study"]
 
 
 def test_daily_fortune_score_consistency():

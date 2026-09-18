@@ -166,10 +166,10 @@ def test_coerce_lifelong_base_strips_jargon_in_life_theme():
 
 
 _DOMAINS_COMPLETE = {
-    "wealth": {"style": "s", "management_tip": "t"},
-    "career": {"best_fit_work": "w", "success_environment": "e"},
+    "wealth": {"style": "s", "management_tip": "t", "money_timing": "m", "wealth_method": "wm"},
+    "career": {"best_fit_work": "w", "success_environment": "e", "career_direction": "d", "career_strength": "st"},
     "family": {"relation_characteristics": "r", "harmony_key": "h"},
-    "social": {"connection_style": "c", "network_strategy": "n"},
+    "social": {"connection_style": "c", "network_strategy": "n", "lucky_person_type": "l", "recommended_activity": "a"},
 }
 
 
@@ -181,7 +181,7 @@ def test_lifelong_domains_valid_rejects_mixed_up_field_names():
     """실측: lite 모델이 career 에 wealth 의 필드명(style/management_tip)을 섞어 쓰는 경우가
     10건 중 4건 나왔음 — 엄격 검증으로 걸러져야 한다."""
     bad = dict(_DOMAINS_COMPLETE)
-    bad["career"] = {"style": "s", "management_tip": "t"}  # wealth 필드명 오염
+    bad["career"] = dict(_DOMAINS_COMPLETE["wealth"])  # wealth 필드명 오염
     assert lifelong_domains_valid(bad) is False
 
 
@@ -273,6 +273,46 @@ def test_coerce_lifelong_stage_strips_jargon_in_place():
     assert "인성" not in out["turning_point"]
 
 
+# ------------------------------------------------------------------ 4대 영역 스키마 병합(_shape_domains)
+from domains.lifelong.service import DOMAIN_FIELDS, _FALLBACK_DOMAINS, _shape_domains  # noqa: E402
+
+
+def test_shape_domains_none_entry_uses_full_fallback():
+    shaped, used_fallback = _shape_domains(None)
+    assert used_fallback is True
+    assert shaped == _FALLBACK_DOMAINS
+
+
+def test_shape_domains_fills_only_missing_new_fields_per_domain():
+    """구버전 DB 엔트리(신규 필드 없이 기존 2필드만 있는 경우)를 넣으면, 기존 값은 그대로
+    쓰고 신규 필드만 폴백으로 채워야 한다(필드 단위 병합)."""
+    legacy_entry = {
+        "wealth": {"style": "실측 스타일", "management_tip": "실측 팁"},
+        "career": {"best_fit_work": "실측 적성", "success_environment": "실측 환경"},
+        "family": {"relation_characteristics": "실측 관계", "harmony_key": "실측 화목"},
+        "social": {"connection_style": "실측 방식", "network_strategy": "실측 전략"},
+    }
+    shaped, used_fallback = _shape_domains(legacy_entry)
+    assert used_fallback is True
+    assert shaped["wealth"]["style"] == "실측 스타일"
+    assert shaped["wealth"]["money_timing"] == _FALLBACK_DOMAINS["wealth"]["money_timing"]
+    assert shaped["career"]["career_strength"] == _FALLBACK_DOMAINS["career"]["career_strength"]
+    assert shaped["social"]["lucky_person_type"] == _FALLBACK_DOMAINS["social"]["lucky_person_type"]
+
+
+def test_shape_domains_full_entry_uses_no_fallback():
+    full_entry = {name: dict(fields_) for name, fields_ in _DOMAINS_COMPLETE.items()}
+    shaped, used_fallback = _shape_domains(full_entry)
+    assert used_fallback is False
+    assert shaped == full_entry
+
+
+def test_shape_domains_covers_every_domain_field():
+    shaped, _ = _shape_domains(None)
+    for domain, fields in DOMAIN_FIELDS.items():
+        assert set(shaped[domain].keys()) == set(fields)
+
+
 # ------------------------------------------------------------------ 조회 기반 서비스(라이브 API 호출 없음)
 from domains.lifelong.service import analyze_lifelong_fortune  # noqa: E402
 
@@ -301,7 +341,13 @@ def test_analyze_lifelong_fortune_returns_all_8_stages_with_current_flag(monkeyp
         assert s["keyword"] == "e"
         assert s["age_range"][1] == s["age_range"][0] + 9
 
-    assert data["data"]["life_domains"] == _DOMAINS_COMPLETE
+    # domains_db 에서 온 필드는 그대로, family 에는 spouse_outlook(실시간 조합)이 추가로 병합된다.
+    domains = data["data"]["life_domains"]
+    for domain, fields in _DOMAINS_COMPLETE.items():
+        for k, v in fields.items():
+            assert domains[domain][k] == v
+    assert domains["family"]["spouse_outlook"]
+    assert isinstance(domains["family"]["spouse_star_present"], bool)
 
 
 def test_analyze_lifelong_fortune_falls_back_when_lookup_misses(monkeypatch):

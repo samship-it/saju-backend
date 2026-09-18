@@ -3,13 +3,18 @@
 런타임 Gemini 호출 없음. 사전 생성된 정적 DB(`domains/daily/data/daily_db.json`)에서
 (내 일주 × 오늘 일진) 키로 즉시 조회한다. DB 생성은 `scripts/generate_content_db.py` 참고.
 조합이 DB 에 없으면 사주와 무관한 고정 폴백을 반환한다(is_fallback=True).
+
+애정/직업 상태 분기(love_status/job_status)는 domains/daily/status_variants.py 참고 —
+DB 축을 새로 늘리지 않고, 이미 계산돼 있는 trigger_bucket(woon_modifier)에 얹은 작은
+고정 표로 처리한다. 상태값이 없거나 모르는 값이면 기존 일반 텍스트로 폴백한다.
 """
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 from core.constants import score_to_emoji, score_to_band
 from shared.text_format import paragraphize
 from domains.daily.content_db import lookup
 from domains.daily.social_template import build_social_summary
+from domains.daily.status_variants import JOB_STATUSES, LOVE_STATUSES, resolve_job_levelup, resolve_married_love
 from domains.daily.woon_modifier import compute_woon_modifier
 
 CONTENT_TYPE = "daily_fortune"
@@ -121,12 +126,33 @@ def _apply_woon_modifier(entry: Dict[str, Any], modifier: Dict[str, Any]) -> Dic
     return out
 
 
-def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
+def _resolve_love_text(summ: Dict[str, str], love_status: Optional[str], trigger_bucket: Optional[str]) -> str:
+    """love_status 별 1:1 문구. 모르는 값/미지정이면 기존 방식(single+couple 병기)으로 폴백."""
+    single = summ.get("love_single", "")
+    couple = summ.get("love_couple", "")
+    if love_status == "solo":
+        return single
+    if love_status == "in_relationship":
+        return couple
+    if love_status == "married":
+        return resolve_married_love(trigger_bucket)
+    return "\n\n".join(t for t in (single, couple) if t)
+
+
+def generate_daily_fortune(
+    saju_data: Dict[str, Any],
+    love_status: Optional[str] = None,
+    job_status: Optional[str] = None,
+) -> Tuple[dict, bool]:
     """(결과 dict, is_fallback) 반환.
 
     (내 일주 × 오늘 일진) 조합으로 사전 생성 DB 에서 조회한다. Gemini 호출 없음.
     대운/세운/일운 보정은 core/daewoon·core/sipsin 순수 함수로 요청 시점에 계산해
     점수 가감치(-40~+40)와 짧은 상태 코멘트를 얹는다(daily_db.json 3,600건은 불변).
+
+    love_status/job_status(둘 다 선택, domains/daily/status_variants.py 참고)를 주면
+    summary.love/summary.job_levelup 을 그 상태에 맞춘 문구로 채운다. 안 주거나 모르는
+    값이면 기존 일반 텍스트(단/커플 병기, work_study)로 안전하게 폴백한다.
     """
     day_ganji = saju_data.get("day_ganji") or ""
     iljin_ganji = (saju_data.get("today_ganji") or {}).get("day") or ""
@@ -148,5 +174,17 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     # "Today Energy Movement" 섹션 전용 — 오늘 일진 지지가 이 사람 원국(용신/기신)에
     # 어떤 십신·관계인지를 반영한 한 줄(오늘/ilwoon 레이어만, headline과 다를 수 있음).
     shaped["today_energy"] = modifier["today_energy"]
+
+    # 상태 분기(love_status/job_status) — 기존 love_single/love_couple/work_study 필드는
+    # 그대로 두고, 상태에 맞춰 해석된 문구를 별도 필드로 추가한다(기존 클라이언트 호환 유지).
+    love_status = love_status if love_status in LOVE_STATUSES else None
+    job_status = job_status if job_status in JOB_STATUSES else None
+    shaped["love_status"] = love_status
+    shaped["job_status"] = job_status
+    shaped["summary"]["love"] = paragraphize(
+        _resolve_love_text(shaped["summary"], love_status, modifier["trigger_bucket"])
+    )
+    job_text = resolve_job_levelup(job_status, modifier["trigger_bucket"])
+    shaped["summary"]["job_levelup"] = paragraphize(job_text or shaped["summary"]["work_study"])
 
     return shaped, is_fallback

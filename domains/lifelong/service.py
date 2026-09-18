@@ -16,7 +16,10 @@ lifelong_domains / lifelong_stage 참고).
    character.base_nature 를 그대로 재사용(다시 만들지 않음 — layer 분리 검증 완료).
 2) domains_db: 삶의 4대 영역(재물/직업/가족/사회) — (일주, 현재 대운의 지배
    십신군, 대운 순번) = 60×5×8 = 2,400건. 재물↔재성/직업↔관성/가족↔인성/사회↔비겁
-   고정 앵커로 서로 겹치지 않게 한다.
+   고정 앵커로 서로 겹치지 않게 한다. wealth/career/social 은 각 4필드(DOMAIN_FIELDS
+   참고), family 는 2필드만 — '배우자 관계/결혼운'은 4주 전체로 정해지는 배우자성
+   유무가 필요해 일주 축만으론 못 만들므로 domains_db 밖(spouse_outlook.py)에서
+   실시간으로 조합해 family 에 병합한다.
 3) stage_db: 시기별 전환점(1~8번째 대운 전부) — (일주, 지배 십신군, 충형관계,
    순번) = 14,000건(수학적 전체 곱이 아니라 실제 달력에서 나오는 조합만 — daily 의
    "일주×일진" 과 같은 성격의 단순화).
@@ -33,6 +36,7 @@ from core.saju_base import calculate_saju
 from core.daewoon import daewoon_step_facts
 from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
 from domains.lifelong.landscape import build_landscape, build_tip
+from domains.lifelong.spouse_outlook import build_spouse_outlook
 from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
 
@@ -57,11 +61,18 @@ DOMAIN_ANCHOR: Dict[str, str] = {
     "family": "인성",
     "social": "비겁",
 }
-DOMAIN_FIELDS: Dict[str, Tuple[str, str]] = {
-    "wealth": ("style", "management_tip"),
-    "career": ("best_fit_work", "success_environment"),
+# 2단계(4대 영역 콘텐츠 풍성화)에서 wealth/career/social 에 필드 2개씩 추가(사용자 확인·승인).
+# family 는 그대로 2개 유지 — '배우자 관계/결혼운'은 4주 전체로 결정되는 배우자성 유무가
+# 필요해 일주 축만으로는 못 만들므로 domains_db 에 넣지 않고 spouse_outlook.py 에서 실시간
+# 조합한다(analyze_lifelong_fortune() 에서 life_domains["family"] 에 병합).
+# 새 필드는 아직 domains_db(2,400건, scripts/generate_content_db.py --domain lifelong_domains)
+# 재생성 전이라 실제 값은 없다 — _shape_domains() 가 _FALLBACK_DOMAINS 로 채워 넣고
+# is_fallback=True 로 표시한다(배치 재생성은 3단계 착수 전 별도 진행 예정).
+DOMAIN_FIELDS: Dict[str, Tuple[str, ...]] = {
+    "wealth": ("style", "management_tip", "money_timing", "wealth_method"),
+    "career": ("best_fit_work", "success_environment", "career_direction", "career_strength"),
     "family": ("relation_characteristics", "harmony_key"),
-    "social": ("connection_style", "network_strategy"),
+    "social": ("connection_style", "network_strategy", "lucky_person_type", "recommended_activity"),
 }
 
 # 대운 순번(1~8) → 참고 인생국면 라벨(Python 고정, AI 관여 없음). 사용자 확인·승인됨.
@@ -167,11 +178,48 @@ _FALLBACK_LIFE_THEME = "꾸준함으로 신뢰를 쌓아가는 인생"
 _FALLBACK_PERSONALITY = "안정적인 흐름 속에서 자기 페이스를 지키는 성향입니다."
 _FALLBACK_WEAKNESS = "한번 자리 잡은 방식을 바꾸는 데 시간이 걸려 변화의 타이밍을 놓치기 쉽습니다."
 _FALLBACK_DOMAINS = {
-    "wealth": {"style": "무리하지 않는 안정 지향형", "management_tip": "고정지출을 먼저 점검하세요."},
-    "career": {"best_fit_work": "꾸준함이 필요한 전문 분야", "success_environment": "신뢰를 기반으로 한 조직"},
+    "wealth": {
+        "style": "무리하지 않는 안정 지향형",
+        "management_tip": "고정지출을 먼저 점검하세요.",
+        "money_timing": "급하게 불리려 하기보다 꾸준히 모아가는 흐름에서 목돈이 만들어지는 편입니다.",
+        "wealth_method": "적금·연금처럼 원금이 지켜지는 안전한 수단으로 천천히 불려가는 방식이 잘 맞습니다.",
+    },
+    "career": {
+        "best_fit_work": "꾸준함이 필요한 전문 분야",
+        "success_environment": "신뢰를 기반으로 한 조직",
+        "career_direction": "한 우물을 깊게 파며 전문성을 쌓아가는 방향이 오래 지속하기 좋습니다.",
+        "career_strength": "맡은 일을 끝까지 책임지는 성실함이 가장 큰 무기입니다.",
+    },
     "family": {"relation_characteristics": "가족과의 유대를 중요하게 여기는 편", "harmony_key": "정기적인 대화 시간"},
-    "social": {"connection_style": "소수와 깊게 사귀는 편", "network_strategy": "기존 인연을 꾸준히 관리하기"},
+    "social": {
+        "connection_style": "소수와 깊게 사귀는 편",
+        "network_strategy": "기존 인연을 꾸준히 관리하기",
+        "lucky_person_type": "화려하지 않아도 묵묵히 신뢰를 지켜주는 사람이 귀인이 되어줍니다.",
+        "recommended_activity": "규칙적으로 만나는 소규모 스터디나 취미 모임이 운을 북돋아 줍니다.",
+    },
 }
+
+
+def _shape_domains(domains_entry: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], bool]:
+    """domains_db 엔트리(있으면)와 _FALLBACK_DOMAINS 를 DOMAIN_FIELDS 기준으로 필드 단위
+    병합한다. 새로 추가된 필드(money_timing 등)는 아직 실제 DB에 없으므로 개별 필드 단위로
+    폴백 채움이 발생하며, 하나라도 폴백을 썼으면 두 번째 반환값(used_fallback)이 True.
+    """
+    entry = domains_entry or {}
+    shaped: Dict[str, Any] = {}
+    used_fallback = domains_entry is None
+    for domain, fields in DOMAIN_FIELDS.items():
+        src = entry.get(domain) or {}
+        fallback = _FALLBACK_DOMAINS[domain]
+        merged: Dict[str, str] = {}
+        for f in fields:
+            v = src.get(f)
+            if not v:
+                used_fallback = True
+                v = fallback[f]
+            merged[f] = v
+        shaped[domain] = merged
+    return shaped, used_fallback
 
 
 def analyze_lifelong_fortune(
@@ -210,7 +258,7 @@ def analyze_lifelong_fortune(
     if character is None:
         is_fallback = True
 
-    # section2: 1~8번째 대운 전체
+    # section3: 평생 대운 흐름(1~8번째 전체)
     life_stages = []
     for f in facts:
         step = f["step"]
@@ -228,12 +276,17 @@ def analyze_lifelong_fortune(
             "keyword": entry.get("keyword", ""),
         })
 
-    # section3: 삶의 4대 영역(현재 대운 기준)
+    # section4~7: 삶의 4대 영역(재물/직업/가족/사회, 현재 대운 기준)
     current_fact = next((f for f in facts if f["step"] == current_step), facts[0])
     domains_entry = lookup_domains(ilju, current_fact["sipsin_group"], current_step)
-    if domains_entry is None:
+    life_domains, domains_used_fallback = _shape_domains(domains_entry)
+    if domains_used_fallback:
         is_fallback = True
-    life_domains = domains_entry or _FALLBACK_DOMAINS
+    # section7(family) 배우자 관계/결혼운 — 배우자성 유무는 4주 전체로 결정되는 실시간 사실이라
+    # domains_db(일주 축)에 넣지 않고 spouse_outlook.py 에서 조합해 family 에 병합한다.
+    spouse_outlook = build_spouse_outlook(saju)
+    life_domains["family"]["spouse_outlook"] = spouse_outlook["text"]
+    life_domains["family"]["spouse_star_present"] = spouse_outlook["spouse_star_present"]
 
     data = {
         # 섹션1: 사주적 풍경(AI/DB 없음 — day_master_elem·elem_power·yongsin 실시간 조합). 개운법(tip)은

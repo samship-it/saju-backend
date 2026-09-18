@@ -24,6 +24,9 @@ class DailyFortuneRequest(BaseModel):
     gender: Optional[str] = "female"
     is_lunar: Optional[bool] = False
     target_date: Optional[str] = None    # 미지정 시 오늘(KST)
+    love_status: Optional[str] = None    # 'solo' | 'in_relationship' | 'married' (미지정/모르는 값=폴백)
+    job_status: Optional[str] = None     # 'employee' | 'business_freelancer' | 'job_seeker' |
+                                          # 'student' | 'homemaker' | 'retired' (미지정/모르는 값=폴백)
 
 
 @router.post("/fortune", summary="오늘의 운세 (DAILY_FORTUNE)")
@@ -58,7 +61,9 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
         }
 
         # 사전 생성 정적 DB(daily_db.json)에서 (내 일주 × 오늘 일진) 키로 즉시 조회.
-        fortune_result, is_fallback = generate_daily_fortune(saju_data)
+        fortune_result, is_fallback = generate_daily_fortune(
+            saju_data, love_status=req.love_status, job_status=req.job_status,
+        )
 
         return {**base_response, "cached": not is_fallback, "is_fallback": is_fallback, "data": fortune_result}
 

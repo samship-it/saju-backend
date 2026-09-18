@@ -3955,10 +3955,14 @@ def lifelong_domains_batch_prompt(items: List[Tuple[str, str, str, int]]) -> str
   표현 절대 금지). 숫자를 말하지 않고 그 시기의 흐름으로만 풀어 씁니다.
 
 [작성 규칙 — 반드시 서로 다른 근거에서 출발, 내용 겹치면 안 됨]
-- wealth(재물운, 재성 기준): 돈 버는/관리하는 방식 + 현재 대운 영향
-- career(직업운, 관성 기준): 어떤 방식의 일이 잘 맞는지 + 현재 대운 영향
-- family(가족운, 인성 기준): 가족과의 관계 특징 + 현재 대운 영향
-- social(사회운, 비겁 기준): 사람들과 연결되는 방식 + 현재 대운 영향
+- wealth(재물운, 재성 기준): 돈 버는/관리하는 방식 + 현재 대운 영향 + 돈이 모이거나 터지는
+  시기 감각(이 대운 흐름에서의 재물 타이밍) + 이 사람에게 어울리는 구체적인 재물 취득 수단
+- career(직업운, 관성 기준): 어떤 방식의 일이 잘 맞는지 + 현재 대운 영향 + 오래 지속할 수 있는
+  직무/일의 방향성 + 이 사람의 직업적 강점 한 가지
+- family(가족운, 인성 기준): 가족과의 관계 특징 + 현재 대운 영향 (배우자/결혼운은 이 배치에
+  포함하지 않음 — 별도 로직에서 처리)
+- social(사회운, 비겁 기준): 사람들과 연결되는 방식 + 현재 대운 영향 + 이 사람과 시너지가 나는
+  귀인 유형 + 운을 높여주는 구체적인 추천 취미·소모임
 - 4개 영역이 같은 문장·소재를 재사용하면 안 됩니다. 각자의 앵커 기운에서만 출발하세요.
 - 두루뭉술한 문장 금지, 구체적인 행동/상황으로.
 - 위 '공통 사주 판세(융합 캐릭터)'와 모순되면 안 됩니다. 특히 career는 앵커 기운(관성)만 보고
@@ -3968,10 +3972,12 @@ def lifelong_domains_batch_prompt(items: List[Tuple[str, str, str, int]]) -> str
   획일적 직업 단정은 금지합니다.
 
 [출력 스키마 규칙 — 반드시 이 필드명만 사용, 다른 도메인의 필드명을 섞어 쓰지 말 것]
-- wealth: 정확히 style, management_tip 2개 키만
-- career: 정확히 best_fit_work, success_environment 2개 키만 (style/management_tip 금지)
-- family: 정확히 relation_characteristics, harmony_key 2개 키만 (style/management_tip 금지)
-- social: 정확히 connection_style, network_strategy 2개 키만 (style/management_tip 금지)
+- wealth: 정확히 style, management_tip, money_timing, wealth_method 4개 키만
+- career: 정확히 best_fit_work, success_environment, career_direction, career_strength 4개 키만
+  (style/management_tip 등 다른 도메인 필드명 금지)
+- family: 정확히 relation_characteristics, harmony_key 2개 키만 (다른 도메인 필드명 금지)
+- social: 정확히 connection_style, network_strategy, lucky_person_type, recommended_activity
+  4개 키만 (다른 도메인 필드명 금지)
 
 [생성할 조합 — 총 {len(items)}개]
 
@@ -3982,10 +3988,10 @@ def lifelong_domains_batch_prompt(items: List[Tuple[str, str, str, int]]) -> str
 
 {{
   "{keys[0]}": {{
-    "wealth": {{"style": "...", "management_tip": "..."}},
-    "career": {{"best_fit_work": "...", "success_environment": "..."}},
+    "wealth": {{"style": "...", "management_tip": "...", "money_timing": "...", "wealth_method": "..."}},
+    "career": {{"best_fit_work": "...", "success_environment": "...", "career_direction": "...", "career_strength": "..."}},
     "family": {{"relation_characteristics": "...", "harmony_key": "..."}},
-    "social": {{"connection_style": "...", "network_strategy": "..."}}
+    "social": {{"connection_style": "...", "network_strategy": "...", "lucky_person_type": "...", "recommended_activity": "..."}}
   }},
   "{keys[1] if len(keys) > 1 else '조합키2'}": {{ "...위와 완전히 동일한 구조..." }}
 }}"""
