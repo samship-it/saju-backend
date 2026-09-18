@@ -400,6 +400,18 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
     if sinsal["notes"]:
         state_comment = state_comment + " " + " ".join(sinsal["notes"])
 
+    # "오늘의 기운"(Today Energy Movement) 전용 — trigger_layer가 대운/세운이어도 이건
+    # 항상 ilwoon(오늘 일진) 레이어 하나만 본다. 새 계산 없이 위에서 이미 구한 layers["ilwoon"]
+    # (원국 대비 오늘 지지의 십신·용신희기·지지관계)을 그대로 재사용해 HEADLINE_TABLE에서 조회.
+    today_group = None
+    today_bucket = None
+    if "ilwoon" in layers:
+        f = layers["ilwoon"]
+        today_group = f["group_gan"]
+        today_bucket = _resolve_bucket(f["relation_bucket"], f["layer_intensity"])
+    ilwoon_sinsal_hits = [h for h in sinsal["hits"] if h["layer"] == "ilwoon"]
+    today_energy = _resolve_headline(today_group, today_bucket, ilwoon_sinsal_hits)
+
     return {
         "score_delta": score_delta,
         "money_delta": _domain_delta(layers, DOMAIN_GROUPS["money"]),
@@ -410,6 +422,9 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         # 대운/세운/일운/신살/영역별 델타를 전부 종합한 한줄평(headline). 라벨을 그대로
         # 복붙("오늘의 핵심 기운: {라벨}")하지 않고, HEADLINE_TABLE의 자연스러운 문장을 쓴다.
         "headline": _resolve_headline(trigger_group, bucket, sinsal["hits"]),
+        # 오늘 일진(ilwoon) 하나만 놓고 본 한줄평 — "Today Energy Movement" 섹션 전용.
+        # headline은 대운/세운/일운 중 가장 강한 레이어를 쓰지만 이건 항상 오늘(ilwoon)만 본다.
+        "today_energy": today_energy,
         "trigger_layer": trigger_layer,
         # social_template.py 가 자체적으로 (그룹,버킷)을 재계산하지 않고 이 값을
         # 그대로 받아쓴다 — woon_state와 summary.social이 항상 같은 방향을 보도록.

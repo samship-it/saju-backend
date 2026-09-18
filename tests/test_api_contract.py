@@ -71,6 +71,7 @@ def test_daily_fortune_structure():
     }
     assert isinstance(d["summary"]["social"], str) and d["summary"]["social"]
     assert isinstance(d["headline"], str) and d["headline"]
+    assert isinstance(d["today_energy"], str) and d["today_energy"]
     assert isinstance(d["woon_score_delta"], int) and -40 <= d["woon_score_delta"] <= 40
     assert isinstance(d["sinsal_hits"], list)
     assert len(d["keywords"]) == 3

@@ -178,6 +178,40 @@ def test_build_social_summary_is_pure_lookup_passthrough():
     assert build_social_summary("존재안함", "harmony") != ""  # 폴백 문구로 대체
 
 
+def test_today_energy_uses_ilwoon_layer_only_not_overall_trigger():
+    # 대운=강한 관성/harmony(가중치 커서 트리거로 뽑힘), 일운=약한 재성 조합.
+    # headline은 대운(트리거)을 따르지만 today_energy는 항상 ilwoon만 봐야 한다.
+    from domains.daily.woon_modifier import HEADLINE_TABLE
+
+    mod = compute_woon_modifier(_saju("壬", "寅", daewoon="己丑", sewoon="", ilwoon="乙未"))
+    assert mod["trigger_layer"] == "daewoon"
+    ilwoon_facts = mod["layers"]["ilwoon"]
+    from domains.daily.woon_modifier import _resolve_bucket
+    expected_bucket = _resolve_bucket(ilwoon_facts["relation_bucket"], ilwoon_facts["layer_intensity"])
+    expected = HEADLINE_TABLE[ilwoon_facts["group_gan"]][expected_bucket]
+    assert mod["today_energy"].startswith(expected)
+
+
+def test_today_energy_differs_between_people_with_different_yongsin():
+    # 같은 오늘 일진(乙未)이라도 사람마다 용신/기신이 달라 today_energy가 달라야 한다.
+    strength_a = {"verdict": "신약", "yongsin": ["금", "수"], "gisin": ["화", "토"], "heesin": []}
+    strength_b = {"verdict": "신강", "yongsin": ["화", "토"], "gisin": ["금", "수"], "heesin": []}
+    mod_a = compute_woon_modifier(_saju("壬", "寅", ilwoon="乙未", strength=strength_a))
+    mod_b = compute_woon_modifier(_saju("壬", "寅", ilwoon="乙未", strength=strength_b))
+    assert mod_a["today_energy"] != mod_b["today_energy"]
+
+
+def test_today_energy_only_appends_ilwoon_sinsal_not_daewoon_sinsal():
+    # 일지 子(申子辰국) 기준 巳=겁살(경고). 대운만 巳를 걸고 일운은 丑(반안살=경고 아님)로 둔다.
+    # -> sinsal_hits에 daewoon/겁살은 있어도 today_energy(ilwoon 전용)에는 안 붙어야 한다.
+    mod = compute_woon_modifier(_saju("戊", "子", daewoon="丁巳", sewoon="", ilwoon="己丑"))
+    daewoon_hits = [h for h in mod["sinsal_hits"] if h["layer"] == "daewoon"]
+    assert any(h["name"] == "겁살" for h in daewoon_hits)
+    ilwoon_hits = [h for h in mod["sinsal_hits"] if h["layer"] == "ilwoon"]
+    assert ilwoon_hits == []
+    assert "겁살" not in mod["today_energy"]
+
+
 def test_relation_bucket_mapping():
     assert _relation_bucket("육합(협력·인연)") == "harmony"
     assert _relation_bucket("충(충돌·이동)") == "conflict"

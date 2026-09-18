@@ -145,5 +145,8 @@ def generate_daily_fortune(saju_data: Dict[str, Any]) -> Tuple[dict, bool]:
     )
     shaped["woon_score_delta"] = modifier["score_delta"]
     shaped["sinsal_hits"] = [{"layer": h["layer"], "name": h["name"]} for h in modifier["sinsal_hits"]]
+    # "Today Energy Movement" 섹션 전용 — 오늘 일진 지지가 이 사람 원국(용신/기신)에
+    # 어떤 십신·관계인지를 반영한 한 줄(오늘/ilwoon 레이어만, headline과 다를 수 있음).
+    shaped["today_energy"] = modifier["today_energy"]
 
     return shaped, is_fallback
