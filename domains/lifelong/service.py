@@ -32,6 +32,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from core.saju_base import calculate_saju
 from core.daewoon import daewoon_step_facts
 from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stage, lookup_stage_detail
+from domains.lifelong.landscape import build_landscape
 from domains.personality.content_db import lookup as lookup_personality
 from shared.public import person_summary
 
@@ -232,6 +233,8 @@ def analyze_lifelong_fortune(
     life_domains = domains_entry or _FALLBACK_DOMAINS
 
     data = {
+        # 섹션1: 사주적 풍경(AI/DB 없음 — day_master_elem·elem_power·yongsin 실시간 조합)
+        "landscape": build_landscape(saju),
         "core_nature": {"personality": personality, "life_theme": life_theme},
         "life_domains": life_domains,
         "life_stages": life_stages,
