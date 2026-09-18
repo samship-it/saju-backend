@@ -341,9 +341,64 @@ def _resolve_headline(trigger_group: Optional[str], bucket: Optional[str]) -> st
     return HEADLINE_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
 
 
+# ── 8. "오늘의 기운" 전용 고정 문구 (5 십신군 × 6 관계버킷 = 30종, AI 미관여) ──
+# HEADLINE_TABLE과 절대 같은 표를 쓰지 않는다 — trigger_layer가 ilwoon으로 뽑히면
+# headline과 today_energy가 (group,bucket)까지 완전히 같아져 문장이 그대로 겹치는
+# 문제가 있었다(사용자 실측 리포트: 2026-09-19 등 특정 날짜에 두 필드가 동일 문장).
+# today_energy는 "내 일간이 오늘 일진과 만나 어떤 기운을 이루는지"를 항상 명시적으로
+# 서술해 headline(대운/세운/일운 종합 한 줄)과 문장 구조 자체가 달라지게 한다.
+TODAY_ENERGY_TABLE: Dict[str, Dict[str, str]] = {
+    "비겁": {
+        "harmony": "오늘 일진이 내 기운과 같은 결이라 자신감이 자연스럽게 차오릅니다.",
+        "conflict": "오늘 일진의 기운이 나와 팽팽히 맞서면서 괜한 경쟁심을 자극할 수 있어요.",
+        "adjustment": "오늘 일진이 내 기운과 부딪히며 역할이나 페이스를 다시 맞추라는 신호를 보냅니다.",
+        "friction": "오늘 일진의 기운이 내 기운과 살짝 어긋나며 타이밍이 미묘하게 안 맞을 수 있어요.",
+        "repeat": "오늘 일진이 평소 내 기운과 비슷하게 흘러가 낯설지 않은 하루가 됩니다.",
+        "neutral": "오늘 일진이 내 기운에 큰 자극을 주지 않아 잔잔하게 지나갑니다.",
+    },
+    "식상": {
+        "harmony": "오늘 일진이 내 표현력을 끌어올려 하고 싶은 말이 술술 풀립니다.",
+        "conflict": "오늘 일진의 기운이 나를 들뜨게 만들어 말이 앞서기 쉬운 하루예요.",
+        "adjustment": "오늘 일진이 내 표현 방식을 다시 점검해보라는 신호를 보냅니다.",
+        "friction": "오늘 일진의 기운이 내 뜻과 살짝 엇갈리며 전달이 미묘하게 어긋날 수 있어요.",
+        "repeat": "오늘 일진이 평소 표현 리듬과 비슷하게 흘러가 편안합니다.",
+        "neutral": "오늘 일진이 표현 쪽에는 큰 자극을 주지 않아 무난하게 지나갑니다.",
+    },
+    "재성": {
+        "harmony": "오늘 일진이 재물 기운을 북돋아 뜻밖의 기회가 들어올 수 있어요.",
+        "conflict": "오늘 일진의 기운이 내 재물운과 부딪히며 지출을 자극할 수 있어요.",
+        "adjustment": "오늘 일진이 돈의 흐름을 다시 점검해보라는 신호를 보냅니다.",
+        "friction": "오늘 일진의 기운이 재물 계산과 살짝 어긋나며 사소하게 안 맞을 수 있어요.",
+        "repeat": "오늘 일진이 평소 재물 흐름과 비슷하게 흘러가 안정적입니다.",
+        "neutral": "오늘 일진이 재물 쪽에는 큰 자극을 주지 않아 평이하게 지나갑니다.",
+    },
+    "관성": {
+        "harmony": "오늘 일진이 책임감 있는 내 모습을 부각시켜 좋은 평가로 이어질 수 있어요.",
+        "conflict": "오늘 일진의 기운이 윗사람·공적 관계와 부딪히며 마찰을 자극할 수 있어요.",
+        "adjustment": "오늘 일진이 맡은 역할과 책임을 다시 정리해보라는 신호를 보냅니다.",
+        "friction": "오늘 일진의 기운이 보고나 전달 타이밍과 살짝 어긋날 수 있어요.",
+        "repeat": "오늘 일진이 평소 자리와 역할을 그대로 지켜줘 안정적입니다.",
+        "neutral": "오늘 일진이 조직·공적 관계에는 큰 자극을 주지 않아 평온하게 지나갑니다.",
+    },
+    "인성": {
+        "harmony": "오늘 일진이 귀인이나 배움의 기운을 끌어당겨 도움을 받기 좋습니다.",
+        "conflict": "오늘 일진의 기운이 조언·잔소리를 부담스럽게 느끼도록 자극할 수 있어요.",
+        "adjustment": "오늘 일진이 도움을 주고받는 기대치를 다시 맞춰보라는 신호를 보냅니다.",
+        "friction": "오늘 일진의 기운이 조언을 주고받는 결과 살짝 어긋날 수 있어요.",
+        "repeat": "오늘 일진이 평소 의지하던 관계와 비슷하게 흘러가 편안합니다.",
+        "neutral": "오늘 일진이 조력·배움 쪽에는 큰 자극을 주지 않아 잔잔하게 지나갑니다.",
+    },
+}
+
+_DEFAULT_TODAY_ENERGY = "오늘 일진이 내 기운에 큰 자극을 주지 않아 무난하게 지나갑니다."
+
+
 def _resolve_today_energy(trigger_group: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]]) -> str:
-    """오늘(ilwoon) 한 줄 + (있으면) 가장 강한 신살 한 줄만 짧게 덧붙인다."""
-    base = _resolve_headline(trigger_group, bucket)
+    """내 일간이 오늘 일진과 만나 이루는 기운 한 줄 + (있으면) 가장 강한 신살 한 줄만 짧게
+    덧붙인다. HEADLINE_TABLE이 아니라 별도 TODAY_ENERGY_TABLE을 쓴다 — headline은 대운/
+    세운/일운 중 가장 강한 레이어의 종합 한 줄이라, trigger_layer가 ilwoon이면 같은
+    (group,bucket)을 가리켜 headline과 문장이 그대로 겹쳐버리기 때문(사용자 확인·수정)."""
+    base = TODAY_ENERGY_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_TODAY_ENERGY
     if sinsal_hits:
         worst = min(sinsal_hits, key=lambda h: h["penalty"])  # penalty가 가장 큰(가장 음수인) 것
         suffix = SINSAL_HEADLINE_SUFFIX.get(worst["name"])

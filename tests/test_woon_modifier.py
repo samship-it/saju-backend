@@ -181,15 +181,34 @@ def test_build_social_summary_is_pure_lookup_passthrough():
 def test_today_energy_uses_ilwoon_layer_only_not_overall_trigger():
     # 대운=강한 관성/harmony(가중치 커서 트리거로 뽑힘), 일운=약한 재성 조합.
     # headline은 대운(트리거)을 따르지만 today_energy는 항상 ilwoon만 봐야 한다.
-    from domains.daily.woon_modifier import HEADLINE_TABLE
+    from domains.daily.woon_modifier import TODAY_ENERGY_TABLE
 
     mod = compute_woon_modifier(_saju("壬", "寅", daewoon="己丑", sewoon="", ilwoon="乙未"))
     assert mod["trigger_layer"] == "daewoon"
     ilwoon_facts = mod["layers"]["ilwoon"]
     from domains.daily.woon_modifier import _resolve_bucket
     expected_bucket = _resolve_bucket(ilwoon_facts["relation_bucket"], ilwoon_facts["layer_intensity"])
-    expected = HEADLINE_TABLE[ilwoon_facts["group_gan"]][expected_bucket]
+    expected = TODAY_ENERGY_TABLE[ilwoon_facts["group_gan"]][expected_bucket]
     assert mod["today_energy"].startswith(expected)
+
+
+def test_today_energy_never_equals_headline_table_text():
+    """headline·today_energy는 별도 표(HEADLINE_TABLE vs TODAY_ENERGY_TABLE)를 써야 한다 —
+    trigger_layer가 ilwoon으로 뽑혀 (group,bucket)이 today_energy와 완전히 같아지는
+    경우에도 문장 자체는 겹치면 안 된다(사용자 실측 리포트로 발견된 회귀 방지)."""
+    from domains.daily.woon_modifier import HEADLINE_TABLE, TODAY_ENERGY_TABLE
+
+    for group in HEADLINE_TABLE:
+        for bucket in HEADLINE_TABLE[group]:
+            assert HEADLINE_TABLE[group][bucket] != TODAY_ENERGY_TABLE[group][bucket]
+
+
+def test_headline_and_today_energy_differ_when_ilwoon_is_overall_trigger():
+    # 대운/세운 없이 일운만 주면 trigger_layer가 무조건 ilwoon이 된다 — 이 경우가
+    # 사용자가 실제로 겪은 회귀(2026-09-19 등에서 headline == today_energy)다.
+    mod = compute_woon_modifier(_saju("壬", "寅", ilwoon="乙未"))
+    assert mod["trigger_layer"] == "ilwoon"
+    assert mod["headline"] != mod["today_energy"]
 
 
 def test_today_energy_differs_between_people_with_different_yongsin():
