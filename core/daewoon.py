@@ -306,9 +306,15 @@ def branch_relation(branch_a: str, branch_b: str) -> str:
 def daewoon_step_facts(
     day_master: str, day_branch: str, month_pillar: str, is_forward: bool, count: int = 8,
 ) -> List[Dict[str, Any]]:
-    """1~count 번째 대운 각각의 간지·십신·십신군·(일지 대비) 충형관계를 계산한다.
+    """1~count 번째 대운 각각의 간지·십신(10종)·십신군(5분류)·(일지 대비) 충형관계를 계산한다.
 
     Python 이 계산하는 '사실' — AI 프롬프트/정적 DB 콤보 키 생성 양쪽에서 쓴다.
+
+    sipsin/sipsin_group은 대운 "천간" 기준(기존과 동일, 상반기 성격). sipsin_ji/
+    sipsin_group_ji는 대운 "지지" 기준(신규, 하반기 성격) — domains/daewoon이 10년
+    안에서 상반기(천간)/하반기(지지)를 다른 십신으로 해석할 때 쓴다
+    (domains/daewoon/content.py build_half_flow 참고). 두 값은 서로 다른 오행
+    관계일 수 있다(간지가 항상 같은 십신군을 이루는 것은 아니므로).
     """
     from core.sipsin import calculate_sipsin, sipsin_group
 
@@ -316,11 +322,14 @@ def daewoon_step_facts(
     for i, ganji in enumerate(daewoon_ganji_sequence(month_pillar, is_forward, count), start=1):
         gan, ji = ganji[0], ganji[1] if len(ganji) > 1 else ""
         sipsin = calculate_sipsin(day_master, gan, is_gan=True)
+        sipsin_ji = calculate_sipsin(day_master, ji, is_gan=False) if ji else ""
         out.append({
             "step": i,
             "ganji": ganji,
             "sipsin": sipsin,
             "sipsin_group": sipsin_group(sipsin),
+            "sipsin_ji": sipsin_ji,
+            "sipsin_group_ji": sipsin_group(sipsin_ji) if sipsin_ji else "",
             "branch_relation": branch_relation(day_branch, ji),
         })
     return out

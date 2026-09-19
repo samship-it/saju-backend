@@ -1,30 +1,48 @@
-"""10년 대운(domains/daewoon) — 평생운세와 별개의 독립 모듈 검증."""
+"""10년 대운(domains/daewoon) — 평생운세와 별개의 독립 모듈 검증.
+
+십신 10종(비견/겁재/식신/상관/정재/편재/정관/편관/정인/편인) 정/편 분기가 핵심
+회귀 대상이다 — 과거에는 5분류(sipsin_group)만 써서 정인/편인처럼 같은 그룹 안의
+두 십신이 완전히 동일한 문구를 냈다. 이 파일의 다수 테스트는 "10종 모두 서로
+다른 결과"를 직접 검증한다.
+"""
+import json
+
 from domains.daewoon.content import (
     ALLOWANCE_ECONOMY,
+    ALLOWANCE_NUANCE,
     CAREER_ADULT,
     CAREER_YOUTH,
     DECADE_TASKS,
+    FAMILY_ENV_NUANCE,
     FAMILY_ENVIRONMENT,
     FAMILY_FLOW,
+    FAMILY_NUANCE,
     FORBIDDEN_ADULT_WORDS,
     FRIENDSHIP,
+    FRIENDSHIP_NUANCE,
     GROUPS,
+    HALF_FLOW_GAN,
+    HALF_FLOW_JI,
     KEYWORDS,
     RELATIONSHIP_FLOW,
+    RELATIONSHIP_NUANCE,
     RELATIONSHIP_STATUS_GUIDE,
+    SIPSIN_10,
     STUDY_GROWTH,
     TRANSITION_BACK_CAREER,
     TRANSITION_FRONT_STUDY,
     WEALTH_FLOW,
+    WEALTH_NUANCE,
     build_career_or_study,
     build_child_domains,
     build_family,
+    build_half_flow,
     build_relationship,
     build_transition_back_domains,
     build_transition_front_domains,
     build_wealth_flow,
 )
-from domains.daewoon.landscape import build_decade_landscape
+from domains.daewoon.landscape import SAJU_RELATION_TEMPLATE, build_decade_landscape
 from domains.daewoon.service import (
     ADULT_AGE_THRESHOLD,
     CHILD_AGE_THRESHOLD,
@@ -38,102 +56,139 @@ from domains.lifelong.service import DOMINANT_GROUPS
 
 
 def test_groups_match_lifelong_dominant_groups():
+    # GROUPS(5분류)는 lifelong 모듈과의 호환을 위해 유지 — daewoon 자체 콘텐츠는
+    # 이제 SIPSIN_10(10종)을 기준으로 매칭한다.
     assert set(GROUPS) == set(DOMINANT_GROUPS)
 
 
-# ------------------------------------------------------------------ content.py 표 완결성
-def test_keyword_and_decade_task_tables_cover_all_groups():
-    assert set(KEYWORDS.keys()) == set(GROUPS)
-    assert set(DECADE_TASKS.keys()) == set(GROUPS)
-    for g in GROUPS:
-        assert len(KEYWORDS[g]) == 3
-        assert len(DECADE_TASKS[g]) == 3
+def test_sipsin_10_has_exactly_ten_distinct_entries_with_five_pairs():
+    assert len(SIPSIN_10) == 10
+    assert len(set(SIPSIN_10)) == 10
+    pairs = [
+        ("비견", "겁재"), ("식신", "상관"), ("정재", "편재"), ("정관", "편관"), ("정인", "편인"),
+    ]
+    for a, b in pairs:
+        assert a in SIPSIN_10 and b in SIPSIN_10
 
 
-def test_career_adult_and_youth_tables_cover_all_groups_with_distinct_shape():
-    assert set(CAREER_ADULT.keys()) == set(GROUPS)
-    assert set(CAREER_YOUTH.keys()) == set(GROUPS)
-    for g in GROUPS:
-        assert set(CAREER_ADULT[g].keys()) == {"core_change", "how_it_shows", "cautions"}
-        assert set(CAREER_YOUTH[g].keys()) == {"growth_flow", "study_style", "cautions"}
+# ------------------------------------------------------------------ content.py 표 완결성(10종)
+def test_keyword_and_decade_task_tables_cover_all_ten_sipsin():
+    assert set(KEYWORDS.keys()) == set(SIPSIN_10)
+    assert set(DECADE_TASKS.keys()) == set(SIPSIN_10)
+    for s in SIPSIN_10:
+        assert len(KEYWORDS[s]) == 3
+        assert len(DECADE_TASKS[s]) == 3
 
 
-def test_wealth_and_family_tables_cover_all_groups():
+def test_career_adult_and_youth_tables_cover_all_ten_sipsin_with_distinct_shape():
+    assert set(CAREER_ADULT.keys()) == set(SIPSIN_10)
+    assert set(CAREER_YOUTH.keys()) == set(SIPSIN_10)
+    for s in SIPSIN_10:
+        assert set(CAREER_ADULT[s].keys()) == {"core_change", "how_it_shows", "cautions"}
+        assert set(CAREER_YOUTH[s].keys()) == {"growth_flow", "study_style", "cautions"}
+
+
+def test_wealth_relationship_family_base_tables_still_five_way_with_ten_way_nuance():
+    # 이 3개 도메인은 5분류 기본 문단 + 10종 뉘앙스 한 문장으로 차별화한다(전면
+    # 재작성 대신 오버레이 방식 — build_wealth_flow 등 참고).
     assert set(WEALTH_FLOW.keys()) == set(GROUPS)
-    assert set(FAMILY_FLOW.keys()) == set(GROUPS)
-    for g in GROUPS:
-        assert set(WEALTH_FLOW[g].keys()) == {"earning_style", "cash_flow", "management_caution"}
-        assert set(FAMILY_FLOW[g].keys()) == {"change_flow", "warning"}
-
-
-def test_relationship_flow_covers_all_groups_and_status_guide_has_three():
     assert set(RELATIONSHIP_FLOW.keys()) == set(GROUPS)
+    assert set(FAMILY_FLOW.keys()) == set(GROUPS)
+    assert set(WEALTH_NUANCE.keys()) == set(SIPSIN_10)
+    assert set(RELATIONSHIP_NUANCE.keys()) == set(SIPSIN_10)
+    assert set(FAMILY_NUANCE.keys()) == set(SIPSIN_10)
     assert set(RELATIONSHIP_STATUS_GUIDE.keys()) == {"single", "dating", "married"}
 
 
-# ------------------------------------------------------------------ content.py 빌더
+# ------------------------------------------------------------------ content.py 빌더(10종)
 def test_build_career_or_study_switches_shape_by_age_bracket():
-    adult = build_career_or_study("재성", is_adult=True)
-    youth = build_career_or_study("재성", is_adult=False)
+    adult = build_career_or_study("정재", is_adult=True)
+    youth = build_career_or_study("정재", is_adult=False)
     assert set(adult.keys()) == {"core_change", "how_it_shows", "cautions"}
     assert set(youth.keys()) == {"growth_flow", "study_style", "cautions"}
     assert adult != youth
 
 
+def test_build_career_or_study_distinguishes_jeong_and_pyeon_pairs():
+    # 사용자가 명시한 회귀 버그: 같은 그룹의 정/편이 동일한 결과를 내면 안 된다.
+    for jeong, pyeon in [
+        ("정재", "편재"), ("정관", "편관"), ("정인", "편인"),
+    ]:
+        assert build_career_or_study(jeong, is_adult=True) != build_career_or_study(pyeon, is_adult=True)
+        assert build_career_or_study(jeong, is_adult=False) != build_career_or_study(pyeon, is_adult=False)
+    # 비겁/식상은 정/편 이름 자체가 다른 규칙(비견/겁재, 식신/상관)이지만 같은 축이다.
+    assert build_career_or_study("비견", is_adult=True) != build_career_or_study("겁재", is_adult=True)
+    assert build_career_or_study("식신", is_adult=True) != build_career_or_study("상관", is_adult=True)
+
+
 def test_build_relationship_includes_guide_only_when_current_decade():
-    not_current = build_relationship("식상", "single", is_current=False)
+    not_current = build_relationship("식신", "single", is_current=False)
     assert not_current["guide_by_status"] is None
     assert not_current["flow"]
 
-    current_known = build_relationship("식상", "single", is_current=True)
+    current_known = build_relationship("식신", "single", is_current=True)
     assert current_known["guide_by_status"] == {"single": RELATIONSHIP_STATUS_GUIDE["single"]}
 
-    current_unknown = build_relationship("식상", None, is_current=True)
+    current_unknown = build_relationship("식신", None, is_current=True)
     assert current_unknown["guide_by_status"] == RELATIONSHIP_STATUS_GUIDE
 
 
 def test_build_wealth_flow_and_family_return_full_shape():
-    w = build_wealth_flow("관성")
+    w = build_wealth_flow("편관")
     assert set(w.keys()) == {"earning_style", "cash_flow", "management_caution"}
-    f = build_family("인성")
+    f = build_family("편인")
     assert set(f.keys()) == {"change_flow", "warning"}
 
 
-def test_child_domain_tables_cover_all_groups_with_expected_shape():
-    for table in (STUDY_GROWTH, ALLOWANCE_ECONOMY, FRIENDSHIP, FAMILY_ENVIRONMENT):
-        assert set(table.keys()) == set(GROUPS)
-    for g in GROUPS:
-        assert set(STUDY_GROWTH[g].keys()) == {"school_life", "exam_luck", "aptitude_path"}
-        assert set(ALLOWANCE_ECONOMY[g].keys()) == {"allowance_flow", "money_mindset", "spending_habit"}
-        assert set(FRIENDSHIP[g].keys()) == {"peer_relationship", "bond_with_others", "group_adaptation"}
-        assert set(FAMILY_ENVIRONMENT[g].keys()) == {
-            "parent_relationship", "home_support", "home_atmosphere",
-        }
+def test_build_wealth_relationship_family_distinguish_jeong_and_pyeon_pairs_via_nuance():
+    for jeong, pyeon in [("정재", "편재"), ("정관", "편관"), ("정인", "편인")]:
+        assert build_wealth_flow(jeong) != build_wealth_flow(pyeon)
+        assert build_relationship(jeong, None, False) != build_relationship(pyeon, None, False)
+        assert build_family(jeong) != build_family(pyeon)
 
 
-def test_build_child_domains_returns_all_four_areas_for_every_group():
-    for g in GROUPS:
-        child = build_child_domains(g)
+# ------------------------------------------------------------------ 20세 미만 4대 영역(10종)
+def test_child_domain_tables_cover_all_ten_sipsin_or_five_groups_as_designed():
+    # study_growth는 10종 전면 재작성, 나머지 3영역은 5분류 기본표 + 10종 뉘앙스.
+    assert set(STUDY_GROWTH.keys()) == set(SIPSIN_10)
+    assert set(ALLOWANCE_ECONOMY.keys()) == set(GROUPS)
+    assert set(FRIENDSHIP.keys()) == set(GROUPS)
+    assert set(FAMILY_ENVIRONMENT.keys()) == set(GROUPS)
+    assert set(ALLOWANCE_NUANCE.keys()) == set(SIPSIN_10)
+    assert set(FRIENDSHIP_NUANCE.keys()) == set(SIPSIN_10)
+    assert set(FAMILY_ENV_NUANCE.keys()) == set(SIPSIN_10)
+    for s in SIPSIN_10:
+        assert set(STUDY_GROWTH[s].keys()) == {"school_life", "exam_luck", "aptitude_path"}
+
+
+def test_build_child_domains_returns_all_four_areas_for_every_sipsin():
+    for s in SIPSIN_10:
+        child = build_child_domains(s)
         assert set(child.keys()) == {
             "study_growth", "allowance_economy", "friendship", "family_environment",
         }
 
 
+def test_build_child_domains_distinguishes_jeong_and_pyeon_pairs():
+    for jeong, pyeon in [("정재", "편재"), ("정관", "편관"), ("정인", "편인")]:
+        assert build_child_domains(jeong) != build_child_domains(pyeon)
+
+
 def test_child_domain_tables_never_contain_forbidden_adult_words():
-    assert FORBIDDEN_ADULT_WORDS  # 표가 비어있으면 이 검증 자체가 무의미해짐을 방지
-    for table in (STUDY_GROWTH, ALLOWANCE_ECONOMY, FRIENDSHIP, FAMILY_ENVIRONMENT):
-        for fields in table.values():
-            for text in fields.values():
-                for word in FORBIDDEN_ADULT_WORDS:
-                    assert word not in text
+    assert FORBIDDEN_ADULT_WORDS
+    for s in SIPSIN_10:
+        rendered = str(build_child_domains(s))
+        for word in FORBIDDEN_ADULT_WORDS:
+            assert word not in rendered
 
 
-def test_transition_content_tables_cover_all_groups_with_expected_shape():
-    assert set(TRANSITION_FRONT_STUDY.keys()) == set(GROUPS)
-    assert set(TRANSITION_BACK_CAREER.keys()) == set(GROUPS)
-    for g in GROUPS:
-        assert set(TRANSITION_FRONT_STUDY[g].keys()) == {"school_life", "exam_luck", "aptitude_path"}
-        assert set(TRANSITION_BACK_CAREER[g].keys()) == {"core_change", "how_it_shows", "cautions"}
+# ------------------------------------------------------------------ 과도기 대운 콘텐츠(10종)
+def test_transition_content_tables_cover_all_ten_sipsin_with_expected_shape():
+    assert set(TRANSITION_FRONT_STUDY.keys()) == set(SIPSIN_10)
+    assert set(TRANSITION_BACK_CAREER.keys()) == set(SIPSIN_10)
+    for s in SIPSIN_10:
+        assert set(TRANSITION_FRONT_STUDY[s].keys()) == {"school_life", "exam_luck", "aptitude_path"}
+        assert set(TRANSITION_BACK_CAREER[s].keys()) == {"core_change", "how_it_shows", "cautions"}
 
 
 def test_transition_front_study_never_contains_forbidden_adult_words():
@@ -144,60 +199,118 @@ def test_transition_front_study_never_contains_forbidden_adult_words():
 
 
 def test_build_transition_front_domains_keeps_child_shape_with_overridden_study():
-    for g in GROUPS:
-        domains = build_transition_front_domains(g)
+    for s in SIPSIN_10:
+        domains = build_transition_front_domains(s)
         assert set(domains.keys()) == {
             "study_growth", "allowance_economy", "friendship", "family_environment",
         }
-        assert domains["study_growth"] == {
-            field: text for field, text in TRANSITION_FRONT_STUDY.get(g, TRANSITION_FRONT_STUDY["비겁"]).items()
-        }
+        assert domains["study_growth"] == dict(TRANSITION_FRONT_STUDY[s])
 
 
 def test_build_transition_back_domains_keeps_adult_shape_with_overridden_career():
-    for g in GROUPS:
-        domains = build_transition_back_domains(g, None, False)
+    for s in SIPSIN_10:
+        domains = build_transition_back_domains(s, None, False)
         assert set(domains.keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
-        assert domains["career_or_study"] == dict(
-            TRANSITION_BACK_CAREER.get(g, TRANSITION_BACK_CAREER["비겁"])
-        )
+        assert domains["career_or_study"] == dict(TRANSITION_BACK_CAREER[s])
 
 
-def test_domain_content_reaches_five_sentences_per_domain_for_every_group():
-    for g in GROUPS:
-        career_adult = build_career_or_study(g, is_adult=True)
-        assert sum(v.count(".") for v in career_adult.values()) >= 5
-
-        career_youth = build_career_or_study(g, is_adult=False)
-        assert sum(v.count(".") for v in career_youth.values()) >= 5
-
-        wealth = build_wealth_flow(g)
-        assert sum(v.count(".") for v in wealth.values()) >= 5
-
-        assert RELATIONSHIP_FLOW[g].count(".") >= 5
-
-        family = build_family(g)
-        assert sum(v.count(".") for v in family.values()) >= 5
+def test_transition_front_and_back_distinguish_jeong_and_pyeon_pairs():
+    for jeong, pyeon in [("정재", "편재"), ("정관", "편관"), ("정인", "편인")]:
+        assert build_transition_front_domains(jeong) != build_transition_front_domains(pyeon)
+        assert build_transition_back_domains(jeong, None, False) != build_transition_back_domains(pyeon, None, False)
 
 
-# ------------------------------------------------------------------ landscape
+# ------------------------------------------------------------------ landscape(10종)
 def test_build_decade_landscape_reused_from_lifelong_tables():
     from domains.lifelong.landscape import ENV_IMAGE, SUBJECT_IMAGE
 
-    out = build_decade_landscape("수", "戊辰", "재성")
+    out = build_decade_landscape("수", "戊辰", "정재")
     assert out["scene"] == f"{ENV_IMAGE['토']} 아래 {SUBJECT_IMAGE['수']}"
 
 
-def test_build_decade_landscape_saju_relation_names_the_group_and_elements():
-    out = build_decade_landscape("수", "戊辰", "재성")
-    assert "재성운" in out["saju_relation"]
+def test_saju_relation_template_covers_all_ten_sipsin():
+    assert set(SAJU_RELATION_TEMPLATE.keys()) == set(SIPSIN_10)
+
+
+def test_build_decade_landscape_saju_relation_names_the_exact_sipsin():
+    out = build_decade_landscape("수", "戊辰", "정재")
+    assert "정재운" in out["saju_relation"]
     assert "토" in out["saju_relation"]
     assert "수" in out["saju_relation"]
 
 
-def test_build_decade_landscape_saju_relation_none_without_group():
+def test_build_decade_landscape_saju_relation_distinguishes_jeong_and_pyeon():
+    jeong = build_decade_landscape("수", "戊辰", "정인")
+    pyeon = build_decade_landscape("수", "戊辰", "편인")
+    assert jeong["saju_relation"] != pyeon["saju_relation"]
+    assert "정인운" in jeong["saju_relation"]
+    assert "편인운" in pyeon["saju_relation"]
+
+
+def test_build_decade_landscape_saju_relation_none_without_sipsin():
     out = build_decade_landscape("수", "戊辰")
     assert out["saju_relation"] is None
+
+
+# ------------------------------------------------------------------ 상반기(천간)/하반기(지지)
+def test_half_flow_tables_cover_all_ten_sipsin():
+    assert set(HALF_FLOW_GAN.keys()) == set(SIPSIN_10)
+    assert set(HALF_FLOW_JI.keys()) == set(SIPSIN_10)
+
+
+def test_build_half_flow_returns_first_and_second_half_shape():
+    out = build_half_flow("정재", "정인")
+    assert set(out.keys()) == {"first_half", "second_half"}
+    assert out["first_half"]["sipsin"] == "정재"
+    assert out["second_half"]["sipsin"] == "정인"
+    assert out["first_half"]["description"] != out["second_half"]["description"]
+
+
+def test_build_half_flow_handles_different_sipsin_for_gan_and_ji():
+    # 같은 대운이라도 천간·지지가 다른 십신일 수 있다 — 각 문구가 그 값을 정확히 반영.
+    out = build_half_flow("편관", "식신")
+    assert out["first_half"]["description"] == HALF_FLOW_GAN["편관"]
+    assert out["second_half"]["description"] == HALF_FLOW_JI["식신"]
+
+
+def test_build_half_flow_second_half_none_when_ji_missing():
+    out = build_half_flow("정재", "")
+    assert out["second_half"]["sipsin"] is None
+    assert out["second_half"]["description"] is None
+
+
+# ------------------------------------------------------------------ 십신 10종 전체 무결성(핵심 회귀)
+def _distinct_count(results):
+    return len({json.dumps(r, sort_keys=True, ensure_ascii=False) for r in results})
+
+
+def test_no_two_of_the_ten_sipsin_produce_identical_adult_domain_analysis():
+    results = []
+    for s in SIPSIN_10:
+        results.append({
+            "career_or_study": build_career_or_study(s, is_adult=True),
+            "wealth_flow": build_wealth_flow(s),
+            "relationship": build_relationship(s, None, False),
+            "family": build_family(s),
+        })
+    assert _distinct_count(results) == 10
+
+
+def test_no_two_of_the_ten_sipsin_produce_identical_child_domain_analysis():
+    results = [build_child_domains(s) for s in SIPSIN_10]
+    assert _distinct_count(results) == 10
+
+
+def test_no_two_of_the_ten_sipsin_produce_identical_transition_domain_analysis():
+    front = [build_transition_front_domains(s) for s in SIPSIN_10]
+    back = [build_transition_back_domains(s, None, False) for s in SIPSIN_10]
+    assert _distinct_count(front) == 10
+    assert _distinct_count(back) == 10
+
+
+def test_no_two_of_the_ten_sipsin_produce_identical_saju_relation():
+    results = [build_decade_landscape("목", "甲子", s)["saju_relation"] for s in SIPSIN_10]
+    assert len(set(results)) == 10
 
 
 # ------------------------------------------------------------------ 간지 라벨
@@ -360,8 +473,8 @@ def test_analyze_daewoon_period_has_full_schema():
     d = data["data"]
     assert set(d.keys()) == {
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
-        "domain_analysis", "timeline_phases", "decade_tasks", "step", "age_range",
-        "target_age", "target", "is_current_decade",
+        "domain_analysis", "half_flow", "timeline_phases", "decade_tasks", "step",
+        "age_range", "target_age", "target", "is_current_decade",
     }
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]
@@ -370,6 +483,7 @@ def test_analyze_daewoon_period_has_full_schema():
     assert len(d["keywords"]) == 3
     assert len(d["decade_tasks"]) == 3
     assert set(d["domain_analysis"].keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
+    assert set(d["half_flow"].keys()) == {"first_half", "second_half"}
 
 
 def test_analyze_daewoon_period_timeline_phases_has_all_eight_steps_with_ten_years_each():
@@ -405,3 +519,20 @@ def test_analyze_daewoon_period_deterministic_for_same_birth_and_age():
     a, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
     b, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
     assert a["data"] == b["data"]
+
+
+def test_analyze_daewoon_period_consecutive_steps_never_repeat_domain_analysis():
+    # "연속된 대운이 들어와도... 매번 완전히 다른 해석" 요구사항 — 실제 한 사람의
+    # 8단계 대운 전부(daewoon_num 기준으로 각 단계 한가운데 나이)를 조회해
+    # domain_analysis가 서로 겹치지 않는지 확인한다.
+    from core.saju_base import calculate_saju
+
+    saju = calculate_saju(1983, 5, 14, 14, 0, gender="female", is_lunar=False)
+    daewoon_num = saju["daewoon"]["daewoon_num"]
+
+    results = []
+    for step_index in range(8):
+        target_age = daewoon_num + step_index * 10 + 5  # 각 단계의 한가운데 나이
+        data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=target_age)
+        results.append(data["data"]["domain_analysis"])
+    assert _distinct_count(results) == len(results)

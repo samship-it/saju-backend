@@ -16,15 +16,23 @@ domain_analysis는 target_age로 두 번 분기한다:
   청소년)은 ADULT_AGE_THRESHOLD(25)로 별도 분기 — CHILD_AGE_THRESHOLD와는
   다른 축이다.
 
+content.py 콘텐츠 매칭은 이제 5분류(sipsin_group)가 아니라 십신 10종(sipsin,
+daewoon_step_facts가 이미 계산해 두는 값)을 기준으로 한다 — 정재/편재처럼 같은
+그룹 안의 두 십신이 동일한 문구를 내는 문제를 없애기 위함. lookup_stage_detail/
+_fallback_stage_detail(lifelong 모듈의 정적 DB 조회)만 예외적으로 계속
+sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있어 daewoon 쪽
+사정으로 건드리지 않는다.
+
 응답 스키마:
 - daewoon_header: "{간지 한글}({간지 한자}) 대운"
-- landscape_scene: domains/daewoon/landscape.py 재사용
-- summary: lookup_stage_detail().event_narrative 재사용(총평)
-- keywords: 지배 십신군 기준 고정 3개(content.py)
-- domain_analysis: 위 연령 분기 참고 — 전부 지배 십신군 기준 실시간 합성(content.py)
+- landscape_scene / saju_relation: domains/daewoon/landscape.py 재사용(십신 10종 기준)
+- summary: lookup_stage_detail().event_narrative 재사용(총평, 5분류 DB)
+- keywords / decade_tasks: 십신 10종 기준 고정 문구(content.py)
+- domain_analysis: 위 연령 분기 참고 — 십신 10종 기준 실시간 합성(content.py)
+- half_flow: 대운 10년 안의 상반기(천간)/하반기(지지) 역할 설명(content.py
+  build_half_flow) — 상반기·하반기가 서로 다른 십신일 수 있다.
 - timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
-- decade_tasks: 지배 십신군 기준 고정 3개(Action Plan)
 """
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -36,6 +44,7 @@ from domains.daewoon.content import (
     build_career_or_study,
     build_child_domains,
     build_family,
+    build_half_flow,
     build_relationship,
     build_transition_back_domains,
     build_transition_front_domains,
@@ -130,7 +139,8 @@ def analyze_daewoon_period(
     fact = next((f for f in facts if f["step"] == step), facts[0])
     start_age = daewoon_num + (step - 1) * 10
     is_selected_current = step == current_step
-    group = fact["sipsin_group"]
+    sipsin = fact["sipsin"]  # 천간 기준 십신 10종(상반기) — content.py 매칭 키
+    sipsin_ji = fact["sipsin_ji"]  # 지지 기준 십신 10종(하반기)
 
     is_fallback = False
     entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
@@ -141,30 +151,31 @@ def analyze_daewoon_period(
     is_transition_decade = TRANSITION_START_MIN <= start_age <= TRANSITION_START_MAX
     if is_transition_decade:
         if effective_age < TRANSITION_SPLIT_AGE:
-            domain_analysis = build_transition_front_domains(group)
+            domain_analysis = build_transition_front_domains(sipsin)
         else:
-            domain_analysis = build_transition_back_domains(group, love_status, is_selected_current)
+            domain_analysis = build_transition_back_domains(sipsin, love_status, is_selected_current)
     elif effective_age < CHILD_AGE_THRESHOLD:
-        domain_analysis = build_child_domains(group)
+        domain_analysis = build_child_domains(sipsin)
     else:
         domain_analysis = {
-            "career_or_study": build_career_or_study(group, is_adult=effective_age >= ADULT_AGE_THRESHOLD),
-            "wealth_flow": build_wealth_flow(group),
-            "relationship": build_relationship(group, love_status, is_selected_current),
-            "family": build_family(group),
+            "career_or_study": build_career_or_study(sipsin, is_adult=effective_age >= ADULT_AGE_THRESHOLD),
+            "wealth_flow": build_wealth_flow(sipsin),
+            "relationship": build_relationship(sipsin, love_status, is_selected_current),
+            "family": build_family(sipsin),
         }
 
-    landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], group)
+    landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], sipsin)
 
     data = {
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
         "landscape_scene": landscape["scene"],
         "saju_relation": landscape["saju_relation"],
         "summary": entry.get("event_narrative", ""),
-        "keywords": list(KEYWORDS.get(group, KEYWORDS["비겁"])),
+        "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
         "domain_analysis": domain_analysis,
+        "half_flow": build_half_flow(sipsin, sipsin_ji),
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
-        "decade_tasks": list(DECADE_TASKS.get(group, DECADE_TASKS["비겁"])),
+        "decade_tasks": list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"])),
         "step": step,
         "age_range": [start_age, start_age + 9],
         "target_age": effective_age,
