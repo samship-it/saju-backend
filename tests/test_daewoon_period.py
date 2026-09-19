@@ -1,21 +1,32 @@
 """10년 대운(domains/daewoon) — 평생운세와 별개의 독립 모듈 검증."""
 from domains.daewoon.content import (
+    ALLOWANCE_ECONOMY,
     CAREER_ADULT,
     CAREER_YOUTH,
     DECADE_TASKS,
+    FAMILY_ENVIRONMENT,
     FAMILY_FLOW,
+    FORBIDDEN_ADULT_WORDS,
+    FRIENDSHIP,
     GROUPS,
     KEYWORDS,
     RELATIONSHIP_FLOW,
     RELATIONSHIP_STATUS_GUIDE,
+    STUDY_GROWTH,
     WEALTH_FLOW,
     build_career_or_study,
+    build_child_domains,
     build_family,
     build_relationship,
     build_wealth_flow,
 )
 from domains.daewoon.landscape import build_decade_landscape
-from domains.daewoon.service import ADULT_AGE_THRESHOLD, _ganji_label, analyze_daewoon_period
+from domains.daewoon.service import (
+    ADULT_AGE_THRESHOLD,
+    CHILD_AGE_THRESHOLD,
+    _ganji_label,
+    analyze_daewoon_period,
+)
 from domains.lifelong.service import DOMINANT_GROUPS
 
 
@@ -79,6 +90,35 @@ def test_build_wealth_flow_and_family_return_full_shape():
     assert set(w.keys()) == {"earning_style", "cash_flow", "management_caution"}
     f = build_family("인성")
     assert set(f.keys()) == {"change_flow", "warning"}
+
+
+def test_child_domain_tables_cover_all_groups_with_expected_shape():
+    for table in (STUDY_GROWTH, ALLOWANCE_ECONOMY, FRIENDSHIP, FAMILY_ENVIRONMENT):
+        assert set(table.keys()) == set(GROUPS)
+    for g in GROUPS:
+        assert set(STUDY_GROWTH[g].keys()) == {"school_life", "exam_luck", "aptitude_path"}
+        assert set(ALLOWANCE_ECONOMY[g].keys()) == {"allowance_flow", "money_mindset", "spending_habit"}
+        assert set(FRIENDSHIP[g].keys()) == {"peer_relationship", "bond_with_others", "group_adaptation"}
+        assert set(FAMILY_ENVIRONMENT[g].keys()) == {
+            "parent_relationship", "home_support", "home_atmosphere",
+        }
+
+
+def test_build_child_domains_returns_all_four_areas_for_every_group():
+    for g in GROUPS:
+        child = build_child_domains(g)
+        assert set(child.keys()) == {
+            "study_growth", "allowance_economy", "friendship", "family_environment",
+        }
+
+
+def test_child_domain_tables_never_contain_forbidden_adult_words():
+    assert FORBIDDEN_ADULT_WORDS  # 표가 비어있으면 이 검증 자체가 무의미해짐을 방지
+    for table in (STUDY_GROWTH, ALLOWANCE_ECONOMY, FRIENDSHIP, FAMILY_ENVIRONMENT):
+        for fields in table.values():
+            for text in fields.values():
+                for word in FORBIDDEN_ADULT_WORDS:
+                    assert word not in text
 
 
 def test_domain_content_reaches_five_sentences_per_domain_for_every_group():
@@ -146,7 +186,11 @@ def test_analyze_daewoon_period_honors_explicit_target_age():
 
 
 def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
-    youth, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=10)
+    # target_age=10은 CHILD_AGE_THRESHOLD(20) 미만이라 domain_analysis 자체가
+    # career_or_study 없이 [학업/용돈/교우/부모]로 완전히 바뀐다 — 이 테스트는
+    # 성인기 안에서의 career_or_study 문구 분기(ADULT_AGE_THRESHOLD=25)만 보는
+    # 것이므로 20~24세 구간(youth 문구)과 25세 이상(adult 문구)을 비교한다.
+    youth, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=22)
     adult, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=40)
     assert set(youth["data"]["domain_analysis"]["career_or_study"].keys()) == {
         "growth_flow", "study_style", "cautions",
@@ -155,6 +199,36 @@ def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
         "core_change", "how_it_shows", "cautions",
     }
     assert ADULT_AGE_THRESHOLD == 25
+
+
+def test_analyze_daewoon_period_under_20_returns_the_four_child_domains():
+    assert CHILD_AGE_THRESHOLD == 20
+    for target_age in (0, 5, 10, 15, 19):
+        data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=target_age)
+        domains = data["data"]["domain_analysis"]
+        assert set(domains.keys()) == {
+            "study_growth", "allowance_economy", "friendship", "family_environment",
+        }
+        assert "career_or_study" not in domains
+        assert "wealth_flow" not in domains
+        assert "relationship" not in domains
+        assert "family" not in domains
+
+
+def test_analyze_daewoon_period_20_and_above_keeps_the_adult_domains():
+    for target_age in (20, 21, 24, 25, 40):
+        data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=target_age)
+        assert set(data["data"]["domain_analysis"].keys()) == {
+            "career_or_study", "wealth_flow", "relationship", "family",
+        }
+
+
+def test_analyze_daewoon_period_under_20_never_outputs_forbidden_adult_words():
+    for target_age in (0, 5, 10, 15, 19):
+        data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=target_age)
+        rendered = str(data["data"]["domain_analysis"])
+        for word in FORBIDDEN_ADULT_WORDS:
+            assert word not in rendered
 
 
 def test_analyze_daewoon_period_relationship_guide_present_only_for_current_decade():

@@ -5,16 +5,23 @@
 
 target_age(선택한 대운 나이)를 받아 그 나이를 포함하는 대운 단계를 찾는다
 (_step_covering_age, domains/lifelong/life_periods.py 재사용 — 미지정 시 현재
-실제 나이 기준). 연령대별 분기(청소년기 25세 미만 / 성인기 25세 이상)는
-target_age 자체를 기준으로 한다.
+실제 나이 기준).
+
+domain_analysis는 target_age로 두 번 분기한다:
+- 20세 미만(CHILD_AGE_THRESHOLD): [학업/성장]·[용돈/경제관념]·[교우/친구관계]·
+  [부모/가정환경] 4개 영역으로 완전히 대체(build_child_domains, content.py) —
+  "직장"·"자산 관리"·"배우자"·"연애" 등 성인 전용 단어는 절대 쓰지 않는다.
+- 20세 이상(성인기): 기존 career_or_study/wealth_flow/relationship/family
+  구조를 그대로 쓴다. 그 안에서 career_or_study 자체의 문구 모양(성인 vs
+  청소년)은 ADULT_AGE_THRESHOLD(25)로 별도 분기 — CHILD_AGE_THRESHOLD와는
+  다른 축이다.
 
 응답 스키마:
 - daewoon_header: "{간지 한글}({간지 한자}) 대운"
 - landscape_scene: domains/daewoon/landscape.py 재사용
 - summary: lookup_stage_detail().event_narrative 재사용(총평)
 - keywords: 지배 십신군 기준 고정 3개(content.py)
-- domain_analysis: career_or_study(연령대 분기)/wealth_flow/relationship/family
-  — 전부 지배 십신군 기준 실시간 합성(content.py)
+- domain_analysis: 위 연령 분기 참고 — 전부 지배 십신군 기준 실시간 합성(content.py)
 - timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
 - decade_tasks: 지배 십신군 기준 고정 3개(Action Plan)
@@ -27,6 +34,7 @@ from domains.daewoon.content import (
     DECADE_TASKS,
     KEYWORDS,
     build_career_or_study,
+    build_child_domains,
     build_family,
     build_relationship,
     build_wealth_flow,
@@ -39,6 +47,11 @@ from shared.public import person_summary
 
 CONTENT_TYPE = "daewoon_period"
 ADULT_AGE_THRESHOLD = 25
+# 20세 미만은 domain_analysis 구조 자체가 [학업/성장]·[용돈/경제관념]·[교우/친구관계]·
+# [부모/가정환경]으로 완전히 바뀐다(build_child_domains). 20세 이상(성인기)은 기존
+# career_or_study/wealth_flow/relationship/family 구조를 그대로 쓴다 — ADULT_AGE_THRESHOLD(25)는
+# 그 안에서 career_or_study 필드 모양(성인 vs 청소년 문구)만 결정할 뿐, 이 게이트와는 무관하다.
+CHILD_AGE_THRESHOLD = 20
 
 GAN_KO: Dict[str, str] = dict(zip(GAN_H, GAN_KO_LIST))
 JI_KO: Dict[str, str] = dict(zip(JI_H, JI_KO_LIST))
@@ -112,12 +125,15 @@ def analyze_daewoon_period(
         is_fallback = True
         entry = _fallback_stage_detail(fact["sipsin_group"], step)
 
-    domain_analysis = {
-        "career_or_study": build_career_or_study(group, is_adult=effective_age >= ADULT_AGE_THRESHOLD),
-        "wealth_flow": build_wealth_flow(group),
-        "relationship": build_relationship(group, love_status, is_selected_current),
-        "family": build_family(group),
-    }
+    if effective_age < CHILD_AGE_THRESHOLD:
+        domain_analysis = build_child_domains(group)
+    else:
+        domain_analysis = {
+            "career_or_study": build_career_or_study(group, is_adult=effective_age >= ADULT_AGE_THRESHOLD),
+            "wealth_flow": build_wealth_flow(group),
+            "relationship": build_relationship(group, love_status, is_selected_current),
+            "family": build_family(group),
+        }
 
     landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], group)
 
