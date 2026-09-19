@@ -119,9 +119,12 @@ def analyze_daewoon_period(
         "family": build_family(group),
     }
 
+    landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], group)
+
     data = {
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
-        "landscape_scene": build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"])["scene"],
+        "landscape_scene": landscape["scene"],
+        "saju_relation": landscape["saju_relation"],
         "summary": entry.get("event_narrative", ""),
         "keywords": list(KEYWORDS.get(group, KEYWORDS["비겁"])),
         "domain_analysis": domain_analysis,

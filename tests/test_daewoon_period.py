@@ -81,12 +81,41 @@ def test_build_wealth_flow_and_family_return_full_shape():
     assert set(f.keys()) == {"change_flow", "warning"}
 
 
+def test_domain_content_reaches_five_sentences_per_domain_for_every_group():
+    for g in GROUPS:
+        career_adult = build_career_or_study(g, is_adult=True)
+        assert sum(v.count(".") for v in career_adult.values()) >= 5
+
+        career_youth = build_career_or_study(g, is_adult=False)
+        assert sum(v.count(".") for v in career_youth.values()) >= 5
+
+        wealth = build_wealth_flow(g)
+        assert sum(v.count(".") for v in wealth.values()) >= 5
+
+        assert RELATIONSHIP_FLOW[g].count(".") >= 5
+
+        family = build_family(g)
+        assert sum(v.count(".") for v in family.values()) >= 5
+
+
 # ------------------------------------------------------------------ landscape
 def test_build_decade_landscape_reused_from_lifelong_tables():
     from domains.lifelong.landscape import ENV_IMAGE, SUBJECT_IMAGE
 
-    out = build_decade_landscape("수", "戊辰")
+    out = build_decade_landscape("수", "戊辰", "재성")
     assert out["scene"] == f"{ENV_IMAGE['토']} 아래 {SUBJECT_IMAGE['수']}"
+
+
+def test_build_decade_landscape_saju_relation_names_the_group_and_elements():
+    out = build_decade_landscape("수", "戊辰", "재성")
+    assert "재성운" in out["saju_relation"]
+    assert "토" in out["saju_relation"]
+    assert "수" in out["saju_relation"]
+
+
+def test_build_decade_landscape_saju_relation_none_without_group():
+    out = build_decade_landscape("수", "戊辰")
+    assert out["saju_relation"] is None
 
 
 # ------------------------------------------------------------------ 간지 라벨
@@ -158,12 +187,13 @@ def test_analyze_daewoon_period_has_full_schema():
     data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=32)
     d = data["data"]
     assert set(d.keys()) == {
-        "daewoon_header", "landscape_scene", "summary", "keywords", "domain_analysis",
-        "timeline_phases", "decade_tasks", "step", "age_range", "target_age", "target",
-        "is_current_decade",
+        "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
+        "domain_analysis", "timeline_phases", "decade_tasks", "step", "age_range",
+        "target_age", "target", "is_current_decade",
     }
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]
+    assert d["saju_relation"]
     assert d["summary"]
     assert len(d["keywords"]) == 3
     assert len(d["decade_tasks"]) == 3
