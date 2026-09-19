@@ -13,17 +13,24 @@ from domains.daewoon.content import (
     RELATIONSHIP_FLOW,
     RELATIONSHIP_STATUS_GUIDE,
     STUDY_GROWTH,
+    TRANSITION_BACK_CAREER,
+    TRANSITION_FRONT_STUDY,
     WEALTH_FLOW,
     build_career_or_study,
     build_child_domains,
     build_family,
     build_relationship,
+    build_transition_back_domains,
+    build_transition_front_domains,
     build_wealth_flow,
 )
 from domains.daewoon.landscape import build_decade_landscape
 from domains.daewoon.service import (
     ADULT_AGE_THRESHOLD,
     CHILD_AGE_THRESHOLD,
+    TRANSITION_SPLIT_AGE,
+    TRANSITION_START_MAX,
+    TRANSITION_START_MIN,
     _ganji_label,
     analyze_daewoon_period,
 )
@@ -121,6 +128,41 @@ def test_child_domain_tables_never_contain_forbidden_adult_words():
                     assert word not in text
 
 
+def test_transition_content_tables_cover_all_groups_with_expected_shape():
+    assert set(TRANSITION_FRONT_STUDY.keys()) == set(GROUPS)
+    assert set(TRANSITION_BACK_CAREER.keys()) == set(GROUPS)
+    for g in GROUPS:
+        assert set(TRANSITION_FRONT_STUDY[g].keys()) == {"school_life", "exam_luck", "aptitude_path"}
+        assert set(TRANSITION_BACK_CAREER[g].keys()) == {"core_change", "how_it_shows", "cautions"}
+
+
+def test_transition_front_study_never_contains_forbidden_adult_words():
+    for fields in TRANSITION_FRONT_STUDY.values():
+        for text in fields.values():
+            for word in FORBIDDEN_ADULT_WORDS:
+                assert word not in text
+
+
+def test_build_transition_front_domains_keeps_child_shape_with_overridden_study():
+    for g in GROUPS:
+        domains = build_transition_front_domains(g)
+        assert set(domains.keys()) == {
+            "study_growth", "allowance_economy", "friendship", "family_environment",
+        }
+        assert domains["study_growth"] == {
+            field: text for field, text in TRANSITION_FRONT_STUDY.get(g, TRANSITION_FRONT_STUDY["비겁"]).items()
+        }
+
+
+def test_build_transition_back_domains_keeps_adult_shape_with_overridden_career():
+    for g in GROUPS:
+        domains = build_transition_back_domains(g, None, False)
+        assert set(domains.keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
+        assert domains["career_or_study"] == dict(
+            TRANSITION_BACK_CAREER.get(g, TRANSITION_BACK_CAREER["비겁"])
+        )
+
+
 def test_domain_content_reaches_five_sentences_per_domain_for_every_group():
     for g in GROUPS:
         career_adult = build_career_or_study(g, is_adult=True)
@@ -190,8 +232,10 @@ def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
     # career_or_study 없이 [학업/용돈/교우/부모]로 완전히 바뀐다 — 이 테스트는
     # 성인기 안에서의 career_or_study 문구 분기(ADULT_AGE_THRESHOLD=25)만 보는
     # 것이므로 20~24세 구간(youth 문구)과 25세 이상(adult 문구)을 비교한다.
-    youth, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=22)
-    adult, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=40)
+    # 1990-01-06(male)은 daewoon_num=1이라 어느 단계도 과도기(대운 시작 15~19세)에
+    # 걸리지 않는다 — 일반 CHILD_AGE_THRESHOLD/ADULT_AGE_THRESHOLD 게이트만 순수하게 본다.
+    youth, _ = analyze_daewoon_period(1990, 1, 6, 10, 0, "male", False, target_age=22)
+    adult, _ = analyze_daewoon_period(1990, 1, 6, 10, 0, "male", False, target_age=40)
     assert set(youth["data"]["domain_analysis"]["career_or_study"].keys()) == {
         "growth_flow", "study_style", "cautions",
     }
@@ -216,8 +260,9 @@ def test_analyze_daewoon_period_under_20_returns_the_four_child_domains():
 
 
 def test_analyze_daewoon_period_20_and_above_keeps_the_adult_domains():
+    # 과도기 대운(15~19세 시작)과 섞이지 않도록 non-transitional 생일(1990-01-06)을 쓴다.
     for target_age in (20, 21, 24, 25, 40):
-        data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=target_age)
+        data, _ = analyze_daewoon_period(1990, 1, 6, 10, 0, "male", False, target_age=target_age)
         assert set(data["data"]["domain_analysis"].keys()) == {
             "career_or_study", "wealth_flow", "relationship", "family",
         }
@@ -229,6 +274,59 @@ def test_analyze_daewoon_period_under_20_never_outputs_forbidden_adult_words():
         rendered = str(data["data"]["domain_analysis"])
         for word in FORBIDDEN_ADULT_WORDS:
             assert word not in rendered
+
+
+# 1990-01-01(male, 양력)은 daewoon_num=8이라 2단계 대운이 18세에 시작해(18~27세)
+# TRANSITION_START_MIN~MAX(15~19) 안에 걸리는 실제 과도기 대운이다 — 별도 가정/모킹 없이
+# 실제 계산 결과로 17~27세 구간의 흐름 전환을 검증한다.
+_TRANSITION_BIRTH = (1990, 1, 1, 10, 0, "male", False)
+
+
+def test_transition_decade_start_age_is_within_the_transitional_window():
+    data, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=18)
+    assert data["data"]["age_range"] == [18, 27]
+    assert TRANSITION_START_MIN <= data["data"]["age_range"][0] <= TRANSITION_START_MAX
+
+
+def test_transition_decade_front_half_uses_the_child_shape_with_transition_study_content():
+    # 대운 시작(18세)부터 TRANSITION_SPLIT_AGE(22) 직전까지는 학업/입시 관점(전반부).
+    for target_age in range(18, TRANSITION_SPLIT_AGE):
+        data, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=target_age)
+        domains = data["data"]["domain_analysis"]
+        assert set(domains.keys()) == {
+            "study_growth", "allowance_economy", "friendship", "family_environment",
+        }
+        rendered = str(domains)
+        for word in FORBIDDEN_ADULT_WORDS:
+            assert word not in rendered
+
+
+def test_transition_decade_back_half_uses_the_adult_shape_with_first_job_content():
+    # TRANSITION_SPLIT_AGE(22)부터 대운 끝(27세)까지는 첫 직장/사회초년 관점(후반부) —
+    # "직장" 같은 단어는 여기서는 의도적으로 등장해야 한다(전반부와 달리 필터링하지 않음).
+    for target_age in range(TRANSITION_SPLIT_AGE, 28):
+        data, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=target_age)
+        domains = data["data"]["domain_analysis"]
+        assert set(domains.keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
+        assert "직장" in domains["career_or_study"]["core_change"] or "직장" in domains["career_or_study"]["how_it_shows"]
+
+
+def test_transition_decade_flow_changes_at_the_split_age():
+    before, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=TRANSITION_SPLIT_AGE - 1)
+    after, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=TRANSITION_SPLIT_AGE)
+    assert set(before["data"]["domain_analysis"].keys()) != set(after["data"]["domain_analysis"].keys())
+
+
+def test_non_transition_decades_are_unaffected_by_the_transition_logic():
+    # 같은 사람의 다른(과도기가 아닌) 대운 단계는 일반 CHILD_AGE_THRESHOLD/성인 로직 그대로.
+    child, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=8)  # 1단계(8~17세)는 과도기 아님
+    assert set(child["data"]["domain_analysis"].keys()) == {
+        "study_growth", "allowance_economy", "friendship", "family_environment",
+    }
+    adult, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=40)  # 4단계(38~47세)도 과도기 아님
+    assert set(adult["data"]["domain_analysis"].keys()) == {
+        "career_or_study", "wealth_flow", "relationship", "family",
+    }
 
 
 def test_analyze_daewoon_period_relationship_guide_present_only_for_current_decade():

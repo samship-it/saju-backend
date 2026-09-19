@@ -37,6 +37,8 @@ from domains.daewoon.content import (
     build_child_domains,
     build_family,
     build_relationship,
+    build_transition_back_domains,
+    build_transition_front_domains,
     build_wealth_flow,
 )
 from domains.daewoon.landscape import build_decade_landscape
@@ -52,6 +54,17 @@ ADULT_AGE_THRESHOLD = 25
 # career_or_study/wealth_flow/relationship/family 구조를 그대로 쓴다 — ADULT_AGE_THRESHOLD(25)는
 # 그 안에서 career_or_study 필드 모양(성인 vs 청소년 문구)만 결정할 뿐, 이 게이트와는 무관하다.
 CHILD_AGE_THRESHOLD = 20
+
+# 과도기 대운 — 대운 "시작 나이"가 이 범위(15~19세)에 걸리면, 그 10년 안에서
+# 성인 나이를 지나며 학생에서 사회초년생으로 바뀐다. 이 경우 CHILD_AGE_THRESHOLD(20)
+# 대신 TRANSITION_SPLIT_AGE(22)로 그 10년 내부를 다시 한번 나눠 전반부(학생기)/
+# 후반부(사회진출기)를 별도 문구로 해석한다(content.py의 build_transition_front_domains/
+# build_transition_back_domains). 대운 "시작"이 아니라 target_age가 15~19인 것과는
+# 다른 조건이다 — 예: 대운이 10세에 시작해 19세까지만 이어지는 경우는 과도기가 아니다
+# (그 10년 안에 성인 나이로의 전환이 없으므로).
+TRANSITION_START_MIN = 15
+TRANSITION_START_MAX = 19
+TRANSITION_SPLIT_AGE = 22
 
 GAN_KO: Dict[str, str] = dict(zip(GAN_H, GAN_KO_LIST))
 JI_KO: Dict[str, str] = dict(zip(JI_H, JI_KO_LIST))
@@ -125,7 +138,13 @@ def analyze_daewoon_period(
         is_fallback = True
         entry = _fallback_stage_detail(fact["sipsin_group"], step)
 
-    if effective_age < CHILD_AGE_THRESHOLD:
+    is_transition_decade = TRANSITION_START_MIN <= start_age <= TRANSITION_START_MAX
+    if is_transition_decade:
+        if effective_age < TRANSITION_SPLIT_AGE:
+            domain_analysis = build_transition_front_domains(group)
+        else:
+            domain_analysis = build_transition_back_domains(group, love_status, is_selected_current)
+    elif effective_age < CHILD_AGE_THRESHOLD:
         domain_analysis = build_child_domains(group)
     else:
         domain_analysis = {
