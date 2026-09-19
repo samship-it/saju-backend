@@ -4,13 +4,68 @@
 에서 일주(일간·일지) 간지로 성격(character)/적성(aptitude) 6필드를 조회한다.
 DB 생성은 `scripts/generate_content_db.py --domain personality` 참고.
 DB 에 없으면(일주 계산 실패 등) 고정 폴백을 반환한다(is_fallback=True).
+
+landscape(이 사주의 풍경적 해석)는 domains/lifelong/landscape.py의 build_landscape()를
+그대로 재사용한다 — day_master_elem·elem_power·yongsin은 도메인과 무관하게 매 요청마다
+동일하게 계산되는 값이라, 평생운세 전용 로직이 아니다.
+
+bridge(아래 성격/적성이 어떤 사주적 해석에서 나오는지 잇는 한 문장)는 일간 오행 5개 ×
+신강약 3개(=15개 조합)를 작은 블록 두 개(_ELEM_TRAIT/_VERDICT_TRAIT)의 조합으로 실시간
+합성한다 — 일주 60개 × character/aptitude 전용 문구를 새로 만들면 다시 대규모 콘텐츠
+생성이 필요해지므로, 이미 계산되는 진짜 명리 사실만으로 충분히 설명 가능한 축(오행·
+신강약)을 골랐다. 사주 전문 용어(오행 이름 자체는 이미 UI 전반에서 노출해 온 값이라
+제외하고, 신강/신약/중화 같은 원시 용어)는 문장에 그대로 쓰지 않는다.
 """
 from typing import Dict, Any, Tuple
 
 from core.saju_base import calculate_saju
+from domains.lifelong.landscape import build_landscape
 from shared.public import person_summary
 from shared.text_format import paragraphize
 from domains.personality.content_db import lookup
+
+# 일간 오행이 상징하는 기본 기질 — SUBJECT_IMAGE(형상)와는 다른 축으로, "움직이는 방향"을
+# 짧은 수식어로 표현한다.
+_ELEM_TRAIT: Dict[str, str] = {
+    "목": "곧게 뻗어나가려는",
+    "화": "활발하게 표현하려는",
+    "토": "묵직하게 자리를 지키려는",
+    "금": "분명하게 결단하려는",
+    "수": "유연하게 흐르려는",
+}
+_DEFAULT_ELEM_TRAIT = "고유한 방향으로 나아가려는"
+
+# strength.verdict(신강/신약/중화) → 원국 전체가 움직이는 태도.
+_VERDICT_TRAIT: Dict[str, str] = {
+    "신강": "스스로의 중심이 단단해 주도적으로 움직이는",
+    "신약": "주변의 흐름과 사람들에게 기대어 유연하게 움직이는",
+    "중화": "안팎의 균형을 잡으며 상황에 맞게 움직이는",
+}
+
+
+def _verdict_key(strength: Dict[str, Any]) -> str:
+    v = strength.get("verdict")
+    return v if v in _VERDICT_TRAIT else "중화"
+
+
+def _character_bridge(day_master_elem: str, verdict: str) -> str:
+    elem_trait = _ELEM_TRAIT.get(day_master_elem, _DEFAULT_ELEM_TRAIT)
+    verdict_trait = _VERDICT_TRAIT[verdict]
+    return (
+        f"일간이 {day_master_elem} 기운인 이 사람은 {elem_trait} 힘을 타고났고, "
+        f"원국 전체로 보면 {verdict_trait} 유형입니다. 이 두 가지가 만나 아래의 성격으로 "
+        "드러납니다."
+    )
+
+
+def _aptitude_bridge(day_master_elem: str, verdict: str) -> str:
+    elem_trait = _ELEM_TRAIT.get(day_master_elem, _DEFAULT_ELEM_TRAIT)
+    verdict_trait = _VERDICT_TRAIT[verdict]
+    return (
+        f"일간이 {day_master_elem} 기운인 이 사람은 {elem_trait} 힘을 타고났고, "
+        f"원국 전체로 보면 {verdict_trait} 유형입니다. 이 두 가지가 만나 아래의 적성으로 "
+        "이어집니다."
+    )
 
 
 def _saju(year, month, day, hour, minute, gender, is_lunar):
@@ -39,10 +94,13 @@ def _aptitude_fallback() -> dict:
     }
 
 
-def _shape(saju: Dict[str, Any], content_type: str, fallback: dict, raw: dict) -> dict:
+def _shape(saju: Dict[str, Any], content_type: str, fallback: dict, raw: dict, bridge: str) -> dict:
+    landscape = build_landscape(saju)
     return {
         "content_type": content_type,
         "saju_info": person_summary(saju),
+        "landscape": {"scene": landscape["scene"], "reason": landscape["reason"]},
+        "bridge": bridge,
         "report": {k: paragraphize(str(raw.get(k, ""))) for k in fallback},
     }
 
@@ -52,7 +110,8 @@ def analyze_character(year, month, day, hour=None, minute=0, gender="female", is
     entry = lookup(saju.get("day_ganji") or "", "character")
     is_fallback = entry is None
     raw = _character_fallback() if is_fallback else entry
-    return _shape(saju, "나의 성격", _character_fallback(), raw), is_fallback
+    bridge = _character_bridge(saju.get("day_master_elem") or "", _verdict_key(saju.get("strength") or {}))
+    return _shape(saju, "나의 성격", _character_fallback(), raw, bridge), is_fallback
 
 
 def analyze_aptitude(year, month, day, hour=None, minute=0, gender="female", is_lunar=False) -> Tuple[dict, bool]:
@@ -60,4 +119,5 @@ def analyze_aptitude(year, month, day, hour=None, minute=0, gender="female", is_
     entry = lookup(saju.get("day_ganji") or "", "aptitude")
     is_fallback = entry is None
     raw = _aptitude_fallback() if is_fallback else entry
-    return _shape(saju, "나의 적성", _aptitude_fallback(), raw), is_fallback
+    bridge = _aptitude_bridge(saju.get("day_master_elem") or "", _verdict_key(saju.get("strength") or {}))
+    return _shape(saju, "나의 적성", _aptitude_fallback(), raw, bridge), is_fallback
