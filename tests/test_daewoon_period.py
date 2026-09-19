@@ -1,36 +1,105 @@
-"""10년 대운(domains/daewoon) — 평생운세 '자세히 보기' 완전 이관분 검증."""
-from domains.daewoon.challenge import build_challenge, CHALLENGE
+"""10년 대운(domains/daewoon) — 평생운세와 별개의 독립 모듈 검증."""
+from domains.daewoon.content import (
+    CAREER_ADULT,
+    CAREER_YOUTH,
+    DECADE_TASKS,
+    FAMILY_FLOW,
+    GROUPS,
+    KEYWORDS,
+    RELATIONSHIP_FLOW,
+    RELATIONSHIP_STATUS_GUIDE,
+    WEALTH_FLOW,
+    build_career_or_study,
+    build_family,
+    build_relationship,
+    build_wealth_flow,
+)
 from domains.daewoon.landscape import build_decade_landscape
-from domains.daewoon.service import analyze_daewoon_period
+from domains.daewoon.service import ADULT_AGE_THRESHOLD, _ganji_label, analyze_daewoon_period
 from domains.lifelong.service import DOMINANT_GROUPS
 
 
-def test_challenge_table_covers_all_five_groups():
-    assert set(CHALLENGE.keys()) == set(DOMINANT_GROUPS)
-    for text in CHALLENGE.values():
-        assert isinstance(text, str) and text
+def test_groups_match_lifelong_dominant_groups():
+    assert set(GROUPS) == set(DOMINANT_GROUPS)
 
 
-def test_build_challenge_falls_back_for_unknown_group():
-    assert build_challenge("존재안함")  # 폴백 문구로 대체(빈 문자열 아님)
+# ------------------------------------------------------------------ content.py 표 완결성
+def test_keyword_and_decade_task_tables_cover_all_groups():
+    assert set(KEYWORDS.keys()) == set(GROUPS)
+    assert set(DECADE_TASKS.keys()) == set(GROUPS)
+    for g in GROUPS:
+        assert len(KEYWORDS[g]) == 3
+        assert len(DECADE_TASKS[g]) == 3
 
 
-def test_build_decade_landscape_combines_day_master_and_decade_ganji_elem():
-    out = build_decade_landscape("수", "戊辰")  # 戊 -> 토
+def test_career_adult_and_youth_tables_cover_all_groups_with_distinct_shape():
+    assert set(CAREER_ADULT.keys()) == set(GROUPS)
+    assert set(CAREER_YOUTH.keys()) == set(GROUPS)
+    for g in GROUPS:
+        assert set(CAREER_ADULT[g].keys()) == {"core_change", "how_it_shows", "cautions"}
+        assert set(CAREER_YOUTH[g].keys()) == {"growth_flow", "study_style", "cautions"}
+
+
+def test_wealth_and_family_tables_cover_all_groups():
+    assert set(WEALTH_FLOW.keys()) == set(GROUPS)
+    assert set(FAMILY_FLOW.keys()) == set(GROUPS)
+    for g in GROUPS:
+        assert set(WEALTH_FLOW[g].keys()) == {"earning_style", "cash_flow", "management_caution"}
+        assert set(FAMILY_FLOW[g].keys()) == {"change_flow", "warning"}
+
+
+def test_relationship_flow_covers_all_groups_and_status_guide_has_three():
+    assert set(RELATIONSHIP_FLOW.keys()) == set(GROUPS)
+    assert set(RELATIONSHIP_STATUS_GUIDE.keys()) == {"single", "dating", "married"}
+
+
+# ------------------------------------------------------------------ content.py 빌더
+def test_build_career_or_study_switches_shape_by_age_bracket():
+    adult = build_career_or_study("재성", is_adult=True)
+    youth = build_career_or_study("재성", is_adult=False)
+    assert set(adult.keys()) == {"core_change", "how_it_shows", "cautions"}
+    assert set(youth.keys()) == {"growth_flow", "study_style", "cautions"}
+    assert adult != youth
+
+
+def test_build_relationship_includes_guide_only_when_current_decade():
+    not_current = build_relationship("식상", "single", is_current=False)
+    assert not_current["guide_by_status"] is None
+    assert not_current["flow"]
+
+    current_known = build_relationship("식상", "single", is_current=True)
+    assert current_known["guide_by_status"] == {"single": RELATIONSHIP_STATUS_GUIDE["single"]}
+
+    current_unknown = build_relationship("식상", None, is_current=True)
+    assert current_unknown["guide_by_status"] == RELATIONSHIP_STATUS_GUIDE
+
+
+def test_build_wealth_flow_and_family_return_full_shape():
+    w = build_wealth_flow("관성")
+    assert set(w.keys()) == {"earning_style", "cash_flow", "management_caution"}
+    f = build_family("인성")
+    assert set(f.keys()) == {"change_flow", "warning"}
+
+
+# ------------------------------------------------------------------ landscape
+def test_build_decade_landscape_reused_from_lifelong_tables():
     from domains.lifelong.landscape import ENV_IMAGE, SUBJECT_IMAGE
 
+    out = build_decade_landscape("수", "戊辰")
     assert out["scene"] == f"{ENV_IMAGE['토']} 아래 {SUBJECT_IMAGE['수']}"
-    assert out["decade_elem"] == "토"
 
 
-def test_build_decade_landscape_handles_empty_ganji():
-    out = build_decade_landscape("수", "")
-    assert out["scene"]
-    assert out["decade_elem"] is None
+# ------------------------------------------------------------------ 간지 라벨
+def test_ganji_label_formats_hangul_and_hanja():
+    assert _ganji_label("戊辰") == "무진(戊辰)"
+
+
+def test_ganji_label_handles_empty_input():
+    assert _ganji_label("") == ""
 
 
 # ------------------------------------------------------------------ analyze_daewoon_period()
-def test_analyze_daewoon_period_defaults_to_current_step_when_omitted():
+def test_analyze_daewoon_period_defaults_to_current_age_when_target_age_omitted():
     from domains.lifelong.service import analyze_lifelong_fortune
 
     lifelong_data, _ = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
@@ -38,62 +107,99 @@ def test_analyze_daewoon_period_defaults_to_current_step_when_omitted():
 
     data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False)
     assert data["data"]["step"] == expected_step
+    assert data["data"]["is_current_decade"] is True
 
 
-def test_analyze_daewoon_period_honors_explicit_step():
-    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=3)
-    assert data["data"]["step"] == 3
+def test_analyze_daewoon_period_honors_explicit_target_age():
+    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=5)
+    assert data["data"]["step"] == 1
+    assert data["data"]["target_age"] == 5
 
 
-def test_analyze_daewoon_period_clamps_out_of_range_step():
-    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=99)
-    assert data["data"]["step"] == 8
-    data2, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=0)
-    assert data2["data"]["step"] == 1
+def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
+    youth, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=10)
+    adult, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=40)
+    assert set(youth["data"]["domain_analysis"]["career_or_study"].keys()) == {
+        "growth_flow", "study_style", "cautions",
+    }
+    assert set(adult["data"]["domain_analysis"]["career_or_study"].keys()) == {
+        "core_change", "how_it_shows", "cautions",
+    }
+    assert ADULT_AGE_THRESHOLD == 25
 
 
-def test_analyze_daewoon_period_has_all_five_schema_fields_plus_meta():
-    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=4)
+def test_analyze_daewoon_period_relationship_guide_present_only_for_current_decade():
+    from domains.lifelong.service import analyze_lifelong_fortune
+
+    lifelong_data, _ = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
+    current_step = lifelong_data["data"]["current_step"]
+    current_age = next(
+        s["age_range"][0] for s in lifelong_data["data"]["life_stages"] if s["step"] == current_step
+    )
+    other_age = current_age + 40 if current_age + 40 <= 90 else max(0, current_age - 40)
+
+    cur, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=current_age, love_status="dating")
+    assert cur["data"]["is_current_decade"] is True
+    assert cur["data"]["domain_analysis"]["relationship"]["guide_by_status"] is not None
+
+    other, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=other_age, love_status="dating")
+    if not other["data"]["is_current_decade"]:
+        assert other["data"]["domain_analysis"]["relationship"]["guide_by_status"] is None
+
+
+def test_analyze_daewoon_period_target_echoed_and_validated():
+    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target="partner")
+    assert data["data"]["target"] == "partner"
+    data2, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target="not-valid")
+    assert data2["data"]["target"] == "me"
+
+
+def test_analyze_daewoon_period_has_full_schema():
+    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=32)
     d = data["data"]
     assert set(d.keys()) == {
-        "decade_landscape", "overall_summary", "turning_points", "domain_flows",
-        "challenge", "step", "stage_label", "age_range", "ganji",
+        "daewoon_header", "landscape_scene", "summary", "keywords", "domain_analysis",
+        "timeline_phases", "decade_tasks", "step", "age_range", "target_age", "target",
+        "is_current_decade",
     }
-    assert d["overall_summary"]
-    assert d["challenge"]
-    assert d["ganji"] and len(d["ganji"]) == 2
+    assert d["daewoon_header"].endswith("대운")
+    assert d["landscape_scene"]
+    assert d["summary"]
+    assert len(d["keywords"]) == 3
+    assert len(d["decade_tasks"]) == 3
+    assert set(d["domain_analysis"].keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
 
 
-def test_analyze_daewoon_period_turning_points_has_three_labeled_stages():
-    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=2)
-    tp = data["data"]["turning_points"]
-    assert len(tp) == 3
-    labels = [t["label"] for t in tp]
-    assert labels == ["이 시기의 시작", "이 시기를 관통하는 핵심 전략", "경계할 점"]
-    for t in tp:
-        assert t["text"]
+def test_analyze_daewoon_period_timeline_phases_has_all_eight_steps_with_ten_years_each():
+    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=32)
+    phases = data["data"]["timeline_phases"]
+    assert len(phases) == 8
+    assert [p["step"] for p in phases] == list(range(1, 9))
+    for p in phases:
+        assert len(p["years"]) == 10
+        assert p["ganji_label"].endswith(f"({p['ganji']})")
+        for y in p["years"]:
+            assert isinstance(y["year"], int)
+            assert y["ganji"]
+    assert sum(1 for p in phases if p["is_selected"]) == 1
 
 
-def test_analyze_daewoon_period_domain_flows_matches_shape_domains_schema():
-    from domains.lifelong.service import DOMAIN_FIELDS
-
-    data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=5)
-    flows = data["data"]["domain_flows"]
-    assert set(flows.keys()) == set(DOMAIN_FIELDS.keys())
-    for domain, fields in DOMAIN_FIELDS.items():
-        assert set(flows[domain].keys()) == set(fields)
+def test_analyze_daewoon_period_works_for_ages_across_the_full_lifespan():
+    for target_age in (0, 5, 15, 25, 40, 60, 85, 100):
+        data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=target_age)
+        assert 1 <= data["data"]["step"] <= 8
+        assert data["data"]["summary"]
 
 
-def test_analyze_daewoon_period_works_for_every_step_1_to_8():
-    for step in range(1, 9):
-        data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, step=step)
-        assert data["data"]["step"] == step
-        assert data["data"]["overall_summary"]
-
-
-def test_analyze_daewoon_period_content_type_and_response_shape():
-    data, is_fallback = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, step=1)
+def test_analyze_daewoon_period_content_type_and_meta():
+    data, is_fallback = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False)
     assert data["content_type"] == "daewoon_period"
     assert isinstance(is_fallback, bool)
     assert data["saju_info"]
     assert data["day_master"]
+
+
+def test_analyze_daewoon_period_deterministic_for_same_birth_and_age():
+    a, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
+    b, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
+    assert a["data"] == b["data"]

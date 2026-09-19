@@ -16,18 +16,26 @@ class DaewoonPeriodRequest(BaseModel):
     minute: Optional[int] = Field(0, example=30)
     gender: Optional[str] = Field("female", example="female")
     is_lunar: Optional[bool] = Field(False)
-    step: Optional[int] = Field(
-        None, example=4, ge=1, le=8,
-        description="대운 순번(1~8). 미지정 시 현재 나이 기준 대운으로 계산.",
+    target: Optional[str] = Field(
+        "me", example="me", description="'me' | 'partner' — 어떤 birth 데이터인지 표시용(계산에는 안 씀).",
+    )
+    target_age: Optional[int] = Field(
+        None, example=32, ge=0, le=130,
+        description="확인하고 싶은 나이. 미지정 시 현재 실제 나이 기준 대운으로 계산.",
+    )
+    love_status: Optional[str] = Field(
+        None, example="dating",
+        description="'single'|'dating'|'married' — 현재 대운을 볼 때만 relationship.guide_by_status 에 반영.",
     )
 
 
-@router.post("/analysis", summary="10년 대운 (평생운세 '자세히 보기' 완전 이관, 유료)")
+@router.post("/analysis", summary="10년 대운 (평생운세와 별개의 독립 모듈, 유료)")
 def daewoon_period_endpoint(req: DaewoonPeriodRequest):
     try:
         data, is_fallback = analyze_daewoon_period(
             req.year, req.month, req.day, req.hour, req.minute or 0,
-            req.gender or "female", bool(req.is_lunar), step=req.step,
+            req.gender or "female", bool(req.is_lunar),
+            target_age=req.target_age, target=req.target or "me", love_status=req.love_status,
         )
         return {"status": "success", "is_fallback": is_fallback, **data}
     except Exception as e:
