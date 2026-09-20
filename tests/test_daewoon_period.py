@@ -21,13 +21,13 @@ from domains.daewoon.content import (
     FRIENDSHIP,
     FRIENDSHIP_NUANCE,
     GROUPS,
-    HALF_FLOW_GAN,
-    HALF_FLOW_JI,
     KEYWORDS,
     RELATIONSHIP_FLOW,
     RELATIONSHIP_NUANCE,
     RELATIONSHIP_STATUS_GUIDE,
     SIPSIN_10,
+    SIPSIN_THEME_CORE,
+    SIPSIN_THEME_LABEL,
     STUDY_GROWTH,
     TRANSITION_BACK_CAREER,
     TRANSITION_FRONT_STUDY,
@@ -35,8 +35,8 @@ from domains.daewoon.content import (
     WEALTH_NUANCE,
     build_career_or_study,
     build_child_domains,
+    build_decade_theme,
     build_family,
-    build_half_flow,
     build_relationship,
     build_transition_back_domains,
     build_transition_front_domains,
@@ -252,31 +252,43 @@ def test_build_decade_landscape_saju_relation_none_without_sipsin():
     assert out["saju_relation"] is None
 
 
-# ------------------------------------------------------------------ 상반기(천간)/하반기(지지)
-def test_half_flow_tables_cover_all_ten_sipsin():
-    assert set(HALF_FLOW_GAN.keys()) == set(SIPSIN_10)
-    assert set(HALF_FLOW_JI.keys()) == set(SIPSIN_10)
+# ------------------------------------------------------------------ 10년의 풍경 하단 — 화두(decade_theme)
+def test_sipsin_theme_tables_cover_all_ten_sipsin():
+    assert set(SIPSIN_THEME_LABEL.keys()) == set(SIPSIN_10)
+    assert set(SIPSIN_THEME_CORE.keys()) == set(SIPSIN_10)
 
 
-def test_build_half_flow_returns_first_and_second_half_shape():
-    out = build_half_flow("정재", "정인")
-    assert set(out.keys()) == {"first_half", "second_half"}
-    assert out["first_half"]["sipsin"] == "정재"
-    assert out["second_half"]["sipsin"] == "정인"
-    assert out["first_half"]["description"] != out["second_half"]["description"]
+def test_build_decade_theme_returns_label_and_sentence_shape():
+    out = build_decade_theme("정인")
+    assert set(out.keys()) == {"label", "sentence"}
+    assert out["label"] == SIPSIN_THEME_LABEL["정인"]
+    # label은 문장 안에서 **label** 마크다운 볼드로 감싸져 있다 — 프론트가 이미 summary에
+    # 쓰는 components/Markdown.tsx(** → <strong>)로 그대로 렌더링한다.
+    assert f"**{out['label']}**" in out["sentence"]
+    assert out["sentence"].startswith("이번 10년은")
+    assert "재정비하고 정돈하는" in out["sentence"]
 
 
-def test_build_half_flow_handles_different_sipsin_for_gan_and_ji():
-    # 같은 대운이라도 천간·지지가 다른 십신일 수 있다 — 각 문구가 그 값을 정확히 반영.
-    out = build_half_flow("편관", "식신")
-    assert out["first_half"]["description"] == HALF_FLOW_GAN["편관"]
-    assert out["second_half"]["description"] == HALF_FLOW_JI["식신"]
+def test_build_decade_theme_none_when_sipsin_missing():
+    assert build_decade_theme(None) is None
+    assert build_decade_theme("") is None
+    assert build_decade_theme("존재하지않는십신") is None
 
 
-def test_build_half_flow_second_half_none_when_ji_missing():
-    out = build_half_flow("정재", "")
-    assert out["second_half"]["sipsin"] is None
-    assert out["second_half"]["description"] is None
+def test_build_decade_theme_all_ten_sipsin_produce_distinct_sentences():
+    # 정재/편재처럼 같은 5분류 안에서도 정/편이 완전히 다른 문장을 내야 한다(핵심 회귀).
+    sentences = {build_decade_theme(s)["sentence"] for s in SIPSIN_10}
+    assert len(sentences) == len(SIPSIN_10)
+
+
+def test_sipsin_theme_core_all_end_with_geot_so_particle_matches():
+    # build_decade_theme()가 "{core}을 중심으로"로 조사를 "을"로 고정하므로, core는
+    # 전부 받침 있는 "것"으로 끝나야 한다 — 안 그러면 "것를"처럼 조사가 깨진다
+    # (비견/상관이 "관계"/"자기표현"으로 끝나 실제로 깨졌던 회귀 버그).
+    for s in SIPSIN_10:
+        assert SIPSIN_THEME_CORE[s].endswith("것"), SIPSIN_THEME_CORE[s]
+        assert "을 중심으로" in build_decade_theme(s)["sentence"]
+        assert "를 중심으로" not in build_decade_theme(s)["sentence"]
 
 
 # ------------------------------------------------------------------ 십신 10종 전체 무결성(핵심 회귀)
@@ -473,7 +485,7 @@ def test_analyze_daewoon_period_has_full_schema():
     d = data["data"]
     assert set(d.keys()) == {
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
-        "domain_analysis", "half_flow", "timeline_phases", "decade_tasks", "step",
+        "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
         "age_range", "target_age", "target", "is_current_decade",
     }
     assert d["daewoon_header"].endswith("대운")
@@ -483,7 +495,7 @@ def test_analyze_daewoon_period_has_full_schema():
     assert len(d["keywords"]) == 3
     assert len(d["decade_tasks"]) == 3
     assert set(d["domain_analysis"].keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
-    assert set(d["half_flow"].keys()) == {"first_half", "second_half"}
+    assert set(d["decade_theme"].keys()) == {"label", "sentence"}
 
 
 def test_analyze_daewoon_period_timeline_phases_has_all_eight_steps_with_ten_years_each():

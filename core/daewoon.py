@@ -310,11 +310,10 @@ def daewoon_step_facts(
 
     Python 이 계산하는 '사실' — AI 프롬프트/정적 DB 콤보 키 생성 양쪽에서 쓴다.
 
-    sipsin/sipsin_group은 대운 "천간" 기준(기존과 동일, 상반기 성격). sipsin_ji/
-    sipsin_group_ji는 대운 "지지" 기준(신규, 하반기 성격) — domains/daewoon이 10년
-    안에서 상반기(천간)/하반기(지지)를 다른 십신으로 해석할 때 쓴다
-    (domains/daewoon/content.py build_half_flow 참고). 두 값은 서로 다른 오행
-    관계일 수 있다(간지가 항상 같은 십신군을 이루는 것은 아니므로).
+    sipsin/sipsin_group은 대운 "천간" 기준. sipsin_ji/sipsin_group_ji는 대운 "지지"
+    기준으로 참고용 계산만 해 둔다(현재 domains/daewoon은 천간 기준 sipsin만 쓴다).
+    두 값은 서로 다른 오행 관계일 수 있다(간지가 항상 같은 십신군을 이루는 것은
+    아니므로).
     """
     from core.sipsin import calculate_sipsin, sipsin_group
 

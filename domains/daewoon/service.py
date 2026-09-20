@@ -29,8 +29,8 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
 - summary: lookup_stage_detail().event_narrative 재사용(총평, 5분류 DB)
 - keywords / decade_tasks: 십신 10종 기준 고정 문구(content.py)
 - domain_analysis: 위 연령 분기 참고 — 십신 10종 기준 실시간 합성(content.py)
-- half_flow: 대운 10년 안의 상반기(천간)/하반기(지지) 역할 설명(content.py
-  build_half_flow) — 상반기·하반기가 서로 다른 십신일 수 있다.
+- decade_theme: "이 10년의 풍경" 섹션 바로 하단에 붙는 화두 한 문단(content.py
+  build_decade_theme) — 십신 10종(정/편) 각각 다른 label·문장을 쓴다.
 - timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
 """
@@ -43,8 +43,8 @@ from domains.daewoon.content import (
     KEYWORDS,
     build_career_or_study,
     build_child_domains,
+    build_decade_theme,
     build_family,
-    build_half_flow,
     build_relationship,
     build_transition_back_domains,
     build_transition_front_domains,
@@ -139,8 +139,7 @@ def analyze_daewoon_period(
     fact = next((f for f in facts if f["step"] == step), facts[0])
     start_age = daewoon_num + (step - 1) * 10
     is_selected_current = step == current_step
-    sipsin = fact["sipsin"]  # 천간 기준 십신 10종(상반기) — content.py 매칭 키
-    sipsin_ji = fact["sipsin_ji"]  # 지지 기준 십신 10종(하반기)
+    sipsin = fact["sipsin"]  # 천간 기준 십신 10종 — content.py 매칭 키
 
     is_fallback = False
     entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
@@ -173,7 +172,7 @@ def analyze_daewoon_period(
         "summary": entry.get("event_narrative", ""),
         "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
         "domain_analysis": domain_analysis,
-        "half_flow": build_half_flow(sipsin, sipsin_ji),
+        "decade_theme": build_decade_theme(sipsin),
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
         "decade_tasks": list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"])),
         "step": step,
