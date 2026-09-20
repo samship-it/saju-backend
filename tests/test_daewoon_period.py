@@ -26,13 +26,17 @@ from domains.daewoon.content import (
     RELATIONSHIP_NUANCE,
     RELATIONSHIP_STATUS_GUIDE,
     SIPSIN_10,
-    SIPSIN_THEME_CORE,
-    SIPSIN_THEME_LABEL,
+    SIPSIN_CHANGE_AREA,
+    SIPSIN_HANJA,
+    SIPSIN_KEYWORDS,
+    SIPSIN_YINYANG_PAIR,
     STUDY_GROWTH,
     TRANSITION_BACK_CAREER,
     TRANSITION_FRONT_STUDY,
     WEALTH_FLOW,
     WEALTH_NUANCE,
+    _has_batchim,
+    _josa,
     build_career_or_study,
     build_child_domains,
     build_decade_theme,
@@ -252,21 +256,40 @@ def test_build_decade_landscape_saju_relation_none_without_sipsin():
     assert out["saju_relation"] is None
 
 
-# ------------------------------------------------------------------ 10년의 풍경 하단 — 화두(decade_theme)
+# ------------------------------------------------------------------ 10년의 풍경 하단 2/3단계 — 화두(decade_theme)
 def test_sipsin_theme_tables_cover_all_ten_sipsin():
-    assert set(SIPSIN_THEME_LABEL.keys()) == set(SIPSIN_10)
-    assert set(SIPSIN_THEME_CORE.keys()) == set(SIPSIN_10)
+    assert set(SIPSIN_KEYWORDS.keys()) == set(SIPSIN_10)
+    assert set(SIPSIN_CHANGE_AREA.keys()) == set(SIPSIN_10)
+    assert set(SIPSIN_HANJA.keys()) == set(SIPSIN_10)
 
 
-def test_build_decade_theme_returns_label_and_sentence_shape():
+def test_sipsin_yinyang_pair_covers_all_ten_and_is_symmetric():
+    assert set(SIPSIN_YINYANG_PAIR.keys()) == set(SIPSIN_10)
+    for s, pair in SIPSIN_YINYANG_PAIR.items():
+        assert SIPSIN_YINYANG_PAIR[pair] == s  # 짝의 짝은 자기 자신(대칭)
+        assert pair != s
+
+
+def test_sipsin_yinyang_pair_matches_the_five_jeong_pyeon_pairs():
+    expected = {
+        frozenset(["비견", "겁재"]), frozenset(["식신", "상관"]),
+        frozenset(["정재", "편재"]), frozenset(["정관", "편관"]),
+        frozenset(["정인", "편인"]),
+    }
+    actual = {frozenset([s, p]) for s, p in SIPSIN_YINYANG_PAIR.items()}
+    assert actual == expected
+
+
+def test_build_decade_theme_returns_pair_sipsin_and_sentence_shape():
     out = build_decade_theme("정인")
-    assert set(out.keys()) == {"label", "sentence"}
-    assert out["label"] == SIPSIN_THEME_LABEL["정인"]
-    # label은 문장 안에서 **label** 마크다운 볼드로 감싸져 있다 — 프론트가 이미 summary에
-    # 쓰는 components/Markdown.tsx(** → <strong>)로 그대로 렌더링한다.
-    assert f"**{out['label']}**" in out["sentence"]
-    assert out["sentence"].startswith("이번 10년은")
-    assert "재정비하고 정돈하는" in out["sentence"]
+    assert set(out.keys()) == {"pair_sipsin", "sentence"}
+    assert out["pair_sipsin"] == "편인"
+    # 2단계 변화 영역·3단계 짝 십신 모두 **로 감싸져 있다 — 프론트가 이미 saju_relation/
+    # summary에 쓰는 components/Markdown.tsx(** → <strong>)로 그대로 렌더링한다.
+    assert f"**{SIPSIN_CHANGE_AREA['정인']}**" in out["sentence"]
+    assert "**편인운(偏印運)**" in out["sentence"]
+    assert out["sentence"].startswith("정인은")
+    assert "대운의 직접적인 영향을 크게 받지 않는 영역" in out["sentence"]
 
 
 def test_build_decade_theme_none_when_sipsin_missing():
@@ -281,14 +304,40 @@ def test_build_decade_theme_all_ten_sipsin_produce_distinct_sentences():
     assert len(sentences) == len(SIPSIN_10)
 
 
-def test_sipsin_theme_core_all_end_with_geot_so_particle_matches():
-    # build_decade_theme()가 "{core}을 중심으로"로 조사를 "을"로 고정하므로, core는
-    # 전부 받침 있는 "것"으로 끝나야 한다 — 안 그러면 "것를"처럼 조사가 깨진다
-    # (비견/상관이 "관계"/"자기표현"으로 끝나 실제로 깨졌던 회귀 버그).
+def test_build_decade_theme_references_correct_yinyang_pair_for_every_sipsin():
     for s in SIPSIN_10:
-        assert SIPSIN_THEME_CORE[s].endswith("것"), SIPSIN_THEME_CORE[s]
-        assert "을 중심으로" in build_decade_theme(s)["sentence"]
-        assert "를 중심으로" not in build_decade_theme(s)["sentence"]
+        out = build_decade_theme(s)
+        pair = SIPSIN_YINYANG_PAIR[s]
+        assert out["pair_sipsin"] == pair
+        assert f"**{pair}운({SIPSIN_HANJA[pair]}運)**" in out["sentence"]
+
+
+# ------------------------------------------------------------------ 한글 조사(은/는, 과/와) 선택 헬퍼
+def test_has_batchim_detects_final_consonant():
+    assert _has_batchim("정인") is True   # "인" 받침 ㄴ
+    assert _has_batchim("정재") is False  # "재" 받침 없음
+    assert _has_batchim("") is False
+    assert _has_batchim("abc") is False  # 한글 완성형 범위 밖
+
+
+def test_josa_picks_correct_particle_for_every_sipsin_name():
+    # 겁재/정재/편재만 받침 없음(는/와), 나머지 7개는 받침 있음(은/과) — 하드코딩하면
+    # 절반은 반드시 틀린다(이전에 SIPSIN_THEME_CORE 어미 문제로 겪은 것과 같은 종류의
+    # 버그). build_decade_theme()의 실제 출력 문장으로 직접 검증한다.
+    no_batchim = {"겁재", "정재", "편재"}
+    for s in SIPSIN_10:
+        sentence = build_decade_theme(s)["sentence"]
+        if s in no_batchim:
+            assert sentence.startswith(f"{s}는 "), sentence
+        else:
+            assert sentence.startswith(f"{s}은 "), sentence
+
+
+def test_josa_helper_direct_cases():
+    assert _josa("정인", "은", "는") == "은"
+    assert _josa("정재", "은", "는") == "는"
+    assert _josa("서울", "이", "가") == "이"
+    assert _josa("학교", "이", "가") == "가"
 
 
 # ------------------------------------------------------------------ 십신 10종 전체 무결성(핵심 회귀)
@@ -495,7 +544,12 @@ def test_analyze_daewoon_period_has_full_schema():
     assert len(d["keywords"]) == 3
     assert len(d["decade_tasks"]) == 3
     assert set(d["domain_analysis"].keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
-    assert set(d["decade_theme"].keys()) == {"label", "sentence"}
+    assert set(d["decade_theme"].keys()) == {"pair_sipsin", "sentence"}
+    # saju_relation(1단계)이 "**{십신}운(...)**에 해당합니다"로, decade_theme(2·3단계)이
+    # 각각 겹치지 않는 새 정보(키워드/변화 영역, 음양 쌍 십신)를 담아 중복이 없어야 한다.
+    assert d["saju_relation"].count("**") == 2
+    assert "에 해당합니다" in d["saju_relation"]
+    assert "흐름의 10년입니다" not in d["saju_relation"]
 
 
 def test_analyze_daewoon_period_timeline_phases_has_all_eight_steps_with_ten_years_each():

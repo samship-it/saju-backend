@@ -29,8 +29,10 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
 - summary: lookup_stage_detail().event_narrative 재사용(총평, 5분류 DB)
 - keywords / decade_tasks: 십신 10종 기준 고정 문구(content.py)
 - domain_analysis: 위 연령 분기 참고 — 십신 10종 기준 실시간 합성(content.py)
-- decade_theme: "이 10년의 풍경" 섹션 바로 하단에 붙는 화두 한 문단(content.py
-  build_decade_theme) — 십신 10종(정/편) 각각 다른 label·문장을 쓴다.
+- decade_theme: "이 10년의 풍경" 하단 안내 블록의 2·3단계(content.py
+  build_decade_theme) — 1단계(오행/십신 정의)는 saju_relation이 맡는다.
+  2단계는 십신 핵심 키워드·주요 변화 영역, 3단계는 음양 쌍 십신(정/편)
+  기반으로 대운 영향이 약한 영역의 흐름을 안내한다.
 - timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
 """

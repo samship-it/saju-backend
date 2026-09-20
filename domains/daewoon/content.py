@@ -867,54 +867,109 @@ def build_transition_back_domains(sipsin: str, love_status: Optional[str], is_cu
     }
 
 
-# ── 10년의 풍경 하단 — "이번 10년의 화두" 한 문단 (십신 10종 정/편 완벽 구분) ──
-# landscape.py의 saju_relation(생극 관계를 기술적으로 설명)과는 다른 층위: 이 10년을
-# 관통하는 삶의 화두 자체를 한 문단으로 못박는다. label은 사용자에게 굵게 강조되는
-# 짧은 태그(십신명 + 핵심 키워드 3개), sentence는 그 label을 문장 안에 그대로 품은
-# 완성된 두 문장 — 프론트가 sentence 안에서 label 부분만 <strong>으로 감싼다.
-SIPSIN_THEME_LABEL: Dict[str, str] = {
-    "비견": "비견(동료·협력·대등한 관계)",
-    "겁재": "겁재(경쟁·승부·체질 전환)",
-    "식신": "식신(탐구·여유·안정적 활동)",
-    "상관": "상관(파격·창의·자기표현)",
-    "정재": "정재(고정 수입·안정적 결실·자산 관리)",
-    "편재": "편재(확장·기회 포착·유동 자산)",
-    "정관": "정관(신분·질서·공적 신뢰)",
-    "편관": "편관(단련·극복·특수 환경)",
-    "정인": "정인(정통학문·정식 자격·부모 혜택)",
-    "편인": "편인(전문 기술·스페셜리스트·문서 변동)",
+# ── 10년의 풍경 하단 — 2/3단계: 핵심 변화 영역 + 음양 쌍 십신 기반 유지 영역 안내 ──
+# landscape.py의 saju_relation이 1단계(오행/십신 정의)를 맡고, 여기는 그 뒤를 잇는
+# 2단계(이 십신과 관련된 핵심 키워드·주요 변화 영역)·3단계(대운 영향이 약한 영역은
+# 음양 쌍 십신 시기와 비슷하게 흘러간다는 안내)를 담당한다 — 세 단계가 서로 다른
+# 정보를 순서대로 쌓아올려서, 예전처럼 "이 10년은 X에 관한 것" 취지를 saju_relation과
+# decade_theme이 각자 다른 말로 두 번 반복하던 중복을 없앤다(사용자 리포트로 발견).
+#
+# SIPSIN_YINYANG_PAIR: 십신 5대 음양 쌍(정/편). 대운의 영향이 상대적으로 약한 영역은
+# "짝 십신의 시기와 비슷하다"고 설명하는 3단계 문장에 쓴다. 양방향 대칭 매핑이라
+# 코드에서 짝을 자동 산출한다(하드코딩된 두 번째 표를 따로 안 만들어도 됨).
+SIPSIN_YINYANG_PAIR: Dict[str, str] = {
+    "비견": "겁재", "겁재": "비견",
+    "식신": "상관", "상관": "식신",
+    "정재": "편재", "편재": "정재",
+    "정관": "편관", "편관": "정관",
+    "정인": "편인", "편인": "정인",
 }
 
-# 전부 "~것"으로 끝나도록 통일 — build_decade_theme()의 조사("~것을 중심으로")가
-# 항상 맞게 붙도록 어미를 고정한다(비견/상관이 다른 어미로 끝나 "것를"이 되던 버그 수정).
-SIPSIN_THEME_CORE: Dict[str, str] = {
-    "비견": "동료와 대등하게 협력하는 것",
-    "겁재": "경쟁 속에서 스스로를 증명하고 체질을 바꾸는 것",
-    "식신": "좋아하는 활동을 꾸준히 탐구하는 것",
-    "상관": "틀을 깨고 창의적으로 자기를 표현하는 것",
-    "정재": "꾸준한 수입과 결실을 안정적으로 관리하는 것",
-    "편재": "폭넓은 기회를 좇아 영역을 넓히는 것",
-    "정관": "정석적인 자리와 공적 신뢰를 쌓는 것",
-    "편관": "힘든 환경을 극복하며 스스로를 단련하는 것",
-    "정인": "정통 학문과 정식 자격을 갖추는 것",
-    "편인": "전문 기술과 특수 분야에 깊이 몰입하는 것",
+# 십신 10종 한자 표기 — 3단계 문장의 "OO운(OO運)" 표기에 재사용.
+SIPSIN_HANJA: Dict[str, str] = {
+    "비견": "比肩", "겁재": "劫財", "식신": "食神", "상관": "傷官",
+    "정재": "正財", "편재": "偏財", "정관": "正官", "편관": "偏官",
+    "정인": "正印", "편인": "偏印",
 }
+
+# 2단계 첫 문장 "{sipsin}은/는 {keywords}과/와 관련된 기운입니다"의 키워드 부분.
+SIPSIN_KEYWORDS: Dict[str, str] = {
+    "비견": "동료, 협력, 대등한 관계",
+    "겁재": "경쟁, 승부, 체질의 전환",
+    "식신": "탐구, 여유, 안정적인 활동",
+    "상관": "파격, 창의, 자기표현",
+    "정재": "고정 수입, 안정적인 결실, 자산 관리",
+    "편재": "확장, 기회 포착, 유동적인 자산",
+    "정관": "신분, 질서, 공적인 신뢰",
+    "편관": "단련, 극복, 특수한 환경",
+    "정인": "정통 학문, 자격, 배움, 보호와 지원",
+    "편인": "전문 기술, 스페셜리스트, 문서의 변동",
+}
+
+# 2/3단계에서 "**핵심 변화 영역**"으로 굵게 강조되는 짧은 명사구.
+SIPSIN_CHANGE_AREA: Dict[str, str] = {
+    "비견": "동료·협력 관계",
+    "겁재": "경쟁과 승부",
+    "식신": "꾸준한 탐구와 활동",
+    "상관": "창의적 자기표현",
+    "정재": "안정적인 자산 관리",
+    "편재": "기회 확장과 자산 유동성",
+    "정관": "신분과 공적 신뢰",
+    "편관": "환경 극복과 단련",
+    "정인": "정통 학문과 자격 취득",
+    "편인": "전문 기술과 특수 분야 몰입",
+}
+
+
+def _has_batchim(word: str) -> bool:
+    """word의 마지막 글자에 받침이 있으면 True. 한글 완성형(AC00~D7A3) 범위 밖이면 False."""
+    if not word:
+        return False
+    code = ord(word[-1]) - 0xAC00
+    if not (0 <= code <= 11171):
+        return False
+    return code % 28 != 0
+
+
+def _josa(word: str, with_batchim: str, without_batchim: str) -> str:
+    """word 마지막 글자의 받침 유무로 조사를 고른다(은/는, 이/가, 과/와 등 공용).
+
+    십신 10종 이름과 키워드 목록은 마지막 글자가 제각각이라(예: "정인"은 받침 있어
+    "은", "정재"는 받침 없어 "는") 조사를 하드코딩하면 한쪽이 반드시 틀린다 — 이전에
+    SIPSIN_THEME_CORE 어미를 통일하다 겪은 것과 같은 종류의 버그를 여기서는 아예
+    문법적으로 고쳐서 막는다.
+    """
+    return with_batchim if _has_batchim(word) else without_batchim
 
 
 def build_decade_theme(sipsin: Optional[str]) -> Optional[Dict[str, str]]:
-    """"이 10년의 풍경" 섹션 바로 하단에 붙는 화두 문단. sipsin이 없거나 표에 없으면 None.
+    """"이 10년의 풍경" 섹션의 2·3단계(landscape.py의 saju_relation이 1단계).
+    sipsin이 없거나 표에 없으면 None.
 
-    sentence 안의 label 부분은 `**label**`로 감싸 마크다운 볼드 표기를 그대로 쓴다 —
-    프론트(DaewoonPeriodResult.tsx)가 이미 다른 필드(summary)에 쓰고 있는
-    components/Markdown.tsx(** → <strong>)를 그대로 재사용해 렌더링한다.
+    2단계: "{sipsin}은/는 {키워드}과/와 관련된 기운입니다. 따라서 이 10년에는
+    **{핵심 변화 영역}** 관련 변화가 주요한 흐름으로 나타날 수 있습니다."
+    3단계: "다만 대운의 영향이 모든 영역에서 동일하게 나타나는 것은 아닙니다. 이
+    시기에는 {핵심 변화 영역}의 변화가 상대적으로 두드러지고, 대운의 직접적인
+    영향을 크게 받지 않는 영역은 **{음양 쌍 십신}운({한자}運)** 시기와 비슷한
+    흐름이 이어질 수 있습니다."
+
+    **로 감싼 부분은 프론트가 이미 summary/saju_relation에 쓰는
+    components/Markdown.tsx(** → <strong>)로 그대로 렌더링된다.
     """
-    label = SIPSIN_THEME_LABEL.get(sipsin) if sipsin else None
-    core = SIPSIN_THEME_CORE.get(sipsin) if sipsin else None
-    if not label or not core:
+    keywords = SIPSIN_KEYWORDS.get(sipsin) if sipsin else None
+    change_area = SIPSIN_CHANGE_AREA.get(sipsin) if sipsin else None
+    pair = SIPSIN_YINYANG_PAIR.get(sipsin) if sipsin else None
+    if not keywords or not change_area or not pair:
         return None
-    # core는 전부 "~것"(받침 있음)으로 끝나도록 통일해 뒀으므로 조사는 "을"로 고정한다.
+    pair_hanja = SIPSIN_HANJA.get(pair, "")
+    eun_neun = _josa(sipsin, "은", "는")
+    gwa_wa = _josa(keywords, "과", "와")
     sentence = (
-        f"이번 10년은 **{label}**에 관한 이슈가 삶의 가장 주요한 화두로 작용하는 시기입니다. "
-        f"다른 대운과 달리 {core}을 중심으로 삶의 기반을 재정비하고 정돈하는 흐름이 형성됩니다."
+        f"{sipsin}{eun_neun} {keywords}{gwa_wa} 관련된 기운입니다. "
+        f"따라서 이 10년에는 **{change_area}** 관련 변화가 주요한 흐름으로 나타날 수 있습니다. "
+        f"다만 대운의 영향이 모든 영역에서 동일하게 나타나는 것은 아닙니다. "
+        f"이 시기에는 {change_area}의 변화가 상대적으로 두드러지고, "
+        f"대운의 직접적인 영향을 크게 받지 않는 영역은 **{pair}운({pair_hanja}運)** "
+        f"시기와 비슷한 흐름이 이어질 수 있습니다."
     )
-    return {"label": label, "sentence": sentence}
+    return {"pair_sipsin": pair, "sentence": sentence}
