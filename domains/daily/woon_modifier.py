@@ -12,13 +12,21 @@ AI 호출 없음. daily_db.json(일주×일진=3,600) 은 원국(일주) 기준�
 확정). yearly(연간 총운) 쪽에 정보성 문구로 넣는 방향은 별도로 논의.
 
 daily_db.json 은 이 모듈이 절대 건드리지 않는다(읽기 전용 정적 콘텐츠 유지).
+
+headline/today_energy 문구는 이제 HEADLINE_TABLE/TODAY_ENERGY_TABLE(셀당 1개, 아래
+30~60종) 을 최종 폴백으로 두고, 우선은 domains/daily/headline_pool.py 가 읽는
+사전 생성 대형 풀(셀당 기본 20개, scripts/generate_content_db.py --domain
+daily_headline_pool 로 생성)에서 target_date 기준으로 결정적 로테이션해 고른다.
+이 조회 역시 정적 JSON 파일 읽기일 뿐 런타임 Gemini 호출이 아니다.
 """
+import datetime
 from typing import Any, Dict, List, Optional
 
 from core.constants import GAN_ELEM, JI_ELEM, BAEKHO, YANGIN
 from core.daewoon import branch_relation
 from core.sipsin import calculate_sipsin, sipsin_group
 from core.twelve_sinsal import sinsal_check
+from domains.daily.headline_pool import pick_headline, pick_today_energy
 
 # ── 1. 십신 극성 기본값(억부용신 정보가 없을 때의 폴백) ─────────────────────
 # daily_prompt() 가 쓰던 관습: 정재·정관·정인·식신·편재=안정/기회,
@@ -285,12 +293,23 @@ WOON_STATE_TABLE: Dict[str, Dict[str, Dict[str, str]]] = {
     },
 }
 
-# ── 7. 상태별 한줄평(headline) 고정 문구 (5 십신군 × 6 관계버킷 = 30종, AI 미관여) ──
+# ── 7. 상태별 한줄평(headline) 고정 문구 (10 십신 × 6 관계버킷 = 60종, AI 미관여) ──
 # WOON_STATE_TABLE의 label/comment와는 다른 각도(느낌/행동 팁 중심)로 새로 쓴 문장이다.
 # headline·woon_today·social이 같은 (group,bucket) 신호를 그대로 복붙해 3중 반복되던
 # 문제를 고치기 위해, 세 필드가 서로 다른 단어·구조로 같은 신호를 전달하도록 분리했다.
+#
+# 키를 5십신군이 아니라 10개 개별 십신으로 세분화한 이유(사용자 리포트: 오늘의 운세
+# 한줄평이 어제와 똑같이 반복됨) — 일진 천간은 10일 주기로 매일 +1칸씩 도는데, 십신군은
+# 그 중 이웃한 두 칸(비견↔겁재, 식신↔상관, 편재↔정재, 편관↔정관, 편인↔정인)이 항상
+# 같은 그룹으로 묶인다. 즉 그룹(5종) 기준으로 조회하면 이틀에 한 번꼴로 어제와 같은
+# 셀을 다시 조회해 문장이 그대로 반복된다. 개별 십신(10종)으로 쪼개면 이 이웃 쌍이
+# GAN_YANG(음양)으로 갈라져(예: 비견=양간, 겁재=음간) 매일 음양이 번갈아 바뀌므로 —
+# 하루 단위로는 (그룹이 바뀌거나, 그룹은 같아도 음양이 달라 다른 십신) 둘 중 하나라
+# 어제와 정확히 같은 키가 다시 나오는 경우가 구조적으로 없다(직전 이력 조회 없이도
+# 보장됨). 10일 주기를 완전히 한 바퀴 돌면 같은 키가 재등장할 수 있으나 그건 "어제"가
+# 아니라 열흘 전이라 반복 체감이 거의 없다.
 HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
-    "비겁": {
+    "비견": {
         "harmony": "함께하면 시너지가 나는 날이니 협업 제안이 있다면 적극적으로 받아들이세요.",
         "conflict": "괜히 경쟁심이 발동하기 쉬운 날이니 힘 빼고 가는 게 이득이에요.",
         "adjustment": "역할 분담을 다시 맞춰보면 훨씬 수월해지는 하루예요.",
@@ -298,31 +317,71 @@ HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
         "repeat": "익숙한 리듬 그대로, 무리하지 않아도 되는 편안한 하루예요.",
         "neutral": "특별한 사건 없이 잔잔하게 흘러가는 하루예요.",
     },
-    "식상": {
+    "겁재": {
+        "harmony": "가까운 사람과 손발이 척척 맞는 날이니 도움을 주고받는 데 망설이지 마세요.",
+        "conflict": "은근히 지는 걸 못 참게 되는 날이니 굳이 승부를 보려 하지 마세요.",
+        "adjustment": "내 몫과 남의 몫을 한번 명확히 나눠두면 뒤탈이 없는 하루예요.",
+        "friction": "누가 먼저랄 것 없이 신경전이 붙기 쉬우니 한 발 물러서 보세요.",
+        "repeat": "옆 사람과 늘 그렇듯 티격태격해도 결국 무난히 넘어가는 하루예요.",
+        "neutral": "경쟁이나 비교할 일 없이 조용히 흘러가는 하루예요.",
+    },
+    "식신": {
         "harmony": "아이디어가 술술 풀리는 날이니 적극적으로 표현해 보세요.",
-        "conflict": "말이 많아지기 쉬운 날이니 하고 싶은 말은 한 번 걸러서 꺼내보세요.",
+        "conflict": "느긋함이 게으름으로 비칠 수 있는 날이니 마감만큼은 챙기세요.",
         "adjustment": "의도와 다르게 전달될 수 있으니 표현을 한 번 더 점검해보는 하루예요.",
-        "friction": "사소한 착오가 생길 수 있으니 중요한 이야기는 명확하게 짚고 가세요.",
+        "friction": "여유를 부리다 타이밍을 놓칠 수 있으니 중요한 건 미리 챙기세요.",
         "repeat": "늘 하던 방식 그대로 편안하게 흘러가는 하루예요.",
         "neutral": "표현이나 활동 면에서 튀는 일 없이 흘러가는 하루예요.",
     },
-    "재성": {
+    "상관": {
+        "harmony": "재치 있는 한마디가 먹히는 날이니 하고 싶은 말을 시원하게 꺼내도 좋아요.",
+        "conflict": "직설적인 말이 날카롭게 튈 수 있는 날이니 하고 싶은 말은 한 번 걸러서 꺼내보세요.",
+        "adjustment": "옳은 말도 방식에 따라 다르게 들리니 톤을 한 번 더 다듬어보는 하루예요.",
+        "friction": "사소한 착오가 생길 수 있으니 중요한 이야기는 명확하게 짚고 가세요.",
+        "repeat": "할 말은 하면서도 크게 부딪히지 않고 넘어가는 하루예요.",
+        "neutral": "말이나 논쟁거리 없이 조용히 지나가는 하루예요.",
+    },
+    "편재": {
         "harmony": "생각보다 좋은 제안이 들어올 수 있는 날이니 기회다 싶으면 잡아보세요.",
         "conflict": "돈 씀씀이에 예민해지기 쉬운 날이니 큰 지출은 하루 미뤄보세요.",
-        "adjustment": "수입·지출 구조를 한번 점검해보면 도움이 되는 하루예요.",
+        "adjustment": "여러 갈래로 벌인 돈 흐름을 한번 정리해보면 도움이 되는 하루예요.",
         "friction": "정산이나 계산에서 사소하게 안 맞을 수 있으니 미리 확인해두세요.",
         "repeat": "지금 흐름 그대로 안정적으로 이어지는 하루예요.",
         "neutral": "재물 면에서 특별한 이슈 없이 평이하게 흘러가는 하루예요.",
     },
-    "관성": {
-        "harmony": "책임진 일이 좋은 평가로 돌아오는 날이니 나서야 할 자리에서 존재감을 보여도 좋아요.",
+    "정재": {
+        "harmony": "꾸준히 모아온 게 눈에 띄게 불어나는 날이니 계획한 저축·투자를 이어가도 좋아요.",
+        "conflict": "고정 지출이 부담스럽게 느껴지는 날이니 가계부부터 다시 훑어보세요.",
+        "adjustment": "수입·지출 구조를 한번 점검해보면 도움이 되는 하루예요.",
+        "friction": "정기적으로 나가는 돈에서 사소하게 안 맞는 부분이 생길 수 있으니 확인해두세요.",
+        "repeat": "정해둔 방식대로 안정적으로 관리되는 하루예요.",
+        "neutral": "고정 수입·지출 면에서 특별한 변동 없이 흘러가는 하루예요.",
+    },
+    "편관": {
+        "harmony": "부담스럽던 일도 과감하게 밀어붙이면 뜻밖에 잘 풀리는 날이에요.",
         "conflict": "윗선이나 공적인 일에서 부딪힐 수 있으니 서류나 약속은 한 번 더 챙겨보세요.",
+        "adjustment": "쫓기듯 처리하던 일의 우선순위를 다시 정리해두면 든든해지는 하루예요.",
+        "friction": "예상치 못한 압박이 갑자기 들이닥칠 수 있으니 여유 시간을 좀 남겨두세요.",
+        "repeat": "버거운 상황에도 어떻게든 버텨내며 넘어가는 하루예요.",
+        "neutral": "긴장할 일 없이 조직·공적 관계가 평온하게 흘러가는 하루예요.",
+    },
+    "정관": {
+        "harmony": "책임진 일이 좋은 평가로 돌아오는 날이니 나서야 할 자리에서 존재감을 보여도 좋아요.",
+        "conflict": "규칙이나 절차가 답답하게 느껴질 수 있으니 원칙대로 처리하는 게 결국 더 편해요.",
         "adjustment": "맡은 역할과 책임을 다시 정리해두면 든든해지는 하루예요.",
         "friction": "보고나 전달 타이밍이 살짝 어긋날 수 있으니 조금 더 명확하게 전해보세요.",
         "repeat": "지금 자리를 꾸준히 지키는 것만으로 충분한 하루예요.",
         "neutral": "조직이나 공적인 관계에서 평온하게 흘러가는 하루예요.",
     },
-    "인성": {
+    "편인": {
+        "harmony": "남들과 다른 촉이 발휘되는 날이니 낯선 아이디어나 배움에 과감히 뛰어들어도 좋아요.",
+        "conflict": "생각이 많아져 의심부터 앞서기 쉬운 날이니 일단 믿고 한 걸음 내디뎌 보세요.",
+        "adjustment": "혼자 끌어안던 고민을 누군가와 나눠보면 정리가 되는 하루예요.",
+        "friction": "감(感)이 평소와 살짝 어긋날 수 있으니 중요한 판단은 한 번 더 검증하세요.",
+        "repeat": "익숙한 방식·감각을 믿고 가도 되는 편안한 하루예요.",
+        "neutral": "번뜩이는 영감 없이도 무난하게 흘러가는 하루예요.",
+    },
+    "정인": {
         "harmony": "귀인이나 배움의 기회를 만나기 좋은 날이니 고민이 있다면 오늘 털어놔 보세요.",
         "conflict": "조언이 부담스럽게 느껴질 수 있으니 일단 듣고 판단은 천천히 해도 괜찮아요.",
         "adjustment": "기대치를 서로 맞춰보면 관계가 한결 편해지는 하루예요.",
@@ -335,10 +394,17 @@ HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
 _DEFAULT_HEADLINE = "오늘은 큰 굴곡 없이 잔잔하게 흘러가는 하루예요."
 
 
-def _resolve_headline(trigger_group: Optional[str], bucket: Optional[str]) -> str:
-    """(trigger_group,bucket) 조합의 고정 headline 한 문장. 신살은 절대 안 붙인다 —
-    headline은 "오늘 하루 한 줄 요약" 전용이고, 신살 경고는 today_energy 쪽 몫이다."""
-    return HEADLINE_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
+def _resolve_headline(sipsin: Optional[str], bucket: Optional[str], day_ordinal: int = 0) -> str:
+    """(오늘 일진의 개별 십신, bucket) 조합의 headline 한 문장. 신살은 절대 안 붙인다 —
+    headline은 "오늘 하루 한 줄 요약" 전용이고, 신살 경고는 today_energy 쪽 몫이다.
+
+    사전 생성 대형 풀(headline_pool.json, 셀당 기본 20개)이 있으면 day_ordinal로
+    그 안에서 로테이션해 고르고, 없으면(아직 미생성 등) HEADLINE_TABLE(셀당 1개)로
+    폴백한다."""
+    pooled = pick_headline(sipsin, bucket, day_ordinal)
+    if pooled:
+        return pooled
+    return HEADLINE_TABLE.get(sipsin or "", {}).get(bucket or "") or _DEFAULT_HEADLINE
 
 
 # ── 8. "오늘의 기운" 전용 고정 문구 (5 십신군 × 6 관계버킷 = 30종, AI 미관여) ──
@@ -393,12 +459,24 @@ TODAY_ENERGY_TABLE: Dict[str, Dict[str, str]] = {
 _DEFAULT_TODAY_ENERGY = "오늘 일진이 내 기운에 큰 자극을 주지 않아 무난하게 지나갑니다."
 
 
-def _resolve_today_energy(trigger_group: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]]) -> str:
+def _resolve_today_energy(
+    sipsin: Optional[str], bucket: Optional[str], sinsal_hits: List[Dict[str, Any]], day_ordinal: int = 0
+) -> str:
     """내 일간이 오늘 일진과 만나 이루는 기운 한 줄 + (있으면) 가장 강한 신살 한 줄만 짧게
     덧붙인다. HEADLINE_TABLE이 아니라 별도 TODAY_ENERGY_TABLE을 쓴다 — headline은 대운/
     세운/일운 중 가장 강한 레이어의 종합 한 줄이라, trigger_layer가 ilwoon이면 같은
-    (group,bucket)을 가리켜 headline과 문장이 그대로 겹쳐버리기 때문(사용자 확인·수정)."""
-    base = TODAY_ENERGY_TABLE.get(trigger_group or "", {}).get(bucket or "") or _DEFAULT_TODAY_ENERGY
+    (group,bucket)을 가리켜 headline과 문장이 그대로 겹쳐버리기 때문(사용자 확인·수정).
+
+    사전 생성 대형 풀(today_energy_pool.json)이 있으면 개별 십신(sipsin, 10종) ×
+    bucket 셀에서 day_ordinal로 로테이션해 고른다(headline과 동일한 풀 구조 —
+    today_energy도 예전엔 십신군(5종) 기준이라 headline과 같은 2일 주기 반복
+    위험이 있었다). 풀에 없으면 십신군(TODAY_ENERGY_TABLE, 5종)으로 폴백한다."""
+    pooled = pick_today_energy(sipsin, bucket, day_ordinal)
+    if pooled:
+        base = pooled
+    else:
+        group = sipsin_group(sipsin) if sipsin else None
+        base = TODAY_ENERGY_TABLE.get(group or "", {}).get(bucket or "") or _DEFAULT_TODAY_ENERGY
     if sinsal_hits:
         worst = min(sinsal_hits, key=lambda h: h["penalty"])  # penalty가 가장 큰(가장 음수인) 것
         suffix = SINSAL_HEADLINE_SUFFIX.get(worst["name"])
@@ -409,8 +487,21 @@ def _resolve_today_energy(trigger_group: Optional[str], bucket: Optional[str], s
 _DEFAULT_STATE = {"label": "무난한 흐름", "comment": "특별한 이슈 없이 잔잔하게 흘러가는 시기예요."}
 
 
+def _day_ordinal(saju_data: Dict[str, Any]) -> int:
+    """target_date(YYYY-MM-DD)를 정수 순번으로 — headline/today_energy 풀 로테이션 시드.
+    없거나 파싱 실패하면 0(그래도 셀 자체가 매일 달라지므로 안전하게 폴백)."""
+    raw = saju_data.get("target_date")
+    if not raw:
+        return 0
+    try:
+        return datetime.date.fromisoformat(str(raw)).toordinal()
+    except (ValueError, TypeError):
+        return 0
+
+
 def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
     """saju_data(calculate_saju 산출물) -> 점수 가감치·상태 라벨·십이신살 경고 종합."""
+    day_ordinal = _day_ordinal(saju_data)
     day_master = saju_data.get("day_master") or ""
     day_branch = saju_data.get("day_branch") or ""
     strength = saju_data.get("strength") or {}
@@ -464,14 +555,14 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
     # "오늘의 기운"(Today Energy Movement) 전용 — trigger_layer가 대운/세운이어도 이건
     # 항상 ilwoon(오늘 일진) 레이어 하나만 본다. 새 계산 없이 위에서 이미 구한 layers["ilwoon"]
     # (원국 대비 오늘 지지의 십신·용신희기·지지관계)을 그대로 재사용해 HEADLINE_TABLE에서 조회.
-    today_group = None
+    today_sipsin = None
     today_bucket = None
     if "ilwoon" in layers:
         f = layers["ilwoon"]
-        today_group = f["group_gan"]
+        today_sipsin = f["sipsin_gan"]
         today_bucket = _resolve_bucket(f["relation_bucket"], f["layer_intensity"])
     ilwoon_sinsal_hits = [h for h in sinsal["hits"] if h["layer"] == "ilwoon"]
-    today_energy = _resolve_today_energy(today_group, today_bucket, ilwoon_sinsal_hits)
+    today_energy = _resolve_today_energy(today_sipsin, today_bucket, ilwoon_sinsal_hits, day_ordinal)
 
     return {
         "score_delta": score_delta,
@@ -487,10 +578,14 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         # headline이 똑같이 나가는 문제가 있었다(사용자 실측 리포트: 2026-09-15~17 동일
         # 문장). 대운/세운의 영향은 score_delta(점수)와 state_label/state_comment(보조
         # 설명)에만 반영되고, headline 자체는 today_energy와 같은 신호(오늘 일진)를 쓰되
-        # 서로 다른 표(HEADLINE_TABLE vs TODAY_ENERGY_TABLE)라 문장은 겹치지 않는다.
-        "headline": _resolve_headline(today_group, today_bucket),
+        # 서로 다른 풀/표(headline_pool.json+HEADLINE_TABLE vs today_energy_pool.json+
+        # TODAY_ENERGY_TABLE)라 문장은 겹치지 않는다.
+        # today_group(5분류) 대신 today_sipsin(10분류)으로 조회 — 어제·오늘 한줄평이
+        # 그대로 반복되던 버그 수정(HEADLINE_TABLE 상단 주석 참고). day_ordinal은 같은
+        # 셀이 재등장했을 때도 풀 안에서 다른 변형을 고르기 위한 날짜 시드.
+        "headline": _resolve_headline(today_sipsin, today_bucket, day_ordinal),
         # 오늘 일진(ilwoon) 하나만 놓고 본 한줄평 — "Today Energy Movement" 섹션 전용.
-        # headline과 정확히 같은 (group,bucket) 신호를 쓰지만 표가 달라 문장은 다르다.
+        # headline과 정확히 같은 (sipsin,bucket) 신호를 쓰지만 표/풀이 달라 문장은 다르다.
         "today_energy": today_energy,
         "trigger_layer": trigger_layer,
         # social_template.py 가 자체적으로 (그룹,버킷)을 재계산하지 않고 이 값을

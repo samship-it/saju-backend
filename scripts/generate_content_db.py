@@ -2351,6 +2351,209 @@ def run_love_charm(args, kind: str) -> None:
     print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
 
 
+# ───────────── DAILY HEADLINE/TODAY_ENERGY POOL (셀당 다수 변형 문구)
+# woon_modifier.py 의 HEADLINE_TABLE/TODAY_ENERGY_TABLE 은 (개별 십신 10 × 관계버킷 6 =
+# 60)셀당 문구가 1개뿐이라, 같은 셀이 다시 나오면(예: 같은 십신이 10일 뒤 재등장) 정확히
+# 같은 문장이 다시 나갔다(사용자 리포트). 이 섹션은 셀당 다수(기본 20개)를 미리 생성해
+# domains/daily/data/headline_pool.json · today_energy_pool.json 에 저장한다. 런타임
+# (domains/daily/headline_pool.py)은 여전히 이 정적 파일을 읽기만 하고 Gemini를 호출하지
+# 않는다 — target_date 기준으로 그 안에서 결정적으로 로테이션할 뿐이다.
+#
+# today_energy는 예전엔 십신군(5종) 표만 있었지만, 풀은 headline과 동일하게 개별
+# 십신(10종) 기준 셀을 쓴다(같은 2일 주기 반복 위험을 today_energy에도 없애기 위해) —
+# 참고 예시 문장만 sipsin_group()으로 기존 5종 표에서 끌어온다.
+HEADLINE_POOL_PATH = os.path.join(_ROOT, "domains", "daily", "data", "headline_pool.json")
+TODAY_ENERGY_POOL_PATH = os.path.join(_ROOT, "domains", "daily", "data", "today_energy_pool.json")
+HEADLINE_POOL_VARIANTS_PER_CELL = 20
+HEADLINE_POOL_MAX_OUTPUT_TOKENS = 8192
+
+_SIPSIN10 = ["비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인"]
+_BUCKET6 = ["harmony", "conflict", "adjustment", "friction", "repeat", "neutral"]
+
+_SIPSIN_DESC = {
+    "비견": "또래·동료와 나란히 서는 기운(협력하거나 은근히 겨루는 관계)",
+    "겁재": "가까운 사람과 몫을 나누거나 다투는 기운(도움 또는 쟁탈)",
+    "식신": "여유 있게 표현하고 누리는 기운(느긋함·미식·창작)",
+    "상관": "재치 있고 직설적인 표현 기운(말·주장·재기발랄함)",
+    "편재": "유동적으로 들고나는 재물·기회 기운(횡재·확장)",
+    "정재": "꾸준히 쌓고 관리하는 재물 기운(고정 수입·저축)",
+    "편관": "압박하고 도전하게 만드는 기운(권위·긴장·돌파)",
+    "정관": "규율과 신뢰를 지키는 기운(책임·명예·공적 인정)",
+    "편인": "남다른 감각과 직관의 기운(특수 재능·낯선 배움)",
+    "정인": "든든하게 돌봐주는 기운(정통 학문·귀인·문서)",
+}
+_BUCKET_DESC = {
+    "harmony": "이 기운이 좋은 방향으로 강하게 작용해 기회·상승이 느껴지는 상태",
+    "conflict": "이 기운이 부딪히거나 과열되기 쉬워 주의가 필요한 상태",
+    "adjustment": "이 기운 때문에 역할이나 기대치를 다시 맞춰볼 필요가 있는 상태",
+    "friction": "이 기운이 살짝 어긋나 사소한 타이밍 차이가 생기는 상태",
+    "repeat": "이 기운이 평소와 비슷하게 안정적으로 이어지는 상태",
+    "neutral": "이 기운이 별다른 자극 없이 무난하게 흘러가는 상태",
+}
+_HEADLINE_POOL_FIELD_LABEL = {
+    "headline": "오늘의 운세 한줄평(오늘 하루 전체를 한 문장으로 요약)",
+    "today_energy": "오늘의 기운(Today Energy Movement — 오늘 일진이 내 사주와 만나 "
+                     "이루는 기운 하나만, \"오늘 일진이 ~\" 식으로 서술)",
+}
+
+
+def _headline_pool_cell_key(sipsin: str, bucket: str) -> str:
+    return f"{sipsin}_{bucket}"
+
+
+def _headline_pool_all_keys() -> List[str]:
+    return [_headline_pool_cell_key(s, b) for s in _SIPSIN10 for b in _BUCKET6]
+
+
+def _headline_pool_seed(kind: str, seed_table: Dict[str, Dict[str, str]], sipsin: str, bucket: str) -> str:
+    if kind == "headline":
+        return seed_table.get(sipsin, {}).get(bucket, "")
+    return seed_table.get(sipsin_group(sipsin), {}).get(bucket, "")
+
+
+def _headline_pool_prompt(kind: str, seed_table: Dict[str, Dict[str, str]], items: List[Tuple[str]]) -> str:
+    n = HEADLINE_POOL_VARIANTS_PER_CELL
+    keys = [it[0] for it in items]
+
+    def _block(key: str) -> str:
+        sipsin, bucket = key.split("_", 1)
+        seed = _headline_pool_seed(kind, seed_table, sipsin, bucket)
+        return "\n".join([
+            f"── 키: {key} ──",
+            f"신호: {_SIPSIN_DESC[sipsin]}",
+            f"상태: {_BUCKET_DESC[bucket]}",
+            f"참고 예시(이미 서비스 중 — 절대 그대로/변형 재사용 금지): \"{seed}\"",
+        ])
+
+    blocks = "\n\n".join(_block(k) for k in keys)
+    return f"""아래 {len(items)}개 항목 각각에 대해, {_HEADLINE_POOL_FIELD_LABEL[kind]}으로 쓸 한국어 문장을 {n}개씩 만듭니다.
+같은 항목 안의 {n}개는 전부 같은 신호(신호+상태)를 전달하지만 어휘·문장 구조·비유가 서로 겹치지 않게 다양하게 씁니다.
+'참고 예시'는 톤을 맞추기 위한 참고일 뿐, 그 문장이나 그 문장을 살짝 바꾼 버전을 절대 포함하지 마세요.
+
+[말투·형식 규칙 — 최우선]
+- 각 문장은 정확히 한 문장(마침표 정확히 1개로 끝남). 번호·따옴표·이모지 없이 문장 자체만.
+- 친근한 존댓말만('~해요/~예요/~보세요/~좋아요' 계열). 반말·경어 혼용 금지.
+- 20~45자 내외. 사주 용어(십신·오행·간지·천간·지지·합충·용신·기신 등) 절대 노출 금지 —
+  "오늘 하루"·"오늘 일진" 같은 시점 표현만 자연스럽게 써도 됩니다.
+- {n}개 문장끼리 동의어만 바꾼 재탕 금지 — 서로 다른 장면·비유·조언을 씁니다.
+
+[생성할 항목 — 총 {len(items)}개]
+
+{blocks}
+
+[출력 형식 — 아래 JSON 객체 하나만, 마크다운 펜스나 설명 없이]
+- 최상위 key 는 위 '키' 문자열 그대로: {', '.join(keys)}
+- 각 값 구조:
+
+{{
+  "{keys[0]}": {{ "variants": ["문장1", "문장2", "... 총 {n}개"] }},
+  "{keys[1] if len(keys) > 1 else '키2'}": {{ "variants": ["...", "..."] }}
+}}"""
+
+
+def _headline_pool_valid(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    variants = entry.get("variants")
+    if not isinstance(variants, list):
+        return False
+    good = [v for v in variants if isinstance(v, str) and is_valid_headline(v.strip())]
+    return len(good) >= max(8, HEADLINE_POOL_VARIANTS_PER_CELL // 2)
+
+
+def _headline_pool_coerce(entry: Any) -> Any:
+    if not isinstance(entry, dict):
+        return entry
+    variants = entry.get("variants")
+    if not isinstance(variants, list):
+        return entry
+    cleaned: List[str] = []
+    seen = set()
+    for v in variants:
+        if not isinstance(v, str):
+            continue
+        s = str(strip_enumeration(apply_text_fixups(v.strip()))).strip()
+        if not s or not is_valid_headline(s) or s in seen:
+            continue
+        seen.add(s)
+        cleaned.append(s)
+    entry["variants"] = cleaned[:HEADLINE_POOL_VARIANTS_PER_CELL]
+    return entry
+
+
+def run_headline_pool(args, kind: str) -> None:
+    """kind: 'headline' | 'today_energy'."""
+    from domains.daily.woon_modifier import HEADLINE_TABLE, TODAY_ENERGY_TABLE
+
+    seed_table = HEADLINE_TABLE if kind == "headline" else TODAY_ENERGY_TABLE
+    out_path = args.out or (HEADLINE_POOL_PATH if kind == "headline" else TODAY_ENERGY_POOL_PATH)
+    db = _load_json(out_path)
+    all_keys = _headline_pool_all_keys()
+    total = len(all_keys)   # 60
+    if args.only:
+        all_keys = [k for k in all_keys if k == args.only]
+
+    if not args.batch or args.batch < 2:
+        args.batch = 5
+
+    def _is_done(k):
+        return _headline_pool_valid(db.get(k))
+
+    done = sum(1 for k in all_keys if _is_done(k))
+    print(f"DB: {out_path}")
+    print(f"기존 완료: {done}/{total}  ({100 * done / total:.1f}%)  · 남음 {total - done}")
+    budget = args.limit or len(all_keys)
+
+    pending = [k for k in all_keys if args.overwrite or not _is_done(k)]
+    seg = pending[:budget]
+    if args.dry_run:
+        print(f"이번 청크 대상 {len(seg)}개  예: {', '.join(seg[:8])}")
+        print("dry-run 종료.")
+        return
+    if not seg:
+        print("생성할 항목이 없습니다. (이번 범위 모두 완료)")
+        return
+
+    api_keys = load_api_keys()
+    if not api_keys:
+        print("[에러] GEMINI_API_KEY / GEMINI_API_KEY_1.. 미설정")
+        sys.exit(1)
+    models = [args.model] if args.model else list(DAILY_BATCH_MODELS)
+
+    def _store(_db, _key, _entry, _model):
+        sipsin, bucket = _key.split("_", 1)
+        seed = _headline_pool_seed(kind, seed_table, sipsin, bucket)
+        variants = list(_entry.get("variants") or [])
+        if seed and seed not in variants:
+            variants.insert(0, seed)
+        _db[_key] = {"variants": variants[:HEADLINE_POOL_VARIANTS_PER_CELL], "_model": _model}
+
+    todo = [(k,) for k in seg]
+    sub = argparse.Namespace(**vars(args))
+    sub.limit = 0
+    label = "한줄평" if kind == "headline" else "오늘의 기운"
+    _run_batched(
+        sub, todo, db, out_path, api_keys,
+        prompt_fn=(lambda its, _k=kind, _s=seed_table: _headline_pool_prompt(_k, _s, its)),
+        valid_fn=_headline_pool_valid,
+        coerce_fn=_headline_pool_coerce,
+        models=models, max_output_tokens=HEADLINE_POOL_MAX_OUTPUT_TOKENS,
+        total=total, system_instruction=(
+            "당신은 한국어 운세 콘텐츠 작가입니다. 주어진 신호·상태 설명만 근거로, "
+            "사주 용어를 노출하지 않고 자연스러운 '오늘의 운세' 문장을 다양하게 씁니다. "
+            "친근한 존댓말만 씁니다. 유효한 JSON만 출력합니다."
+        ),
+        banmal_fn=(lambda e: _banmal_in_texts(list(e.get("variants") or []))),
+        unit="셀", store_fn=_store,
+        count_fn=(lambda d: sum(1 for k in all_keys if _headline_pool_valid(d.get(k)))),
+        header=f"\n{'━' * 60}\n[{label} 문구 풀] 대상 {len(todo)}개 · {HEADLINE_POOL_VARIANTS_PER_CELL}개/셀",
+    )
+
+    final_cnt = sum(1 for k in all_keys if _headline_pool_valid(db.get(k)))
+    print(f"\n{'=' * 60}")
+    print(f"완료 {final_cnt}/{total}  ({100 * final_cnt / total:.1f}%)  → {out_path}")
+
+
 # ───────────── MARRIAGE EXTRAS (결혼운 couple 전용 추가 필드 2개)
 # 기존 relationship_db.json 의 couple marriage 항목(3,600)에 아래 2필드만 덧붙인다.
 # overall·couple_overall 은 건드리지 않고 병합(store_fn)한다.
@@ -4159,7 +4362,8 @@ def run_lifelong_stage(args) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="사전 생성 콘텐츠 DB 빌더")
     p.add_argument("--domain",
-                   choices=["daily", "personality", "relationship", "compatibility",
+                   choices=["daily", "daily_headline_pool", "daily_today_energy_pool",
+                            "personality", "relationship", "compatibility",
                             "reunion_charm", "crush_charm", "marriage_extras", "marriage_solo",
                             "yearly_overall", "yearly_overall_extras",
                             "yearly_business", "yearly_career_change", "yearly_study",
@@ -4202,6 +4406,10 @@ def main() -> None:
 
     if args.domain == "daily":
         run_daily(args)
+    elif args.domain == "daily_headline_pool":
+        run_headline_pool(args, "headline")
+    elif args.domain == "daily_today_energy_pool":
+        run_headline_pool(args, "today_energy")
     elif args.domain == "personality":
         run_personality(args)
     elif args.domain == "relationship":

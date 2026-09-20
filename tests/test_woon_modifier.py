@@ -195,12 +195,17 @@ def test_today_energy_uses_ilwoon_layer_only_not_overall_trigger():
 def test_today_energy_never_equals_headline_table_text():
     """headline·today_energy는 별도 표(HEADLINE_TABLE vs TODAY_ENERGY_TABLE)를 써야 한다 —
     trigger_layer가 ilwoon으로 뽑혀 (group,bucket)이 today_energy와 완전히 같아지는
-    경우에도 문장 자체는 겹치면 안 된다(사용자 실측 리포트로 발견된 회귀 방지)."""
+    경우에도 문장 자체는 겹치면 안 된다(사용자 실측 리포트로 발견된 회귀 방지).
+
+    HEADLINE_TABLE은 개별 십신(10종) 키, TODAY_ENERGY_TABLE은 십신군(5종) 키라서
+    sipsin_group()으로 변환해 비교한다(HEADLINE_TABLE 세분화 배경은 그 파일 상단 주석 참고)."""
+    from core.sipsin import sipsin_group
     from domains.daily.woon_modifier import HEADLINE_TABLE, TODAY_ENERGY_TABLE
 
-    for group in HEADLINE_TABLE:
-        for bucket in HEADLINE_TABLE[group]:
-            assert HEADLINE_TABLE[group][bucket] != TODAY_ENERGY_TABLE[group][bucket]
+    for sipsin in HEADLINE_TABLE:
+        group = sipsin_group(sipsin)
+        for bucket in HEADLINE_TABLE[sipsin]:
+            assert HEADLINE_TABLE[sipsin][bucket] != TODAY_ENERGY_TABLE[group][bucket]
 
 
 def test_headline_and_today_energy_differ_when_ilwoon_is_overall_trigger():
@@ -222,7 +227,7 @@ def test_headline_uses_ilwoon_signal_not_overall_trigger():
     ilwoon_facts = mod["layers"]["ilwoon"]
     from domains.daily.woon_modifier import _resolve_bucket
     expected_bucket = _resolve_bucket(ilwoon_facts["relation_bucket"], ilwoon_facts["layer_intensity"])
-    expected = HEADLINE_TABLE[ilwoon_facts["group_gan"]][expected_bucket]
+    expected = HEADLINE_TABLE[ilwoon_facts["sipsin_gan"]][expected_bucket]
     assert mod["headline"] == expected
 
 
@@ -241,6 +246,65 @@ def test_headline_varies_across_consecutive_days_for_real_birth():
         mod = compute_woon_modifier(saju)
         headlines.append(mod["headline"])
     assert len(set(headlines)) == 3, headlines
+
+
+def test_headline_never_repeats_between_any_two_consecutive_days():
+    """어제와 오늘 한줄평이 겹치지 않아야 한다는 요구사항의 일반화 버전 — 실측 생일 하나가
+    아니라 일간(10)×일지(3 표본) 조합 전체에 걸쳐, 일진이 하루씩 넘어가는 모든 경우
+    (ALL60의 인접한 두 날)에 headline이 절대 같지 않은지 브루트포스로 확인한다.
+
+    GAN_YANG(음양)이 하루마다 반드시 뒤바뀌는 성질 때문에 개별 십신(HEADLINE_TABLE의
+    10키) 기준으로는 이웃한 두 날이 항상 다른 셀을 조회하게 되어 있다(woon_modifier.py
+    HEADLINE_TABLE 상단 주석 참고) — 즉 '직전 이력 조회' 없이도 구조적으로 보장된다."""
+    for dm in GAN_H:
+        for db in JI_H[:3]:
+            prev_headline = None
+            for ganji in ALL60 + [ALL60[0]]:  # 60일 주기를 한 바퀴 돌아 마지막->처음 전환도 확인
+                mod = compute_woon_modifier(_saju(dm, db, ilwoon=ganji))
+                if prev_headline is not None:
+                    assert mod["headline"] != prev_headline, (dm, db, ganji)
+                prev_headline = mod["headline"]
+
+
+def test_resolve_headline_prefers_pool_over_static_table(monkeypatch):
+    """headline_pool.json(셀당 다수 변형)이 있으면 HEADLINE_TABLE(셀당 1개) 대신 그걸 쓴다."""
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(wm, "pick_headline", lambda sipsin, bucket, day_ordinal=0: "풀에서 고른 문장입니다.")
+    assert wm._resolve_headline("비견", "harmony", 5) == "풀에서 고른 문장입니다."
+
+
+def test_resolve_headline_falls_back_to_static_table_when_pool_has_no_cell(monkeypatch):
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(wm, "pick_headline", lambda *a, **k: None)
+    assert wm._resolve_headline("비견", "harmony", 5) == wm.HEADLINE_TABLE["비견"]["harmony"]
+
+
+def test_resolve_today_energy_prefers_pool_over_static_table(monkeypatch):
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(wm, "pick_today_energy", lambda sipsin, bucket, day_ordinal=0: "풀 기반 오늘의 기운")
+    assert wm._resolve_today_energy("비견", "harmony", [], 5) == "풀 기반 오늘의 기운"
+
+
+def test_resolve_today_energy_falls_back_via_sipsin_group_when_pool_empty(monkeypatch):
+    """today_energy_pool 이 없으면 개별 십신(예: 겁재)을 십신군(비겁)으로 변환해
+    TODAY_ENERGY_TABLE(5종 키)에서 찾는다 — 이 표는 여전히 십신군 단위로 남아있다."""
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(wm, "pick_today_energy", lambda *a, **k: None)
+    assert wm._resolve_today_energy("겁재", "harmony", [], 5) == wm.TODAY_ENERGY_TABLE["비겁"]["harmony"]
+
+
+def test_day_ordinal_parses_target_date_and_defaults_to_zero():
+    import datetime
+
+    from domains.daily.woon_modifier import _day_ordinal
+
+    assert _day_ordinal({"target_date": "2026-09-20"}) == datetime.date(2026, 9, 20).toordinal()
+    assert _day_ordinal({}) == 0
+    assert _day_ordinal({"target_date": "not-a-date"}) == 0
 
 
 def test_today_energy_differs_between_people_with_different_yongsin():
