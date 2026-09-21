@@ -42,6 +42,12 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
   예: 정관 대운이라도 신강+정관(용신)이면 "조직 안에서 주도적으로 인정받고 성장",
   신약+정관(기신)이면 "조직/권위의 압박이 크게 느껴지고 억눌리는 느낌"(사용자 명시
   요구, domains/daewoon/content.py 모듈 docstring 참고).
+- domain_pipeline(2026-09-21 신규, domains/daewoon/pipeline.py): 원국 분석→대운 분석→
+  9영역(자아/성장·학업/전문성·직업/사회·재물·가족/부모·형제자매·친구/인간관계·애정/연애·
+  결혼/배우자) 매핑→영향도(0~5)→고영역(3~5점) 구체 해석/저영역(0~2점) 간소화→자연어
+  합성의 7단계 파이프라인 결과. 20세 미만은 학업/자아/가족/친구, 20세 이상은 직업/재물/
+  애정·결혼 영역에 +1 가중치가 자동으로 붙는다. narrative는 "[10년의 풍경]"(decade_theme
+  아래) 섹션에 이어 붙이는 용도.
 """
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -61,6 +67,7 @@ from domains.daewoon.content import (
     resolve_decade_polarity,
 )
 from domains.daewoon.landscape import build_decade_landscape
+from domains.daewoon.pipeline import build_domain_pipeline
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
 from domains.lifelong.service import _current_step, _fallback_stage_detail, _ilju
@@ -159,6 +166,11 @@ def analyze_daewoon_period(
     strength = saju.get("strength") or {}
     polarity = resolve_decade_polarity(fact["ganji"][0], strength)
 
+    # 7단계 파이프라인(2026-09-21): 원국 분석→대운 분석→9영역 매핑→영향도(0~5)→고/저영역
+    # 문장→자연어 합성(domains/daewoon/pipeline.py). 연령대(effective_age)에 따라 3단계
+    # 가중치가 자동으로 갈린다(20세 미만=학업/자아/가족/친구, 20세 이상=직업/재물/애정·결혼).
+    domain_pipeline = build_domain_pipeline(saju, fact, effective_age, gender)
+
     is_fallback = False
     entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
     if entry is None:
@@ -204,6 +216,10 @@ def analyze_daewoon_period(
         # strength_verdict는 core/strength.analyze_strength()의 "신강"/"신약"/"중화".
         "strength_verdict": strength.get("verdict"),
         "polarity": polarity,
+        # 7단계 파이프라인 산출물 — natal_summary(1단계)/daewoon_summary(2단계)/
+        # domain_scores(3·4·5·6단계, 9영역 각각의 점수+문장)/narrative(7단계 합성 문단).
+        # 프론트는 narrative를 "[10년의 풍경]"(decade_theme 아래) 섹션에 이어 붙인다.
+        "domain_pipeline": domain_pipeline,
     }
 
     return {

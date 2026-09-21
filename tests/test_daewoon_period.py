@@ -540,10 +540,11 @@ def test_analyze_daewoon_period_has_full_schema():
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
         "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
         "age_range", "target_age", "target", "is_current_decade",
-        "strength_verdict", "polarity",
+        "strength_verdict", "polarity", "domain_pipeline",
     }
     assert d["strength_verdict"] in {"신강", "신약", "중화"}
     assert d["polarity"] in POLARITY_STATES
+    assert len(d["domain_pipeline"]["domain_scores"]) == 9
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]
     assert d["saju_relation"]
