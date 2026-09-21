@@ -68,26 +68,40 @@ def _fallback(table: Dict[str, object], key: str):
 POLARITY_STATES = ("favorable", "neutral", "unfavorable")
 
 
-def resolve_decade_polarity(decade_gan: str, strength: Optional[Dict[str, Any]]) -> str:
-    """이 대운 "천간"의 오행이 이 사람의 억부 용신/희신(favorable)·기신(unfavorable)·
-    한신(neutral, 뚜렷한 쏠림 없음) 중 어디 속하는지. strength는 core/strength.
-    analyze_strength()의 결과(core/saju_base.calculate_saju가 saju_data["strength"]에
-    이미 담아둔다) — yongsin/heesin/gisin 키가 모두 "오행 이름"(목/화/토/금/수) 리스트다.
+def resolve_polarity_for_elem(elem: str, strength: Optional[Dict[str, Any]]) -> str:
+    """오행 이름(목/화/토/금/수) 하나가 이 사람의 억부 용신/희신(favorable)·기신
+    (unfavorable)·한신(neutral, 뚜렷한 쏠림 없음) 중 어디 속하는지. strength는
+    core/strength.analyze_strength()의 결과 — yongsin/heesin/gisin 키가 모두
+    "오행 이름" 리스트다.
 
-    decade_gan은 이 대운 단계의 간지 첫 글자(천간, 예: daewoon_step_facts의
-    fact["ganji"][0]) — content.py의 다른 표가 이미 이 대운을 "천간 기준 십신"으로
-    매칭하는 것과 같은 기준을 그대로 따른다.
+    resolve_decade_polarity()가 "대운 천간 한 글자"로 범위를 좁혀 쓰는 것의 일반화
+    버전 — pipeline.py가 영역(domain)마다 실제로 그 영역을 움직이는 요소(대운 천간일
+    수도, 지지일 수도 있음)의 오행을 각각 넣어 재사용한다(2026-09-21, "영역별 독립
+    분석" 요구사항 — 모든 영역이 대운 천간 하나의 희기만 그대로 복사하지 않도록).
     """
-    if not strength or not decade_gan:
-        return "neutral"
-    elem = GAN_ELEM.get(decade_gan, "")
-    if not elem:
+    if not strength or not elem:
         return "neutral"
     if elem in (strength.get("gisin") or []):
         return "unfavorable"
     if elem in (strength.get("yongsin") or []) or elem in (strength.get("heesin") or []):
         return "favorable"
     return "neutral"
+
+
+def resolve_decade_polarity(decade_gan: str, strength: Optional[Dict[str, Any]]) -> str:
+    """이 대운 "천간"의 오행이 이 사람의 억부 용신/희신(favorable)·기신(unfavorable)·
+    한신(neutral, 뚜렷한 쏠림 없음) 중 어디 속하는지. strength는 core/strength.
+    analyze_strength()의 결과(core/saju_base.calculate_saju가 saju_data["strength"]에
+    이미 담아둔다).
+
+    decade_gan은 이 대운 단계의 간지 첫 글자(천간, 예: daewoon_step_facts의
+    fact["ganji"][0]) — content.py의 다른 표가 이미 이 대운을 "천간 기준 십신"으로
+    매칭하는 것과 같은 기준을 그대로 따른다. resolve_polarity_for_elem()의 좁은
+    버전(천간 한 글자 → 오행 변환까지 포함)이다.
+    """
+    if not strength or not decade_gan:
+        return "neutral"
+    return resolve_polarity_for_elem(GAN_ELEM.get(decade_gan, ""), strength)
 
 
 def _resolve_field(value: object, polarity: str):

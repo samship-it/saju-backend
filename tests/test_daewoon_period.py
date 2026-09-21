@@ -544,7 +544,9 @@ def test_analyze_daewoon_period_has_full_schema():
     }
     assert d["strength_verdict"] in {"신강", "신약", "중화"}
     assert d["polarity"] in POLARITY_STATES
-    assert len(d["domain_pipeline"]["domain_scores"]) == 9
+    assert set(d["domain_pipeline"].keys()) == {
+        "natal_summary", "daewoon_summary", "life_stage", "domain_scores", "narrative",
+    }
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]
     assert d["saju_relation"]
