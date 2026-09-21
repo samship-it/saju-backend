@@ -108,6 +108,22 @@ def _ganji_label(ganji: str) -> str:
     return f"{gan_ko}{ji_ko}({ganji})" if gan_ko and ji_ko else ganji
 
 
+# 총평(summary)의 정적 DB 의존도 축소(2026-09-21 2차 개편, 사용자 지정): DB에서 조회한
+# event_narrative를 그대로 쓰지 않고, 그 앞에 이번 요청에서 실제로 계산된 domain_pipeline
+# 결과(어떤 영역이 두드러지는지 + 전체 균형 판단)를 근거로 한 문장을 붙인다. DB 자산
+# (14,000건)은 버리지 않고 뒤이어 보조 설명으로 그대로 살려 쓴다 — "selected_daewoon +
+# top_domains + global_context + life_stage"를 반영하라는 지시를 최소 침습으로 구현.
+def _compose_summary(event_narrative: str, domain_pipeline: Dict[str, Any]) -> str:
+    top_domains = domain_pipeline.get("domain_scores") or []
+    global_context = domain_pipeline.get("global_context", "")
+    if top_domains:
+        top_labels = ", ".join(d["label"] for d in top_domains[:2])
+        lead = f"이 시기는 {top_labels} 영역에서 특히 두드러지는 흐름입니다. {global_context}"
+    else:
+        lead = global_context
+    return f"{lead} {event_narrative}".strip()
+
+
 def _build_timeline_phases(
     facts: List[Dict[str, Any]], daewoon_num: int, birth_year: int, selected_step: int, current_step: int,
 ) -> List[Dict[str, Any]]:
@@ -205,7 +221,7 @@ def analyze_daewoon_period(
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
         "landscape_scene": landscape["scene"],
         "saju_relation": landscape["saju_relation"],
-        "summary": entry.get("event_narrative", ""),
+        "summary": _compose_summary(entry.get("event_narrative", ""), domain_pipeline),
         "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
         "domain_analysis": domain_analysis,
         "decade_theme": build_decade_theme(sipsin, polarity),

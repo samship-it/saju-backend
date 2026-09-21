@@ -230,10 +230,20 @@ def test_transition_front_and_back_distinguish_jeong_and_pyeon_pairs():
 
 # ------------------------------------------------------------------ landscape(10종)
 def test_build_decade_landscape_reused_from_lifelong_tables():
+    from domains.daewoon.landscape import JI_TEXTURE
     from domains.lifelong.landscape import ENV_IMAGE, SUBJECT_IMAGE
 
+    # 戊辰: 천간 戊=토(env), 지지 辰=토(texture) — 둘 다 "토" 오행.
     out = build_decade_landscape("수", "戊辰", "정재")
-    assert out["scene"] == f"{ENV_IMAGE['토']} 아래 {SUBJECT_IMAGE['수']}"
+    assert out["scene"] == f"{ENV_IMAGE['토']} 아래 {SUBJECT_IMAGE['수']}. {JI_TEXTURE['토']}"
+
+
+def test_build_decade_landscape_scene_differs_when_ji_element_differs_even_if_gan_element_matches():
+    # 2차 코드 감사에서 발견된 회귀: 戊午/己未는 천간 오행이 둘 다 "토"라 예전엔 scene이
+    # 100% 동일했다. 지지 오행(午=화/未=토)을 반영해 이제는 달라져야 한다.
+    wu_o = build_decade_landscape("수", "戊午", "편관")
+    gi_mi = build_decade_landscape("수", "己未", "정관")
+    assert wu_o["scene"] != gi_mi["scene"]
 
 
 def test_saju_relation_template_covers_all_ten_sipsin():
@@ -545,7 +555,7 @@ def test_analyze_daewoon_period_has_full_schema():
     assert d["strength_verdict"] in {"신강", "신약", "중화"}
     assert d["polarity"] in POLARITY_STATES
     assert set(d["domain_pipeline"].keys()) == {
-        "natal_summary", "daewoon_summary", "life_stage", "domain_scores", "narrative",
+        "natal_summary", "daewoon_summary", "life_stage", "global_context", "domain_scores", "narrative",
     }
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]

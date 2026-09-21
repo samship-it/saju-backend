@@ -23,11 +23,25 @@ decade_theme에 쓰는 components/Markdown.tsx로 볼드 렌더링한다.
 """
 from typing import Any, Dict, Optional
 
-from core.constants import GAN_ELEM
+from core.constants import GAN_ELEM, JI_ELEM
 from domains.lifelong.landscape import ENV_IMAGE, SUBJECT_IMAGE
 
 _DEFAULT_SUBJECT = "고요히 서 있는 존재"
 _DEFAULT_ENV = "잔잔한 풍경"
+
+# 대운 "지지"의 오행이 스치는 결(texture) — ENV_IMAGE(대운 천간 오행, 5종)만으로는
+# 서로 다른 대운이라도 천간의 오행이 같으면(예: 戊/己는 둘 다 토) 풍경 문장이 완전히
+# 동일해지는 문제가 2차 코드 감사에서 확인됐다(무오/기미 실측 100% 동일). 대운 지지는
+# 그동안 landscape에서 전혀 쓰이지 않던 데이터라, 이걸 더해 같은 천간 오행이라도 지지
+# 오행이 다르면(戊午=화, 己未=토처럼) 풍경이 갈리도록 한다 — 근거 없는 문장을 새로
+# 지어내는 게 아니라 이미 계산되어 있던 대운 지지 오행을 뒤늦게 반영하는 것.
+JI_TEXTURE: Dict[str, str] = {
+    "목": "그 위로 새순이 돋아나는 기운이 스칩니다",
+    "화": "그 위로 열기가 일렁이는 기운이 스칩니다",
+    "토": "그 위로 흙먼지가 가라앉는 기운이 스칩니다",
+    "금": "그 위로 서늘한 결기가 스칩니다",
+    "수": "그 위로 물기가 스며드는 기운이 스칩니다",
+}
 
 # 십신 10종 → 일간과의 생극 관계 정의만(결과 요약 문장 없음). {decade_elem}=이 대운
 # 천간 오행, {day_elem}=원국 일간 오행으로 채워진다. 정/편 쌍(예: 정재/편재)은 오행
@@ -89,11 +103,23 @@ SAJU_RELATION_TEMPLATE: Dict[str, str] = {
 
 def build_decade_landscape(day_master_elem: str, ganji: str, sipsin: Optional[str] = None) -> Dict[str, Any]:
     """day_master_elem(saju["day_master_elem"]) + 이 대운 단계의 간지(+십신 10종 중 하나)
-    -> {scene, decade_elem, saju_relation}."""
+    -> {scene, decade_elem, saju_relation}.
+
+    scene은 대운 "천간" 오행(env, 5종)과 대운 "지지" 오행(texture, 5종)을 함께 반영한다
+    — 지지는 이전까지 전혀 쓰이지 않던 데이터였다(2026-09-21 2차 개편). 천간 오행이
+    같아도(예: 戊/己=토) 지지 오행이 다르면(午=화/未=토) 서로 다른 문장이 나온다.
+    """
     gan = ganji[0] if ganji else ""
+    ji = ganji[1] if len(ganji) > 1 else ""
     decade_elem = GAN_ELEM.get(gan, "")
+    ji_elem = JI_ELEM.get(ji, "")
     subject = SUBJECT_IMAGE.get(day_master_elem, _DEFAULT_SUBJECT)
     env = ENV_IMAGE.get(decade_elem, _DEFAULT_ENV)
+    texture = JI_TEXTURE.get(ji_elem)
+
+    scene = f"{env} 아래 {subject}"
+    if texture:
+        scene = f"{scene}. {texture}"
 
     saju_relation = None
     if sipsin and day_master_elem and decade_elem:
@@ -102,7 +128,7 @@ def build_decade_landscape(day_master_elem: str, ganji: str, sipsin: Optional[st
             saju_relation = template.format(decade_elem=decade_elem, day_elem=day_master_elem)
 
     return {
-        "scene": f"{env} 아래 {subject}",
+        "scene": scene,
         "decade_elem": decade_elem or None,
         "saju_relation": saju_relation,
     }
