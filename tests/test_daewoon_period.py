@@ -22,6 +22,7 @@ from domains.daewoon.content import (
     FRIENDSHIP_NUANCE,
     GROUPS,
     KEYWORDS,
+    POLARITY_STATES,
     RELATIONSHIP_FLOW,
     RELATIONSHIP_NUANCE,
     RELATIONSHIP_STATUS_GUIDE,
@@ -37,6 +38,8 @@ from domains.daewoon.content import (
     WEALTH_NUANCE,
     _has_batchim,
     _josa,
+    _resolve_field,
+    _with_polarity_note,
     build_career_or_study,
     build_child_domains,
     build_decade_theme,
@@ -45,6 +48,7 @@ from domains.daewoon.content import (
     build_transition_back_domains,
     build_transition_front_domains,
     build_wealth_flow,
+    resolve_decade_polarity,
 )
 from domains.daewoon.landscape import SAJU_RELATION_TEMPLATE, build_decade_landscape
 from domains.daewoon.service import (
@@ -536,7 +540,10 @@ def test_analyze_daewoon_period_has_full_schema():
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
         "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
         "age_range", "target_age", "target", "is_current_decade",
+        "strength_verdict", "polarity",
     }
+    assert d["strength_verdict"] in {"신강", "신약", "중화"}
+    assert d["polarity"] in POLARITY_STATES
     assert d["daewoon_header"].endswith("대운")
     assert d["landscape_scene"]
     assert d["saju_relation"]
@@ -602,3 +609,183 @@ def test_analyze_daewoon_period_consecutive_steps_never_repeat_domain_analysis()
         data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=target_age)
         results.append(data["data"]["domain_analysis"])
     assert _distinct_count(results) == len(results)
+
+
+# ============================================================================
+# 억부 용신/기신 희기(喜忌) 반영(2026-09-21) — 같은 십신이라도 신강/신약 + 용신/기신에
+# 따라 실제 체감 톤이 갈려야 한다는 요구사항 검증.
+# ============================================================================
+
+def test_resolve_decade_polarity_classifies_gisin_yongsin_heesin_and_hansin():
+    strength = {"yongsin": ["금", "수"], "heesin": ["토"], "gisin": ["화", "목"]}
+    # 甲=목(기신), 丙=화(기신), 庚=금(용신), 壬=수(용신), 戊=토(희신), 무관계(표에 없는 천간 없음이므로
+    # 한신 케이스는 strength 자체가 비어 있을 때로 별도 검증.
+    assert resolve_decade_polarity("甲", strength) == "unfavorable"
+    assert resolve_decade_polarity("丙", strength) == "unfavorable"
+    assert resolve_decade_polarity("庚", strength) == "favorable"
+    assert resolve_decade_polarity("壬", strength) == "favorable"
+    assert resolve_decade_polarity("戊", strength) == "favorable"  # 희신도 favorable
+
+
+def test_resolve_decade_polarity_neutral_when_element_in_neither_list():
+    # 목/화가 용신·희신·기신 어디에도 없는 "한신" 오행이면 neutral.
+    strength = {"yongsin": ["금"], "heesin": [], "gisin": ["수"]}
+    assert resolve_decade_polarity("甲", strength) == "neutral"  # 갑=목, 한신
+
+
+def test_resolve_decade_polarity_defaults_to_neutral_on_missing_input():
+    assert resolve_decade_polarity("甲", None) == "neutral"
+    assert resolve_decade_polarity("甲", {}) == "neutral"
+    assert resolve_decade_polarity("", {"yongsin": ["목"]}) == "neutral"
+
+
+def test_resolve_field_picks_polarity_variant_and_passes_through_plain_strings():
+    field = {"neutral": "N", "favorable": "F", "unfavorable": "U"}
+    assert _resolve_field(field, "favorable") == "F"
+    assert _resolve_field(field, "unfavorable") == "U"
+    assert _resolve_field(field, "neutral") == "N"
+    # 아직 3분기 재작성이 안 된 평문 문자열 필드는 그대로 통과.
+    assert _resolve_field("그냥 문자열입니다", "favorable") == "그냥 문자열입니다"
+
+
+def test_with_polarity_note_appends_only_for_favorable_and_unfavorable():
+    base = "기본 문장입니다."
+    neutral = _with_polarity_note(base, "wealth_flow", "neutral")
+    favorable = _with_polarity_note(base, "wealth_flow", "favorable")
+    unfavorable = _with_polarity_note(base, "wealth_flow", "unfavorable")
+    assert neutral == base  # 한신은 아무것도 덧붙이지 않는다
+    assert favorable.startswith(base) and favorable != base
+    assert unfavorable.startswith(base) and unfavorable != base
+    assert favorable != unfavorable
+
+
+def test_career_adult_core_change_and_cautions_are_three_way_polarity_dicts():
+    for s in SIPSIN_10:
+        assert set(CAREER_ADULT[s]["core_change"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert set(CAREER_ADULT[s]["cautions"].keys()) == {"neutral", "favorable", "unfavorable"}
+        # how_it_shows는 아직 평문 문자열(희기보다 십신 자체 성격이 좌우하는 필드).
+        assert isinstance(CAREER_ADULT[s]["how_it_shows"], str)
+
+
+def test_career_youth_growth_flow_and_cautions_are_three_way_polarity_dicts():
+    for s in SIPSIN_10:
+        assert set(CAREER_YOUTH[s]["growth_flow"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert set(CAREER_YOUTH[s]["cautions"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert isinstance(CAREER_YOUTH[s]["study_style"], str)
+
+
+def test_study_growth_school_life_and_exam_luck_are_three_way_polarity_dicts():
+    for s in SIPSIN_10:
+        assert set(STUDY_GROWTH[s]["school_life"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert set(STUDY_GROWTH[s]["exam_luck"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert isinstance(STUDY_GROWTH[s]["aptitude_path"], str)
+
+
+def test_build_career_or_study_defaults_to_neutral_and_matches_old_behavior():
+    # polarity 인자를 생략하면 예전(억부 반영 이전)과 동일한 neutral 문구가 나온다 —
+    # 하위 호환성 검증.
+    out = build_career_or_study("정관", is_adult=True)
+    assert out["core_change"] == CAREER_ADULT["정관"]["core_change"]["neutral"]
+    assert out["cautions"] == CAREER_ADULT["정관"]["cautions"]["neutral"]
+
+
+def test_build_career_or_study_changes_tone_by_polarity_for_every_sipsin():
+    for s in SIPSIN_10:
+        favorable = build_career_or_study(s, is_adult=True, polarity="favorable")
+        unfavorable = build_career_or_study(s, is_adult=True, polarity="unfavorable")
+        neutral = build_career_or_study(s, is_adult=True, polarity="neutral")
+        assert favorable["core_change"] != unfavorable["core_change"]
+        assert favorable["cautions"] != unfavorable["cautions"]
+        assert favorable != neutral
+        assert unfavorable != neutral
+        # how_it_shows(행동 묘사)는 희기와 무관하게 변하지 않는다.
+        assert favorable["how_it_shows"] == unfavorable["how_it_shows"] == neutral["how_it_shows"]
+
+
+def test_build_career_or_study_jeonggwan_favorable_vs_unfavorable_matches_user_example():
+    # 사용자 명시 예시: 신강+정관(용신)="조직 안에서 주도적으로 인정받고 성장",
+    # 신약+정관(기신)="조직/권위의 압박이 크게 느껴지고 억눌리는 느낌".
+    favorable = build_career_or_study("정관", is_adult=True, polarity="favorable")
+    unfavorable = build_career_or_study("정관", is_adult=True, polarity="unfavorable")
+    assert "주도적으로 인정받고 성장" in favorable["core_change"]
+    assert "압박" in unfavorable["core_change"] and "억눌리는" in unfavorable["core_change"]
+    # 신약+기신 조합은 "힘들게 느껴질 수 있다"를 명확히 인정하는 톤이어야 한다(무조건
+    # 긍정 포장 금지 — 사용자 명시 요구).
+    assert "힘들게 느껴질 수 있다" in unfavorable["cautions"]
+
+
+def test_build_child_domains_school_life_and_exam_luck_change_tone_by_polarity():
+    for s in SIPSIN_10:
+        favorable = build_child_domains(s, polarity="favorable")["study_growth"]
+        unfavorable = build_child_domains(s, polarity="unfavorable")["study_growth"]
+        assert favorable["school_life"] != unfavorable["school_life"]
+        assert favorable["exam_luck"] != unfavorable["exam_luck"]
+        # 구체적 사건·성적 단정 금지 — "반장"·숫자로 된 등수/점수를 직접 언급하지 않는다.
+        for text in (favorable["school_life"], favorable["exam_luck"], unfavorable["school_life"], unfavorable["exam_luck"]):
+            assert "반장" not in text
+
+
+def test_secondary_domains_append_polarity_note_only_for_favorable_and_unfavorable():
+    neutral = build_wealth_flow("정재", polarity="neutral")
+    favorable = build_wealth_flow("정재", polarity="favorable")
+    unfavorable = build_wealth_flow("정재", polarity="unfavorable")
+    assert favorable["management_caution"].startswith(neutral["management_caution"])
+    assert unfavorable["management_caution"].startswith(neutral["management_caution"])
+    assert favorable["management_caution"] != neutral["management_caution"]
+    assert unfavorable["management_caution"] != neutral["management_caution"]
+    assert favorable["management_caution"] != unfavorable["management_caution"]
+
+    fam_neutral = build_family("정인", polarity="neutral")
+    fam_favorable = build_family("정인", polarity="favorable")
+    assert fam_favorable["warning"] != fam_neutral["warning"]
+
+    rel_neutral = build_relationship("식신", None, False, polarity="neutral")
+    rel_unfavorable = build_relationship("식신", None, False, polarity="unfavorable")
+    assert rel_unfavorable["flow"] != rel_neutral["flow"]
+
+
+def test_build_decade_theme_appends_polarity_closing_only_for_favorable_and_unfavorable():
+    neutral = build_decade_theme("정관", polarity="neutral")
+    favorable = build_decade_theme("정관", polarity="favorable")
+    unfavorable = build_decade_theme("정관", polarity="unfavorable")
+    assert favorable["sentence"] != neutral["sentence"]
+    assert unfavorable["sentence"] != neutral["sentence"]
+    assert favorable["sentence"].startswith(neutral["sentence"])
+    assert unfavorable["sentence"].startswith(neutral["sentence"])
+    # pair_sipsin은 polarity와 무관하게 동일.
+    assert favorable["pair_sipsin"] == unfavorable["pair_sipsin"] == neutral["pair_sipsin"] == "편관"
+
+
+def test_build_decade_theme_default_polarity_is_neutral_backward_compatible():
+    # polarity 인자를 생략한 기존 호출은 이전과 완전히 동일한 문장을 낸다.
+    assert build_decade_theme("정인") == build_decade_theme("정인", polarity="neutral")
+
+
+# ----------------------------------------------------------------------------
+# 실제 두 사람(신강/신약이 다른, 같은 정관 대운) 비교 — 사용자 요청 검증 시나리오.
+# 1996-01-20 06:00 여성(신약, 정관=기신, 35~44세)과 1968-12-28 16:00 남성(신강,
+# 정관=용신, 43~52세)은 둘 다 실제 계산 결과로 "정관 대운"에 해당하며 억부가 정반대다
+# (둘 다 과도기 대운(15~19세 시작)이 아닌 일반 성인기 구간이라 CAREER_ADULT의 3분기
+# 문구가 그대로 적용된다).
+# ----------------------------------------------------------------------------
+
+def test_two_real_people_with_opposite_strength_get_opposite_tone_on_the_same_jeonggwan_daewoon():
+    weak_gisin, _ = analyze_daewoon_period(1996, 1, 20, 6, 0, "female", False, target_age=38)
+    strong_yongsin, _ = analyze_daewoon_period(1968, 12, 28, 16, 0, "male", False, target_age=45)
+
+    # 전제 검증: 실제로 둘 다 정관 대운이고, 신강/신약과 희기가 정반대다.
+    assert weak_gisin["data"]["saju_relation"].startswith("이 10년은 **정관운")
+    assert strong_yongsin["data"]["saju_relation"].startswith("이 10년은 **정관운")
+    assert weak_gisin["data"]["strength_verdict"] == "신약"
+    assert strong_yongsin["data"]["strength_verdict"] == "신강"
+    assert weak_gisin["data"]["polarity"] == "unfavorable"
+    assert strong_yongsin["data"]["polarity"] == "favorable"
+
+    weak_career = weak_gisin["data"]["domain_analysis"]["career_or_study"]
+    strong_career = strong_yongsin["data"]["domain_analysis"]["career_or_study"]
+
+    # 십신 이름(정관)은 완전히 같지만 톤은 정반대여야 한다 — 사용자 핵심 요구사항.
+    assert weak_career["core_change"] != strong_career["core_change"]
+    assert "주도적으로 인정받고 성장" in strong_career["core_change"]
+    assert "억눌리는" in weak_career["core_change"]
+    assert "힘들게 느껴질 수 있다" in weak_career["cautions"]

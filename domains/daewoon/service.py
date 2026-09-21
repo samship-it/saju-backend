@@ -35,6 +35,13 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
   기반으로 대운 영향이 약한 영역의 흐름을 안내한다.
 - timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
+- strength_verdict / polarity(2026-09-21 신규): 이 사람의 억부 신강/신약(core/strength.
+  analyze_strength) 및 이 대운 "천간" 오행이 용신/희신(favorable)·기신(unfavorable)·
+  한신(neutral) 중 어디 속하는지(content.resolve_decade_polarity). 같은 십신이라도
+  이 polarity에 따라 domain_analysis/decade_theme의 톤이 실제로 반대로 갈린다 —
+  예: 정관 대운이라도 신강+정관(용신)이면 "조직 안에서 주도적으로 인정받고 성장",
+  신약+정관(기신)이면 "조직/권위의 압박이 크게 느껴지고 억눌리는 느낌"(사용자 명시
+  요구, domains/daewoon/content.py 모듈 docstring 참고).
 """
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -51,6 +58,7 @@ from domains.daewoon.content import (
     build_transition_back_domains,
     build_transition_front_domains,
     build_wealth_flow,
+    resolve_decade_polarity,
 )
 from domains.daewoon.landscape import build_decade_landscape
 from domains.lifelong.content_db import lookup_stage_detail
@@ -143,6 +151,14 @@ def analyze_daewoon_period(
     is_selected_current = step == current_step
     sipsin = fact["sipsin"]  # 천간 기준 십신 10종 — content.py 매칭 키
 
+    # 억부 용신/기신 희기(喜忌) — 이 대운 "천간" 오행이 이 사람의 용신/희신(favorable)·
+    # 기신(unfavorable)·한신(neutral) 중 어디 속하는지. 같은 십신이라도 이 값에 따라
+    # domain_analysis/decade_theme의 톤이 갈린다(사용자 명시 요구, content.py 모듈
+    # docstring 참고). strength는 core/saju_base.calculate_saju가 core/strength.
+    # analyze_strength()로 이미 계산해 saju_data["strength"]에 담아둔다.
+    strength = saju.get("strength") or {}
+    polarity = resolve_decade_polarity(fact["ganji"][0], strength)
+
     is_fallback = False
     entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
     if entry is None:
@@ -152,17 +168,19 @@ def analyze_daewoon_period(
     is_transition_decade = TRANSITION_START_MIN <= start_age <= TRANSITION_START_MAX
     if is_transition_decade:
         if effective_age < TRANSITION_SPLIT_AGE:
-            domain_analysis = build_transition_front_domains(sipsin)
+            domain_analysis = build_transition_front_domains(sipsin, polarity)
         else:
-            domain_analysis = build_transition_back_domains(sipsin, love_status, is_selected_current)
+            domain_analysis = build_transition_back_domains(sipsin, love_status, is_selected_current, polarity)
     elif effective_age < CHILD_AGE_THRESHOLD:
-        domain_analysis = build_child_domains(sipsin)
+        domain_analysis = build_child_domains(sipsin, polarity)
     else:
         domain_analysis = {
-            "career_or_study": build_career_or_study(sipsin, is_adult=effective_age >= ADULT_AGE_THRESHOLD),
-            "wealth_flow": build_wealth_flow(sipsin),
-            "relationship": build_relationship(sipsin, love_status, is_selected_current),
-            "family": build_family(sipsin),
+            "career_or_study": build_career_or_study(
+                sipsin, is_adult=effective_age >= ADULT_AGE_THRESHOLD, polarity=polarity
+            ),
+            "wealth_flow": build_wealth_flow(sipsin, polarity),
+            "relationship": build_relationship(sipsin, love_status, is_selected_current, polarity),
+            "family": build_family(sipsin, polarity),
         }
 
     landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], sipsin)
@@ -174,7 +192,7 @@ def analyze_daewoon_period(
         "summary": entry.get("event_narrative", ""),
         "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
         "domain_analysis": domain_analysis,
-        "decade_theme": build_decade_theme(sipsin),
+        "decade_theme": build_decade_theme(sipsin, polarity),
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
         "decade_tasks": list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"])),
         "step": step,
@@ -182,6 +200,10 @@ def analyze_daewoon_period(
         "target_age": effective_age,
         "target": target if target in ("me", "partner") else "me",
         "is_current_decade": is_selected_current,
+        # 억부 용신/기신 희기 — 프론트가 필요하면 배지 등에 쓸 수 있도록 함께 노출.
+        # strength_verdict는 core/strength.analyze_strength()의 "신강"/"신약"/"중화".
+        "strength_verdict": strength.get("verdict"),
+        "polarity": polarity,
     }
 
     return {
