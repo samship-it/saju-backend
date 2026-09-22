@@ -110,17 +110,22 @@ def _ganji_label(ganji: str) -> str:
 
 # 총평(summary)의 정적 DB 의존도 축소(2026-09-21 2차 개편, 사용자 지정): DB에서 조회한
 # event_narrative를 그대로 쓰지 않고, 그 앞에 이번 요청에서 실제로 계산된 domain_pipeline
-# 결과(어떤 영역이 두드러지는지 + 전체 균형 판단)를 근거로 한 문장을 붙인다. DB 자산
-# (14,000건)은 버리지 않고 뒤이어 보조 설명으로 그대로 살려 쓴다 — "selected_daewoon +
-# top_domains + global_context + life_stage"를 반영하라는 지시를 최소 침습으로 구현.
+# 결과(어떤 영역이 두드러지는지)를 근거로 한 문장을 붙인다. DB 자산(14,000건)은 버리지
+# 않고 뒤이어 보조 설명으로 그대로 살려 쓴다.
+#
+# STEP12(2026-09-22): 여기서 global_context(신강/신약+전체 균형 판단)를 재인용하던
+# 것을 제거했다 — "이 10년의 풍경" 카드가 이미 domain_pipeline.global_context를
+# 그대로 노출하는데, 그 뒤에 오는 "이 시기 총평" 카드가 같은 문장을 또 인용해
+# 사용자가 같은 판단을 두 번 읽는 구조였다(STEP12 Audit). 전체 균형 판단은
+# global_context 한 곳에서만 담당하고, summary는 "어떤 영역이 두드러지는지" +
+# event_narrative(DB 사건 서사)만 담당한다.
 def _compose_summary(event_narrative: str, domain_pipeline: Dict[str, Any]) -> str:
     top_domains = domain_pipeline.get("domain_scores") or []
-    global_context = domain_pipeline.get("global_context", "")
     if top_domains:
         top_labels = ", ".join(d["label"] for d in top_domains[:2])
-        lead = f"이 시기는 {top_labels} 영역에서 특히 두드러지는 흐름입니다. {global_context}"
+        lead = f"이 시기는 {top_labels} 영역에서 특히 두드러지는 흐름입니다."
     else:
-        lead = global_context
+        lead = "이 시기는 특정 영역에 크게 치우치지 않고 전반적으로 무난하게 흘러가는 흐름입니다."
     return f"{lead} {event_narrative}".strip()
 
 

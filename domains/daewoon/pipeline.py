@@ -930,14 +930,17 @@ def _build_global_context(natal: Dict[str, Any], daewoon: Dict[str, Any]) -> str
     return sentence
 
 
+# STEP12(2026-09-22): detail(각 domain의 전체 sentence를 이어붙이는 부분)을 제거했다
+# — 바로 위 domain_scores 카드 리스트가 이미 manifestation을 보여주는데, 그 아래
+# narrative가 같은 domain의 manifestation을 포함한 전체 문장을 다시 이어붙여
+# "같은 카드 안에서 같은 내용을 두 번" 읽게 만들었다(STEP12 Audit). intro(어떤
+# 영역이 두드러지는지)만 남기고, 각 domain의 구체 내용은 카드 쪽이 전담한다.
 def _build_narrative(meaningful: List[Dict[str, Any]]) -> str:
     if not meaningful:
         return "이 10년은 어느 한 영역에 크게 치우치기보다 전반적으로 무난하게 흘러갈 수 있는 시기입니다."
     ordered = sorted(meaningful, key=lambda d: -d["activation"])
     labels = ", ".join(d["label"] for d in ordered)
-    intro = f"이 10년은 {labels} 영역에서 변화가 가장 두드러지게 나타날 수 있는 시기입니다."
-    detail = " ".join(d["sentence"] for d in ordered)
-    return f"{intro} {detail}"
+    return f"이 10년은 {labels} 영역에서 변화가 가장 두드러지게 나타날 수 있는 시기입니다."
 
 
 # ============================================================================

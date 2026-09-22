@@ -16,7 +16,6 @@ from domains.daewoon.content import (
     FAMILY_ENV_NUANCE,
     FAMILY_ENVIRONMENT,
     FAMILY_FLOW,
-    FAMILY_NUANCE,
     FORBIDDEN_ADULT_WORDS,
     FRIENDSHIP,
     FRIENDSHIP_NUANCE,
@@ -24,7 +23,6 @@ from domains.daewoon.content import (
     KEYWORDS,
     POLARITY_STATES,
     RELATIONSHIP_FLOW,
-    RELATIONSHIP_NUANCE,
     RELATIONSHIP_STATUS_GUIDE,
     SIPSIN_10,
     SIPSIN_CHANGE_AREA,
@@ -35,7 +33,6 @@ from domains.daewoon.content import (
     TRANSITION_BACK_CAREER,
     TRANSITION_FRONT_STUDY,
     WEALTH_FLOW,
-    WEALTH_NUANCE,
     _has_batchim,
     _josa,
     _resolve_field,
@@ -95,15 +92,22 @@ def test_career_adult_and_youth_tables_cover_all_ten_sipsin_with_distinct_shape(
         assert set(CAREER_YOUTH[s].keys()) == {"growth_flow", "study_style", "cautions"}
 
 
-def test_wealth_relationship_family_base_tables_still_five_way_with_ten_way_nuance():
-    # 이 3개 도메인은 5분류 기본 문단 + 10종 뉘앙스 한 문장으로 차별화한다(전면
-    # 재작성 대신 오버레이 방식 — build_wealth_flow 등 참고).
-    assert set(WEALTH_FLOW.keys()) == set(GROUPS)
-    assert set(RELATIONSHIP_FLOW.keys()) == set(GROUPS)
-    assert set(FAMILY_FLOW.keys()) == set(GROUPS)
-    assert set(WEALTH_NUANCE.keys()) == set(SIPSIN_10)
-    assert set(RELATIONSHIP_NUANCE.keys()) == set(SIPSIN_10)
-    assert set(FAMILY_NUANCE.keys()) == set(SIPSIN_10)
+def test_wealth_relationship_family_tables_cover_all_ten_sipsin_with_polarity():
+    # STEP12: 5분류+10종 뉘앙스 오버레이 방식을 버리고 career_or_study/study_growth와
+    # 같은 수준으로 10종 전체를 독립적으로 새로 썼다(같은 그룹 두 십신이 필드를
+    # 통째로 동일하게 내던 문제 해결 — STEP12 Audit).
+    assert set(WEALTH_FLOW.keys()) == set(SIPSIN_10)
+    assert set(RELATIONSHIP_FLOW.keys()) == set(SIPSIN_10)
+    assert set(FAMILY_FLOW.keys()) == set(SIPSIN_10)
+    for s in SIPSIN_10:
+        assert set(WEALTH_FLOW[s].keys()) == {"earning_style", "cash_flow", "management_caution"}
+        assert set(WEALTH_FLOW[s]["earning_style"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert set(WEALTH_FLOW[s]["cash_flow"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert isinstance(WEALTH_FLOW[s]["management_caution"], str)
+        assert set(RELATIONSHIP_FLOW[s].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert set(FAMILY_FLOW[s].keys()) == {"change_flow", "warning"}
+        assert set(FAMILY_FLOW[s]["change_flow"].keys()) == {"neutral", "favorable", "unfavorable"}
+        assert isinstance(FAMILY_FLOW[s]["warning"], str)
     assert set(RELATIONSHIP_STATUS_GUIDE.keys()) == {"single", "dating", "married"}
 
 
@@ -201,24 +205,49 @@ def test_transition_content_tables_cover_all_ten_sipsin_with_expected_shape():
 def test_transition_front_study_never_contains_forbidden_adult_words():
     for fields in TRANSITION_FRONT_STUDY.values():
         for text in fields.values():
-            for word in FORBIDDEN_ADULT_WORDS:
-                assert word not in text
+            leaves = text.values() if isinstance(text, dict) else [text]
+            for leaf in leaves:
+                for word in FORBIDDEN_ADULT_WORDS:
+                    assert word not in leaf
 
 
 def test_build_transition_front_domains_keeps_child_shape_with_overridden_study():
+    # STEP12: exam_luck만 {neutral,favorable,unfavorable}로 분기되므로, 기본
+    # polarity(neutral)로 호출한 결과는 그 "neutral" 갈래와 같아야 한다.
     for s in SIPSIN_10:
         domains = build_transition_front_domains(s)
         assert set(domains.keys()) == {
             "study_growth", "allowance_economy", "friendship", "family_environment",
         }
-        assert domains["study_growth"] == dict(TRANSITION_FRONT_STUDY[s])
+        expected = {field: _resolve_field(v, "neutral") for field, v in TRANSITION_FRONT_STUDY[s].items()}
+        assert domains["study_growth"] == expected
+
+
+def test_build_transition_front_domains_exam_luck_changes_tone_by_polarity():
+    for s in SIPSIN_10:
+        favorable = build_transition_front_domains(s, polarity="favorable")["study_growth"]
+        unfavorable = build_transition_front_domains(s, polarity="unfavorable")["study_growth"]
+        assert favorable["exam_luck"] != unfavorable["exam_luck"]
+        # school_life/aptitude_path는 polarity와 무관(경계 케이스, 전면 재작성 제외).
+        assert favorable["school_life"] == unfavorable["school_life"]
 
 
 def test_build_transition_back_domains_keeps_adult_shape_with_overridden_career():
+    # STEP12: cautions만 {neutral,favorable,unfavorable}로 분기되므로, 기본
+    # polarity(neutral)로 호출한 결과는 그 "neutral" 갈래와 같아야 한다.
     for s in SIPSIN_10:
         domains = build_transition_back_domains(s, None, False)
         assert set(domains.keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
-        assert domains["career_or_study"] == dict(TRANSITION_BACK_CAREER[s])
+        expected = {field: _resolve_field(v, "neutral") for field, v in TRANSITION_BACK_CAREER[s].items()}
+        assert domains["career_or_study"] == expected
+
+
+def test_build_transition_back_domains_cautions_changes_tone_by_polarity():
+    for s in SIPSIN_10:
+        favorable = build_transition_back_domains(s, None, False, polarity="favorable")["career_or_study"]
+        unfavorable = build_transition_back_domains(s, None, False, polarity="unfavorable")["career_or_study"]
+        assert favorable["cautions"] != unfavorable["cautions"]
+        assert favorable["core_change"] == unfavorable["core_change"]
 
 
 def test_transition_front_and_back_distinguish_jeong_and_pyeon_pairs():
@@ -730,35 +759,44 @@ def test_secondary_domains_no_longer_append_global_polarity_note():
     # STEP11-A(2026-09-22): management_caution/warning에 "다만 지금 이 흐름은...사주
     # 전체 균형..." 문장을 매번 덧붙이던 동작을 제거했다 — 총평(summary)이
     # domain_pipeline.global_context로 이미 1회 전달하는 판단과 겹쳐 화면 하나에서
-    # 최대 5~6회 반복됐기 때문(STEP11 Audit). 이제 이 필드는 polarity와 무관하게
-    # 동일한 값을 낸다 — 십신별 caution/warning 본문 자체(WEALTH_FLOW/FAMILY_FLOW 등)는
-    # 그대로 유지된다.
+    # 최대 5~6회 반복됐기 때문(STEP11 Audit). management_caution/warning은 polarity와
+    # 무관하게 동일한 값을 낸다(캡션성 필드, career.how_it_shows와 같은 성격).
+    #
+    # STEP12(2026-09-22): 반면 earning_style/cash_flow(wealth)와 flow(relationship),
+    # change_flow(family)는 이제 {neutral,favorable,unfavorable}로 실제 분기된다 —
+    # 이전에는 이 필드들에 polarity 반영이 전혀 없어 기신 대운에도 본문이 계속
+    # 긍정적으로 읽히는 논리 충돌이 있었다(STEP12 Audit "己未 사례"). 이 분기는
+    # 전역 문구 재인용이 아니라 십신별로 새로 쓴 본문이라 중복이 아니다.
     neutral = build_wealth_flow("정재", polarity="neutral")
     favorable = build_wealth_flow("정재", polarity="favorable")
     unfavorable = build_wealth_flow("정재", polarity="unfavorable")
     assert favorable["management_caution"] == neutral["management_caution"] == unfavorable["management_caution"]
     assert "사주 전체 균형" not in neutral["management_caution"]
+    assert favorable["earning_style"] != unfavorable["earning_style"]
 
     fam_neutral = build_family("정인", polarity="neutral")
     fam_favorable = build_family("정인", polarity="favorable")
     assert fam_favorable["warning"] == fam_neutral["warning"]
     assert "사주 전체 균형" not in fam_neutral["warning"]
+    assert fam_favorable["change_flow"] != fam_neutral["change_flow"]
 
     rel_neutral = build_relationship("식신", None, False, polarity="neutral")
     rel_unfavorable = build_relationship("식신", None, False, polarity="unfavorable")
-    assert rel_unfavorable["flow"] == rel_neutral["flow"]
+    assert rel_unfavorable["flow"] != rel_neutral["flow"]
     assert "사주 전체 균형" not in rel_neutral["flow"]
 
 
-def test_build_decade_theme_appends_polarity_closing_only_for_favorable_and_unfavorable():
+def test_build_decade_theme_no_longer_varies_by_polarity():
+    # STEP12(2026-09-22): 4단계(억부 용신/기신 희기 마무리 문장)를 제거했다 — 같은
+    # "이 10년의 풍경" 카드 안에서 domain_pipeline.global_context와 사실상 같은
+    # 판단을 반복했다(STEP12 Audit). decade_theme은 이제 핵심 키워드·음양쌍 설명만
+    # 담당하고, polarity와 무관하게 항상 같은 문장을 낸다.
     neutral = build_decade_theme("정관", polarity="neutral")
     favorable = build_decade_theme("정관", polarity="favorable")
     unfavorable = build_decade_theme("정관", polarity="unfavorable")
-    assert favorable["sentence"] != neutral["sentence"]
-    assert unfavorable["sentence"] != neutral["sentence"]
-    assert favorable["sentence"].startswith(neutral["sentence"])
-    assert unfavorable["sentence"].startswith(neutral["sentence"])
-    # pair_sipsin은 polarity와 무관하게 동일.
+    assert favorable["sentence"] == neutral["sentence"] == unfavorable["sentence"]
+    assert "사주 전체 균형" not in neutral["sentence"]
+    # pair_sipsin은 원래도 polarity와 무관.
     assert favorable["pair_sipsin"] == unfavorable["pair_sipsin"] == neutral["pair_sipsin"] == "편관"
 
 
