@@ -38,11 +38,17 @@ _resolve_field()가 값이 이 3키 dict인지 아닌지를 보고 자동으로 
 
 wealth_flow/relationship/family/allowance_economy/friendship/family_environment(5분류
 기반+10종 뉘앙스 설계)와 과도기 전반/후반(TRANSITION_FRONT_STUDY/TRANSITION_BACK_CAREER)
-은 core_change 수준의 전면 재작성 대신, _DOMAIN_POLARITY_NOTE(도메인별 favorable/
-unfavorable 안내 한 문장, neutral은 덧붙이지 않음)를 캡션성 필드(관리/주의 계열 —
-management_caution/flow/warning/spending_habit/group_adaptation/home_atmosphere/
-cautions/exam_luck)에 덧붙이는 가벼운 방식으로 처리한다. decade_theme(build_decade_theme)
-도 같은 방식으로 마지막에 한 문장을 덧붙인다.
+은 core_change 수준의 전면 재작성 대신 SIPSIN_NUANCE_* 한 문장만 덧붙인다. decade_theme
+(build_decade_theme)은 별도로 마지막에 한 문장을 덧붙인다.
+
+**STEP11-A(2026-09-22) 제거**: 위 6개 필드+과도기 2곳(총 8곳)에 도메인별 favorable/
+unfavorable 안내를 한 문장씩 더 덧붙이던 `_DOMAIN_POLARITY_NOTE`/`_with_polarity_note`를
+제거했다. 이 안내문("다만 지금 이 흐름은 이 사람의 사주 전체 균형에는 부담을 더하는
+방향이라...")은 domain마다 반복되는 전역 판단이라, 대운 화면에서 총평(summary) 리드
+문장이 domain_pipeline의 global_context를 통해 이미 1회 전달하는 내용과 겹쳤다(STEP11
+Audit에서 실측: 한 화면에 같은 판단이 최대 5~6회 반복). 각 필드의 십신별 구체 내용
+(caution/warning 본문)은 이 표들 자체(WEALTH_FLOW/RELATIONSHIP_FLOW/FAMILY_FLOW 등)가
+이미 담당하므로 그대로 남아 있다 — 지워진 것은 그 뒤에 붙던 전역 반복 문장뿐이다.
 """
 from typing import Any, Dict, List, Optional
 
@@ -114,49 +120,13 @@ def _resolve_field(value: object, polarity: str):
     return value
 
 
-# 도메인별 favorable/unfavorable 안내 한 문장 — wealth_flow/relationship/family/
-# allowance_economy/friendship/family_environment(5분류+10종 뉘앙스 설계)와 과도기
-# 전반/후반처럼 core_change 수준의 전면 재작성 대신 캡션성 필드에 덧붙이는 가벼운
-# 방식. neutral(한신)은 뚜렷한 쏠림이 없다는 뜻이라 아무것도 덧붙이지 않는다.
-_DOMAIN_POLARITY_NOTE: Dict[str, Dict[str, str]] = {
-    "wealth_flow": {
-        "favorable": "지금 이 흐름은 이 사람의 사주 전체 균형과 맞아떨어지는 방향이라, 애쓰는 만큼 결과가 순조롭게 따라붙는 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 사람의 사주 전체 균형에는 부담을 더하는 방향이라, 욕심을 내기보다 방어적으로 관리하는 편이 안전한 시기입니다.",
-    },
-    "relationship": {
-        "favorable": "지금 이 흐름은 이 사람의 사주 전체 균형과 맞아떨어지는 방향이라, 관계에서도 부담 없이 자연스럽게 좋은 결과로 이어지기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 사람의 사주 전체 균형에는 부담을 더하는 방향이라, 관계에서도 쉽게 지치거나 위축될 수 있어 스스로를 다독이는 여유가 필요한 시기입니다.",
-    },
-    "family": {
-        "favorable": "지금 이 흐름은 이 사람의 사주 전체 균형과 맞아떨어지는 방향이라, 가족 관계에서도 힘이 덜 들고 순탄하게 느껴지기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 사람의 사주 전체 균형에는 부담을 더하는 방향이라, 가족 관계에서도 평소보다 무겁거나 버겁게 느껴질 수 있는 시기입니다.",
-    },
-    "allowance_economy": {
-        "favorable": "지금 이 흐름은 이 아이의 사주 전체 균형과 맞아떨어지는 방향이라, 큰 무리 없이 순조롭게 느껴지는 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 아이의 사주 전체 균형에는 부담을 더하는 방향이라, 평소보다 마음이 쉽게 조급해지거나 위축될 수 있는 시기입니다.",
-    },
-    "friendship": {
-        "favorable": "지금 이 흐름은 이 아이의 사주 전체 균형과 맞아떨어지는 방향이라, 친구 관계에서도 부담 없이 편안하게 느껴지기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 아이의 사주 전체 균형에는 부담을 더하는 방향이라, 친구 관계에서도 평소보다 예민해지거나 위축될 수 있는 시기입니다.",
-    },
-    "family_environment": {
-        "favorable": "지금 이 흐름은 이 아이의 사주 전체 균형과 맞아떨어지는 방향이라, 가정 안에서도 큰 무리 없이 순탄하게 느껴지기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 아이의 사주 전체 균형에는 부담을 더하는 방향이라, 가정 안에서도 평소보다 예민하거나 위축된 모습이 나타날 수 있는 시기입니다.",
-    },
-    "career_or_study": {
-        "favorable": "지금 이 흐름은 이 사람의 사주 전체 균형과 맞아떨어지는 방향이라, 큰 무리 없이 순조롭게 자리를 잡아가기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 사람의 사주 전체 균형에는 부담을 더하는 방향이라, 뜻대로 되지 않거나 힘겹게 느껴지는 순간이 있을 수 있습니다.",
-    },
-    "study_growth": {
-        "favorable": "지금 이 흐름은 이 아이의 사주 전체 균형과 맞아떨어지는 방향이라, 큰 무리 없이 순조롭게 느껴지기 쉬운 시기입니다.",
-        "unfavorable": "다만 지금 이 흐름은 이 아이의 사주 전체 균형에는 부담을 더하는 방향이라, 평소보다 힘겹거나 위축된 순간이 있을 수 있습니다.",
-    },
-}
-
-
-def _with_polarity_note(text: str, domain: str, polarity: str) -> str:
-    note = _DOMAIN_POLARITY_NOTE.get(domain, {}).get(polarity)
-    return f"{text} {note}" if note else text
+# STEP11-A(2026-09-22): 여기 있던 _DOMAIN_POLARITY_NOTE(도메인별 favorable/unfavorable
+# 안내 한 문장)와 _with_polarity_note() 헬퍼를 제거했다 — 8개 호출부(wealth_flow/
+# relationship/family/allowance_economy/friendship/family_environment/과도기 2곳)에
+# "다만 지금 이 흐름은...사주 전체 균형..." 문장을 매번 덧붙였는데, 이 판단은 총평
+# (summary) 리드 문장이 domain_pipeline.global_context로 이미 1회 전달하는 내용과
+# 겹쳐 한 화면에서 최대 5~6회 반복됐다(STEP11 Audit). 각 필드의 십신별 실제 caution/
+# warning 본문(WEALTH_FLOW/RELATIONSHIP_FLOW/FAMILY_FLOW 등)은 그대로 유지된다.
 
 
 # ── keywords(3개, 10종) ──────────────────────────────────────────────────
@@ -1023,8 +993,8 @@ def build_child_domains(sipsin: str, polarity: str = "neutral") -> Dict[str, Dic
     study_growth는 10종 각각 완전히 다른 표(STUDY_GROWTH)를 쓰고, 나머지 3영역은
     5분류 기반 문단에 10종별 한 문장을 덧붙여(*_NUANCE) 정/편이 절대 같은 문구를
     내지 않도록 한다. polarity(억부 용신/기신 희기, "favorable"/"neutral"/"unfavorable")는
-    study_growth의 school_life/exam_luck을 3분기 문구로 바꾸고, 나머지 3영역은
-    캡션성 필드 하나에 _DOMAIN_POLARITY_NOTE 한 문장을 덧붙인다.
+    study_growth의 school_life/exam_luck을 3분기 문구로 바꾼다(나머지 3영역은 STEP11-A로
+    도메인별 전역 안내문 부착을 제거해 polarity를 더 쓰지 않는다).
     """
     group = sipsin_group(sipsin)
 
@@ -1037,21 +1007,18 @@ def build_child_domains(sipsin: str, polarity: str = "neutral") -> Dict[str, Dic
     allowance_nuance = ALLOWANCE_NUANCE.get(sipsin)
     if allowance_nuance:
         allowance["allowance_flow"] = f"{allowance['allowance_flow']} {allowance_nuance}"
-    allowance["spending_habit"] = _with_polarity_note(allowance["spending_habit"], "allowance_economy", polarity)
     allowance = {k: _assert_child_safe(v) for k, v in allowance.items()}
 
     friendship = dict(_fallback(FRIENDSHIP, group))
     friendship_nuance = FRIENDSHIP_NUANCE.get(sipsin)
     if friendship_nuance:
         friendship["peer_relationship"] = f"{friendship['peer_relationship']} {friendship_nuance}"
-    friendship["group_adaptation"] = _with_polarity_note(friendship["group_adaptation"], "friendship", polarity)
     friendship = {k: _assert_child_safe(v) for k, v in friendship.items()}
 
     family_env = dict(_fallback(FAMILY_ENVIRONMENT, group))
     family_env_nuance = FAMILY_ENV_NUANCE.get(sipsin)
     if family_env_nuance:
         family_env["parent_relationship"] = f"{family_env['parent_relationship']} {family_env_nuance}"
-    family_env["home_atmosphere"] = _with_polarity_note(family_env["home_atmosphere"], "family_environment", polarity)
     family_env = {k: _assert_child_safe(v) for k, v in family_env.items()}
 
     return {
@@ -1074,7 +1041,6 @@ def build_wealth_flow(sipsin: str, polarity: str = "neutral") -> Dict[str, str]:
     nuance = WEALTH_NUANCE.get(sipsin)
     if nuance:
         wealth["earning_style"] = f"{wealth['earning_style']} {nuance}"
-    wealth["management_caution"] = _with_polarity_note(wealth["management_caution"], "wealth_flow", polarity)
     return wealth
 
 
@@ -1091,7 +1057,6 @@ def build_relationship(
     nuance = RELATIONSHIP_NUANCE.get(sipsin)
     if nuance:
         flow = f"{flow} {nuance}"
-    flow = _with_polarity_note(flow, "relationship", polarity)
     return {
         "flow": flow,
         "guide_by_status": guide,
@@ -1104,7 +1069,6 @@ def build_family(sipsin: str, polarity: str = "neutral") -> Dict[str, str]:
     nuance = FAMILY_NUANCE.get(sipsin)
     if nuance:
         family["change_flow"] = f"{family['change_flow']} {nuance}"
-    family["warning"] = _with_polarity_note(family["warning"], "family", polarity)
     return family
 
 
@@ -1235,12 +1199,11 @@ TRANSITION_BACK_CAREER: Dict[str, Dict[str, str]] = {
 def build_transition_front_domains(sipsin: str, polarity: str = "neutral") -> Dict[str, Dict[str, str]]:
     """과도기 대운 전반부(대운 시작~21세) — study_growth만 입시/전공/자아탐색 관점으로 덮어쓴다.
 
-    TRANSITION_FRONT_STUDY 자체는 (경계 케이스라) core_change 수준의 3분기 재작성 대신
-    exam_luck에 _DOMAIN_POLARITY_NOTE 한 문장만 가볍게 덧붙인다.
+    TRANSITION_FRONT_STUDY 자체는 (경계 케이스라) core_change 수준의 3분기 재작성을 하지
+    않는다(STEP11-A로 exam_luck에 붙던 전역 안내문도 제거됨).
     """
     domains = build_child_domains(sipsin, polarity)
     override = dict(_fallback(TRANSITION_FRONT_STUDY, sipsin))
-    override["exam_luck"] = _with_polarity_note(override["exam_luck"], "study_growth", polarity)
     domains["study_growth"] = {field: _assert_child_safe(text) for field, text in override.items()}
     return domains
 
@@ -1250,11 +1213,10 @@ def build_transition_back_domains(
 ) -> Dict[str, object]:
     """과도기 대운 후반부(22세~대운 끝) — career_or_study만 첫 직장/사회초년 관점으로 덮어쓴다.
 
-    TRANSITION_BACK_CAREER 자체는 (경계 케이스라) core_change 수준의 3분기 재작성 대신
-    cautions에 _DOMAIN_POLARITY_NOTE 한 문장만 가볍게 덧붙인다.
+    TRANSITION_BACK_CAREER 자체는 (경계 케이스라) core_change 수준의 3분기 재작성을 하지
+    않는다(STEP11-A로 cautions에 붙던 전역 안내문도 제거됨).
     """
     career = dict(_fallback(TRANSITION_BACK_CAREER, sipsin))
-    career["cautions"] = _with_polarity_note(career["cautions"], "career_or_study", polarity)
     return {
         "career_or_study": career,
         "wealth_flow": build_wealth_flow(sipsin, polarity),

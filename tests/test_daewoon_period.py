@@ -39,7 +39,6 @@ from domains.daewoon.content import (
     _has_batchim,
     _josa,
     _resolve_field,
-    _with_polarity_note,
     build_career_or_study,
     build_child_domains,
     build_decade_theme,
@@ -661,17 +660,6 @@ def test_resolve_field_picks_polarity_variant_and_passes_through_plain_strings()
     assert _resolve_field("그냥 문자열입니다", "favorable") == "그냥 문자열입니다"
 
 
-def test_with_polarity_note_appends_only_for_favorable_and_unfavorable():
-    base = "기본 문장입니다."
-    neutral = _with_polarity_note(base, "wealth_flow", "neutral")
-    favorable = _with_polarity_note(base, "wealth_flow", "favorable")
-    unfavorable = _with_polarity_note(base, "wealth_flow", "unfavorable")
-    assert neutral == base  # 한신은 아무것도 덧붙이지 않는다
-    assert favorable.startswith(base) and favorable != base
-    assert unfavorable.startswith(base) and unfavorable != base
-    assert favorable != unfavorable
-
-
 def test_career_adult_core_change_and_cautions_are_three_way_polarity_dicts():
     for s in SIPSIN_10:
         assert set(CAREER_ADULT[s]["core_change"].keys()) == {"neutral", "favorable", "unfavorable"}
@@ -738,23 +726,28 @@ def test_build_child_domains_school_life_and_exam_luck_change_tone_by_polarity()
             assert "반장" not in text
 
 
-def test_secondary_domains_append_polarity_note_only_for_favorable_and_unfavorable():
+def test_secondary_domains_no_longer_append_global_polarity_note():
+    # STEP11-A(2026-09-22): management_caution/warning에 "다만 지금 이 흐름은...사주
+    # 전체 균형..." 문장을 매번 덧붙이던 동작을 제거했다 — 총평(summary)이
+    # domain_pipeline.global_context로 이미 1회 전달하는 판단과 겹쳐 화면 하나에서
+    # 최대 5~6회 반복됐기 때문(STEP11 Audit). 이제 이 필드는 polarity와 무관하게
+    # 동일한 값을 낸다 — 십신별 caution/warning 본문 자체(WEALTH_FLOW/FAMILY_FLOW 등)는
+    # 그대로 유지된다.
     neutral = build_wealth_flow("정재", polarity="neutral")
     favorable = build_wealth_flow("정재", polarity="favorable")
     unfavorable = build_wealth_flow("정재", polarity="unfavorable")
-    assert favorable["management_caution"].startswith(neutral["management_caution"])
-    assert unfavorable["management_caution"].startswith(neutral["management_caution"])
-    assert favorable["management_caution"] != neutral["management_caution"]
-    assert unfavorable["management_caution"] != neutral["management_caution"]
-    assert favorable["management_caution"] != unfavorable["management_caution"]
+    assert favorable["management_caution"] == neutral["management_caution"] == unfavorable["management_caution"]
+    assert "사주 전체 균형" not in neutral["management_caution"]
 
     fam_neutral = build_family("정인", polarity="neutral")
     fam_favorable = build_family("정인", polarity="favorable")
-    assert fam_favorable["warning"] != fam_neutral["warning"]
+    assert fam_favorable["warning"] == fam_neutral["warning"]
+    assert "사주 전체 균형" not in fam_neutral["warning"]
 
     rel_neutral = build_relationship("식신", None, False, polarity="neutral")
     rel_unfavorable = build_relationship("식신", None, False, polarity="unfavorable")
-    assert rel_unfavorable["flow"] != rel_neutral["flow"]
+    assert rel_unfavorable["flow"] == rel_neutral["flow"]
+    assert "사주 전체 균형" not in rel_neutral["flow"]
 
 
 def test_build_decade_theme_appends_polarity_closing_only_for_favorable_and_unfavorable():
