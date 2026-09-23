@@ -195,6 +195,57 @@ def test_tarot_all_cards_have_content():
             assert variants[key]["advice"], f"card {cid} {key} 조언 없음"
 
 
+# ------------------------------------------------------------------ 애정운 타로 (고정 콘텐츠, AI 미사용)
+def test_tarot_love_all_44_combos_have_content():
+    from domains.tarot.content import load_love_content
+    data = load_love_content()
+    assert len(data) == 44
+    for cid in range(22):
+        for key in ("upright", "reversed"):
+            entry = data[f"{cid}_{key}"]
+            for field in ("one_line", "card_meaning", "advice_detail", "advice", "today_message"):
+                assert entry[field], f"card {cid} {key} {field} 없음"
+
+
+def test_tarot_love_structure():
+    r = client.post("/api/v1/tarot/read",
+                    json={"question": "현재 나의 애정운과 인연의 흐름에 대한 조언을 알려주세요.",
+                          "reading_type": "애정운 타로", "card_id": 6, "is_reversed": False})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    d = body["data"]
+    assert body["is_fallback"] is False
+    assert d["card"]["id"] == 6
+    assert d["orientation"] == "정방향" and d["is_reversed"] is False
+    assert d["card_meaning"] and d["advice"] and d["advice_detail"] and d["today_message"] and d["one_line"]
+    assert d["content_loaded"] is True
+    assert "finance_summary" not in d or not d["finance_summary"]
+
+
+def test_tarot_love_matches_static_db_exactly():
+    """애정운 타로는 질문·요청 시점과 무관하게 카드+방향에 대해 항상 같은 고정 텍스트를 반환해야 한다."""
+    from domains.tarot.content import get_love_reading
+    expected = get_love_reading(13, reversed_=True)
+    r1 = client.post("/api/v1/tarot/read",
+                     json={"question": "아무 질문 1", "reading_type": "애정운 타로",
+                           "card_id": 13, "is_reversed": True}).json()["data"]
+    r2 = client.post("/api/v1/tarot/read",
+                     json={"question": "완전히 다른 질문 2", "reading_type": "애정운 타로",
+                           "card_id": 13, "is_reversed": True}).json()["data"]
+    assert r1["card_meaning"] == r2["card_meaning"] == expected["card_meaning"]
+    assert r1["today_message"] == r2["today_message"]
+    assert r1["advice"] == expected["advice"]
+
+
+def test_tarot_love_upright_vs_reversed_text_differs():
+    up = client.post("/api/v1/tarot/read",
+                     json={"question": "q", "reading_type": "애정운 타로", "card_id": 0, "is_reversed": False}).json()["data"]
+    rev = client.post("/api/v1/tarot/read",
+                      json={"question": "q", "reading_type": "애정운 타로", "card_id": 0, "is_reversed": True}).json()["data"]
+    assert up["card_meaning"] != rev["card_meaning"]
+    assert up["today_message"] != rev["today_message"]
+
+
 # ------------------------------------------------------------------ 나의 성격 / 적성
 def test_character_structure():
     r = client.post("/api/v1/personality/character", json=BIRTH_A)

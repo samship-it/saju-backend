@@ -10,6 +10,7 @@
   - advice : 제일 끝 한 문장 (기획 문서 규칙: "제일 끝에 한문장이 조언임")
   - summary : 재테크 헤더의 콜론 뒤 요약 (기본 타로는 없음 → None)
 """
+import json
 import os
 import re
 import logging
@@ -19,6 +20,7 @@ from typing import Dict, Any, List
 logger = logging.getLogger(__name__)
 
 DOCX_PATH = os.path.join(os.path.dirname(__file__), "타로카드 설명.docx")
+LOVE_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tarot_love_db.json")
 
 _HEADER_RE = re.compile(r"^\s*(\d{1,2})\.\s*([^(]+?)\s*\(([^)]+)\)\s*(.*)$")
 _SENT_SPLIT = re.compile(r"(?<=[다요])[.!?]\s+")
@@ -143,3 +145,26 @@ def get_card_reading(card_id: int, reversed_: bool, finance: bool) -> Dict[str, 
     else:
         key = "reversed" if reversed_ else "upright"
     return data.get(key) or {"summary": None, "description": "", "advice_detail": "", "advice": ""}
+
+
+@lru_cache(maxsize=1)
+def load_love_content() -> Dict[str, Dict[str, Any]]:
+    """애정운 타로(22장 x 정/역방향 = 44개) 고정 콘텐츠.
+
+    domains/tarot/data/tarot_love_db.json 을 사전 생성해둔 결과.
+    (scripts/generate_tarot_love_content.py 로 생성 — 런타임 AI 호출 없음)
+    """
+    if not os.path.exists(LOVE_DB_PATH):
+        logger.warning(f"애정운 타로 DB 없음: {LOVE_DB_PATH}")
+        return {}
+    try:
+        with open(LOVE_DB_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"애정운 타로 DB 파싱 실패: {e}")
+        return {}
+
+
+def get_love_reading(card_id: int, reversed_: bool) -> Dict[str, Any]:
+    key = f"{card_id}_{'reversed' if reversed_ else 'upright'}"
+    return load_love_content().get(key) or {}

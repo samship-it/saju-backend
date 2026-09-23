@@ -11,7 +11,7 @@ router = APIRouter()
 class TarotReadingRequest(BaseModel):
     question: str = Field("오늘 하루 전반", example="이직을 고민 중이에요.")
     reading_type: str = Field("오늘의 타로", example="오늘의 타로",
-                              description="'오늘의 타로' 또는 '오늘의 재테크 타로'")
+                              description="'오늘의 타로' / '오늘의 재테크 타로' / '애정운 타로'")
     card_id: Optional[int] = Field(None, ge=0, le=21, description="사용자가 고른 카드. 미지정 시 랜덤")
     is_reversed: Optional[bool] = Field(None, description="정/역방향. 미지정 시 랜덤")
 

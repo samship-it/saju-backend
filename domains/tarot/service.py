@@ -8,12 +8,13 @@ import random
 from typing import Dict, Any, Optional, Tuple
 
 from domains.tarot.deck import BASE_CARDS, CARD_BY_ID, image_url
-from domains.tarot.content import get_card_reading, load_card_content
+from domains.tarot.content import get_card_reading, get_love_reading, load_card_content
 from shared.ai_client import call_gemini_json
 from shared.fortune_cache import get_or_create
 from shared.text_format import paragraphize
 
 FINANCE_TYPES = {"오늘의 재테크 타로", "재테크 타로", "finance"}
+LOVE_TYPES = {"애정운 타로", "애정운 타로카드", "love"}
 
 _SYSTEM = (
     "당신은 2030 세대를 위한 노련한 타로 리더입니다. 제공된 카드 원문(정방향/역방향)의 방향과 의미를 "
@@ -29,6 +30,10 @@ _ORIENTATION_NOTE = {
 
 def _is_finance(reading_type: str) -> bool:
     return (reading_type or "").strip() in FINANCE_TYPES
+
+
+def _is_love(reading_type: str) -> bool:
+    return (reading_type or "").strip() in LOVE_TYPES
 
 
 def list_cards() -> list:
@@ -66,8 +71,34 @@ def generate_tarot_reading(
     is_reversed: Optional[bool] = None,
 ) -> Tuple[dict, bool]:
     finance = _is_finance(reading_type)
+    love = _is_love(reading_type)
     cid, rev = _draw(card_id, is_reversed)
     card = CARD_BY_ID[cid]
+
+    if love:
+        orientation = "역방향" if rev else "정방향"
+        lr = get_love_reading(cid, rev)
+        result = {
+            "reading_type": reading_type,
+            "question": question,
+            "card": {
+                "id": cid,
+                "name_kr": card["name_kr"],
+                "name_en": card["name_en"],
+                "image_url": image_url(cid),
+            },
+            "orientation": orientation,
+            "is_reversed": rev,
+            "orientation_meaning": _ORIENTATION_NOTE[rev],
+            "one_line": lr.get("one_line", ""),
+            "card_meaning": lr.get("card_meaning", ""),
+            "advice": lr.get("advice", ""),
+            "advice_detail": lr.get("advice_detail", ""),
+            "today_message": paragraphize(lr.get("today_message", "")),
+            "content_loaded": bool(lr),
+        }
+        return result, False
+
     reading = get_card_reading(cid, rev, finance)
     content_loaded = bool(load_card_content())
 
