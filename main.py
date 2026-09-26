@@ -15,6 +15,7 @@ from domains.relationship.router import router as relationship_router
 from domains.yearly.router import router as yearly_router
 from domains.lifelong.router import router as lifelong_router
 from domains.daewoon.router import router as daewoon_router
+from domains.market.router import router as market_router
 
 app = FastAPI(
     title="Saju Fortune Engine",
@@ -49,6 +50,7 @@ app.include_router(saju_router, prefix="/api/v1/saju", tags=["만세력 명식"]
 # TODAY
 app.include_router(daily_router, prefix="/api/v1/daily", tags=["오늘의 운세"])
 app.include_router(wealth_router, prefix="/api/v1/wealth", tags=["오늘의 재테크 사주"])
+app.include_router(market_router, prefix="/api/v1", tags=["시장 지표"])
 app.include_router(tarot_router, prefix="/api/v1/tarot", tags=["타로"])
 # PERSONAL
 app.include_router(personality_router, prefix="/api/v1/personality", tags=["나의 성격/적성"])

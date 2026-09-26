@@ -6,3 +6,4 @@ SQLAlchemy>=2.0,<3.0
 sajupy>=0.2.0,<0.3
 korean-lunar-calendar>=0.3,<1.0
 python-docx>=1.1,<2.0
+yfinance>=1.0,<2.0
