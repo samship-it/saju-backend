@@ -3,16 +3,22 @@
 시장 데이터(KOSPI/NASDAQ/BTC)는 사주 엔진과 분리. AI가 시장 포인트와 개인 사주 흐름을 결합하되
 '주가가 오른다/내린다' 예언은 절대 하지 않는다. 점수는 없다.
 """
+import logging
 from typing import Dict, Any, Tuple
 
 from core.saju_base import calculate_saju
 from domains.market.cron_market import get_market_snapshot
 from shared.ai_client import call_gemini_json
+from shared.fortune_cache import get_or_create
 from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block
 from shared.public import person_summary
 
+logger = logging.getLogger(__name__)
+
 CONTENT_TYPE = "daily_finance"
+# 프롬프트/출력 스키마를 바꾸면 올려서 기존 캐시를 무효화한다.
+_CACHE_VERSION = 1
 
 _SYSTEM = (
     "당신은 2030 세대를 위한 재테크 운세 화자입니다. 시장 전망과 사주 해석을 섞어 "
@@ -136,7 +142,25 @@ def analyze_daily_finance(
   }}
 }}"""
 
-    ai, is_fallback = call_gemini_json(prompt, _fallback(market), system_instruction=_SYSTEM)
+    # 같은 원국 + 같은 날짜(KST) + 같은 장 상태(개장/휴장)면 Gemini 를 다시 부르지 않는다.
+    # 휴장/개장에 따라 프롬프트가 달라지므로 is_live 도 키에 포함(하루 최대 2회 생성).
+    # 폴백 결과는 캐시하지 않는다(get_or_create 규칙) — 키/할당량이 복구되면 바로 정식 결과로 대체.
+    # 시장 칩·market_point 는 캐시하지 않고 매 요청 스냅샷으로 _shape 에서 다시 입힌다.
+    cache_payload = {
+        "v": _CACHE_VERSION,
+        "birth": [year, month, day, hour, minute if hour is not None else None, gender, is_lunar],
+        "target_date": saju.get("target_date"),
+        "is_live": is_live,
+    }
+    ai, is_fallback, from_cache = get_or_create(
+        CONTENT_TYPE,
+        cache_payload,
+        lambda: call_gemini_json(prompt, _fallback(market), system_instruction=_SYSTEM),
+    )
+    logger.info(
+        f"[wealth] target_date={saju.get('target_date')} is_live={is_live} "
+        f"from_cache={from_cache} is_fallback={is_fallback}"
+    )
     data = _shape(_fallback(market) if is_fallback else ai, market)
     return {
         "content_type": CONTENT_TYPE,

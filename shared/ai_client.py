@@ -32,6 +32,27 @@ def _is_rate_limited(err: Exception) -> bool:
     )
 
 
+def _classify_error(err: Exception) -> str:
+    """Render 로그에서 원인을 바로 알 수 있게 에러를 분류한다(키 값은 절대 로그에 남기지 않음)."""
+    name = type(err).__name__
+    text = str(err)
+    if _is_rate_limited(err):
+        return "429 할당량/레이트리밋 초과"
+    if name in ("Unauthenticated", "PermissionDenied") or any(
+        s in text for s in ("401", "403", "API_KEY_INVALID", "API key not valid", "PERMISSION_DENIED")
+    ):
+        return "401/403 인증 실패 (GEMINI_API_KEY 값 확인)"
+    if name == "NotFound" or "404" in text:
+        return f"404 모델 없음 (GEMINI_MODEL_NAME={config.GEMINI_MODEL_NAME} 확인)"
+    if name in ("DeadlineExceeded", "ServiceUnavailable", "InternalServerError") or any(
+        s in text for s in ("500", "503", "504", "timed out")
+    ):
+        return "5xx/타임아웃 (Gemini 서버 측 일시 오류)"
+    if isinstance(err, json.JSONDecodeError):
+        return "응답 JSON 파싱 실패"
+    return "기타 오류"
+
+
 def _retry_delay_sec(err: Exception) -> Optional[int]:
     m = re.search(r"retry_delay\s*{\s*seconds:\s*(\d+)", str(err))
     if not m:
@@ -68,7 +89,8 @@ def call_gemini_json(
     """(결과 dict, is_fallback) 반환."""
     api_key = config.GEMINI_API_KEY
     if not api_key or genai is None:
-        logger.info("[ai_client] GEMINI_API_KEY 미설정 또는 SDK 없음 → 폴백 반환")
+        reason = "GEMINI_API_KEY 환경변수 미설정" if not api_key else "google-generativeai SDK 미설치"
+        logger.warning(f"[ai_client] {reason} → 폴백 반환")
         return fallback_data, True
 
     try:
@@ -79,7 +101,7 @@ def call_gemini_json(
             generation_config=_GENERATION_CONFIG,
         )
     except Exception as e:  # noqa: BLE001
-        logger.error(f"[ai_client] Gemini 모델 초기화 실패: {e}")
+        logger.error(f"[ai_client] Gemini 모델 초기화 실패 [{type(e).__name__}]: {e}")
         return fallback_data, True
 
     for attempt in range(2):
@@ -99,10 +121,14 @@ def call_gemini_json(
                     continue
                 logger.error(
                     f"[ai_client] Gemini 할당량 초과 → 폴백 반환 "
-                    f"(model={config.GEMINI_MODEL_NAME}). 무료 등급이면 결제 활성화 필요: {e}"
+                    f"(model={config.GEMINI_MODEL_NAME}, {'일일 한도' if per_day else '분당 한도'}) "
+                    f"[{type(e).__name__}]: {e}"
                 )
             else:
-                logger.error(f"[ai_client] Gemini 호출 실패: {e}")
+                logger.error(
+                    f"[ai_client] Gemini 호출 실패 → 폴백 반환: {_classify_error(e)} "
+                    f"(model={config.GEMINI_MODEL_NAME}) [{type(e).__name__}]: {e}"
+                )
             return fallback_data, True
 
     return fallback_data, True

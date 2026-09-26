@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI, Request, status
@@ -16,6 +17,9 @@ from domains.yearly.router import router as yearly_router
 from domains.lifelong.router import router as lifelong_router
 from domains.daewoon.router import router as daewoon_router
 from domains.market.router import router as market_router
+
+# 도메인 모듈의 logger.info/warning 이 Render 로그에 찍히도록 루트 로거 설정
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(
     title="Saju Fortune Engine",
@@ -74,4 +78,12 @@ if os.path.isdir(TAROT_IMAGE_DIR):
 
 @app.get("/")
 def read_root():
-    return {"status": "healthy", "message": "Saju Fortune Engine is operational."}
+    import config
+
+    return {
+        "status": "healthy",
+        "message": "Saju Fortune Engine is operational.",
+        # 키 값은 노출하지 않고 설정 여부만 — 운영 폴백 원인 진단용
+        "gemini_key_configured": bool(config.GEMINI_API_KEY),
+        "gemini_model": config.GEMINI_MODEL_NAME,
+    }

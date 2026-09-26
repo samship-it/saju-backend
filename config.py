@@ -36,7 +36,7 @@ KST = ZoneInfo("Asia/Seoul")
 # (2026-09-13 발견). 기본값을 gemini-3.5-flash-lite 로 교체.
 # 배포 환경변수 GEMINI_MODEL_NAME 으로 언제든 교체 가능.
 GEMINI_MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-3.5-flash-lite")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # 내부 API 검증용 키
 API_SECRET_KEY = os.environ.get("INTERNAL_API_KEY", "default-secret-key")
