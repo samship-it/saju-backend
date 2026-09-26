@@ -99,3 +99,58 @@ def clear_cache() -> None:
     with _cache_lock:
         _cache["data"] = None
         _cache["expires_at"] = 0.0
+
+
+# ───────────────────────── 재테크 운세용: 하루 고정 시장 방향 ─────────────────────────
+# "같은 날 아침과 저녁의 운세가 달라지면 안 된다" — 장중 실시간 등락이 아니라
+# target_date(KST) 이전의 '마지막 완결 거래일' 종가 대비 등락률을 쓴다.
+# 과거 종가로만 계산하므로 재시작·워커가 달라도 같은 날엔 항상 같은 값이 나온다.
+# 성공 결과는 날짜별로 캐싱(하루 1회 조회), 실패는 짧게만 캐싱해 재시도한다.
+DIRECTION_TICKER = INDICATORS["KOSPI"]["ticker"]
+_DIRECTION_ERROR_TTL_SECONDS = 300
+_DIRECTION_CACHE_MAX_DAYS = 14
+
+_direction_lock = threading.Lock()
+_direction_cache: Dict[str, Dict[str, Any]] = {}  # target_date → {"data", "expires_at"(실패만)}
+
+
+def _fetch_prev_session_change(target_date: str) -> Dict[str, Any]:
+    import yfinance as yf
+
+    hist = yf.Ticker(DIRECTION_TICKER).history(period="1mo", interval="1d", timeout=_FETCH_TIMEOUT_SECONDS)
+    closes = hist["Close"].dropna() if hist is not None and "Close" in hist else []
+    # target_date 당일 봉(장중 미완결일 수 있음)은 제외 — 직전 완결 거래일까지만 사용
+    closes = [(ts.date(), float(v)) for ts, v in closes.items() if ts.date().isoformat() < target_date]
+    if len(closes) < 2:
+        raise ValueError(f"{target_date} 이전 종가 데이터 부족 ({len(closes)}개)")
+    (_, prev_close), (session_date, close) = closes[-2], closes[-1]
+    change_percent = (close - prev_close) / prev_close * 100 if prev_close else 0.0
+    return {"session_date": session_date.isoformat(), "change_percent": round(change_percent, 2)}
+
+
+def get_daily_market_direction(target_date: str, now: Optional[float] = None) -> Dict[str, Any]:
+    """{'status': 'ok'|'error', 'change_percent', 'session_date'} — 방향 분류는 소비 측(wealth.engine)이 한다."""
+    now = time.monotonic() if now is None else now
+    with _direction_lock:
+        hit = _direction_cache.get(target_date)
+        if hit and (hit["expires_at"] is None or now < hit["expires_at"]):
+            return hit["data"]
+
+        try:
+            data = {"status": "ok", **_fetch_prev_session_change(target_date)}
+            expires_at = None
+        except Exception as e:
+            logger.warning(f"재테크 시장 방향 조회 실패 ({DIRECTION_TICKER}, {target_date}): {e}")
+            data = {"status": "error", "change_percent": None, "session_date": None}
+            expires_at = now + _DIRECTION_ERROR_TTL_SECONDS
+
+        _direction_cache[target_date] = {"data": data, "expires_at": expires_at}
+        if len(_direction_cache) > _DIRECTION_CACHE_MAX_DAYS:
+            for old in sorted(_direction_cache)[: len(_direction_cache) - _DIRECTION_CACHE_MAX_DAYS]:
+                _direction_cache.pop(old, None)
+        return data
+
+
+def clear_direction_cache() -> None:
+    with _direction_lock:
+        _direction_cache.clear()

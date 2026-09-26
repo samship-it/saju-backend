@@ -19,3 +19,17 @@ def _disable_live_ai():
         config.GEMINI_API_KEY = saved_cfg
         if saved_env is not None:
             os.environ["GEMINI_API_KEY"] = saved_env
+
+
+@pytest.fixture(autouse=True)
+def _stub_market_direction(monkeypatch):
+    """재테크 운세의 '직전 거래일 코스피 등락' 조회를 고정값으로 — 테스트가 야후 네트워크에 의존하지 않게."""
+    from domains.market import indicators
+
+    indicators.clear_direction_cache()
+    monkeypatch.setattr(
+        indicators, "_fetch_prev_session_change",
+        lambda target_date: {"session_date": "2026-09-23", "change_percent": 0.9},
+    )
+    yield
+    indicators.clear_direction_cache()
