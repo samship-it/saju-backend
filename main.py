@@ -16,6 +16,7 @@ from domains.relationship.router import router as relationship_router
 from domains.yearly.router import router as yearly_router
 from domains.lifelong.router import router as lifelong_router
 from domains.daewoon.router import router as daewoon_router
+from domains.love.router import router as love_router
 from domains.market.router import router as market_router
 
 # 도메인 모듈의 logger.info/warning 이 Render 로그에 찍히도록 루트 로거 설정
@@ -61,6 +62,7 @@ app.include_router(personality_router, prefix="/api/v1/personality", tags=["나�
 # RELATIONSHIP
 app.include_router(compatibility_router, prefix="/api/v1/compatibility", tags=["궁합"])
 app.include_router(relationship_router, prefix="/api/v1/relationship", tags=["재회/짝사랑/결혼운"])
+app.include_router(love_router, prefix="/api/v1/love", tags=["연애 인연 가이드"])
 # YEARLY
 app.include_router(yearly_router, prefix="/api/v1/yearly", tags=["연간 운세 9종"])
 # LIFELONG
