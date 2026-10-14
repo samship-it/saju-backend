@@ -247,3 +247,32 @@ def resolve_job_levelup(job_status: Optional[str], trigger_bucket: Optional[str]
     if table is None:
         return None
     return table.get(trigger_bucket or "") or _JOB_STATUS_FALLBACK.get(job_status, "")
+
+
+# 인연 사주에는 연애/직업 상태가 따로 없는 경우가 많다. 그 때는 싱글·직장인으로 문구를 고른다.
+TARGET_DEFAULT_LOVE = "single"
+TARGET_DEFAULT_JOB = "employee"
+
+
+def fortune_statuses(
+    is_target: bool,
+    stored_love: Optional[str],
+    stored_job: Optional[str],
+    request_love: Optional[str],
+    request_job: Optional[str],
+):
+    """애정/직장 문구에 쓸 상태.
+
+    본인 조회는 프로필에 저장된 값을 먼저 쓰고, 없을 때만 요청 값을 쓴다.
+    인연 조회는 그 인연에게 저장된 값이 없으면 싱글·직장인으로 둔다.
+    요청에 실린 본인 상태는 인연 운세에 넘기지 않는다.
+    """
+    love = stored_love if stored_love in LOVE_STATUSES else None
+    job = stored_job if stored_job in JOB_STATUSES else None
+    if is_target:
+        return love or TARGET_DEFAULT_LOVE, job or TARGET_DEFAULT_JOB
+    if love is None and request_love in LOVE_STATUSES:
+        love = request_love
+    if job is None and request_job in JOB_STATUSES:
+        job = request_job
+    return love, job

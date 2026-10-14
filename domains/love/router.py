@@ -25,6 +25,10 @@ class ProfileSyncRequest(BaseModel):
     gender: str = Field("female")
     is_lunar: bool = Field(False)
     bokkong: Optional[int] = Field(None, ge=0, description="없으면 기존 잔액 유지, 신규는 30")
+    love_status: Optional[str] = Field(None, description="single | dating | married")
+    job_status: Optional[str] = Field(
+        None, description="employee | self_employed | job_seeker | student | homemaker | retired",
+    )
 
 
 def _user_required():
@@ -53,6 +57,7 @@ def sync_profile(body: ProfileSyncRequest, x_user_id: Optional[str] = Header(def
         hour=body.hour, minute=body.minute,
         gender=body.gender, is_lunar=body.is_lunar,
         bokkong=body.bokkong,
+        love_status=body.love_status, job_status=body.job_status,
     )
     return {"status": "success", "data": saved}
 

@@ -27,10 +27,28 @@ class UserSajuProfile(Base):
     gender = Column(String(16), nullable=False, default="female")
     is_lunar = Column(Boolean, nullable=False, default=False)
     bokkong = Column(Integer, nullable=False, default=DEFAULT_BOKKONG)
+    love_status = Column(String(32), nullable=True)
+    job_status = Column(String(32), nullable=True)
+
+
+def _ensure_status_columns() -> None:
+    """이미 만들어진 프로필 테이블에도 연애/직업 상태 칸을 붙인다."""
+    from sqlalchemy import inspect
+
+    try:
+        cols = {col["name"] for col in inspect(engine).get_columns(UserSajuProfile.__tablename__)}
+    except Exception:
+        return
+    with engine.begin() as conn:
+        if "love_status" not in cols:
+            conn.execute(text("ALTER TABLE user_saju_profile ADD COLUMN love_status VARCHAR(32)"))
+        if "job_status" not in cols:
+            conn.execute(text("ALTER TABLE user_saju_profile ADD COLUMN job_status VARCHAR(32)"))
 
 
 try:
     init_db()
+    _ensure_status_columns()
 except Exception as _e:  # pragma: no cover
     print(f"[love.profiles] 테이블 생성 실패: {_e}")
 
@@ -54,6 +72,8 @@ def _row_dict(row: UserSajuProfile) -> dict:
         "gender": row.gender or "female",
         "is_lunar": bool(row.is_lunar),
         "bokkong": int(row.bokkong or 0),
+        "love_status": row.love_status,
+        "job_status": row.job_status,
     }
 
 
@@ -90,9 +110,12 @@ def get_profile(user_id: str):
 def upsert_profile(
     user_id: str, *, year: int, month: int, day: int,
     hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
-    bokkong=None,
+    bokkong=None, love_status=None, job_status=None,
 ) -> dict:
-    """출생 정보를 저장한다. bokkong 가 None 이면 기존 잔액을 유지하고, 신규는 30으로 시작한다."""
+    """출생 정보를 저장한다. bokkong 가 None 이면 기존 잔액을 유지하고, 신규는 30으로 시작한다.
+
+    love_status/job_status 는 값이 있을 때만 갱신한다. 출생만 동기화할 때 상태를 지우지 않는다.
+    """
     session = SessionLocal()
     try:
         row = session.query(UserSajuProfile).filter(UserSajuProfile.user_id == user_id).one_or_none()
@@ -111,6 +134,10 @@ def upsert_profile(
         row.minute = int(minute or 0)
         row.gender = gender or "female"
         row.is_lunar = bool(is_lunar)
+        if love_status:
+            row.love_status = love_status
+        if job_status:
+            row.job_status = job_status
         session.commit()
         session.refresh(row)
         found = _row_dict(row)
