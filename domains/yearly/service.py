@@ -3,6 +3,8 @@
 특정 연도 하드코딩 금지. 2026→2027→2028 자동. 학업은 age/life_stage 로 분기.
 """
 import datetime
+import json
+from functools import lru_cache
 from typing import Dict, Any, Optional, Tuple, List
 
 from config import KST
@@ -18,6 +20,8 @@ from shared.fortune_cache import get_or_create
 from shared.public import person_summary
 from shared.text_format import paragraphize
 from domains.yearly import content_db as _yearly_db
+from domains.yearly.travel_hobby import assemble as _assemble_travel_hobby
+from domains.yearly.travel_hobby import read_axes as _read_travel_hobby_axes
 
 CATEGORIES = {
     "overall": "총운",
@@ -484,6 +488,70 @@ def _yearly_study_static(ty: int, saju: dict, monthly, best, caution):
         "\n\n".join(str(src.get(f, "")) for f in _YEARLY_STUDY_TEXT_FIELDS if str(src.get(f, "")).strip())
     )
     return out, is_fb
+
+
+def _build_travel_hobby(year, month, day, hour, minute, gender, is_lunar, ty):
+    t_date = datetime.date(ty, 1, 1)
+    saju = calculate_saju(
+        year, month, day, None if hour is None else hour, minute,
+        gender=gender, is_lunar=is_lunar, target_date=t_date,
+    )
+    monthly = _monthly_strength(saju, ty)
+    best, caution = _best_caution(monthly)
+    g1 = saju.get("day_ganji") or ""
+    se = _year_ganji(ty)
+    travel = _yearly_db.lookup(
+        "travel", g1, se,
+        required=("one_line", "overall_flow", "travel_style", "travel_luck", "recommended_spots"),
+    )
+    hobby = _yearly_db.lookup(
+        "hobby", g1, se,
+        required=("one_line", "overall_flow", "active_activities", "solo_vs_group", "benefits"),
+    )
+    axes = _read_travel_hobby_axes(saju, se)
+    sections = _assemble_travel_hobby(
+        travel, hobby,
+        move_high=axes["move_high"],
+        play_high=axes["play_high"],
+        company=axes["company"],
+        timing_months=best,
+    )
+    yy = str(ty)[2:]
+    out = {
+        "content_type": f"{yy}년 여행·취미운",
+        "category": "travel_hobby",
+        "target_year": ty,
+        "day_master": saju.get("day_master"),
+        "birth_time_known": saju.get("birth_time_known"),
+        "saju_info": person_summary(saju),
+        "best_months": best,
+        "caution_months": caution,
+        **sections,
+    }
+    return out, travel is None or hobby is None
+
+
+@lru_cache(maxsize=256)
+def _cached_travel_hobby(year, month, day, hour_key, minute, gender, is_lunar, ty):
+    data, is_fallback = _build_travel_hobby(
+        year, month, day, None if hour_key < 0 else hour_key, minute, gender, is_lunar, ty,
+    )
+    return json.dumps(data, ensure_ascii=False), is_fallback
+
+
+def generate_travel_hobby(
+    year: int, month: int, day: int,
+    hour=None, minute: int = 0, gender: str = "female", is_lunar: bool = False,
+    target_year: Optional[int] = None,
+) -> Tuple[dict, bool]:
+    """여행·취미 통합. 두 정적 DB를 조회해 여섯 섹션으로만 조립한다. 런타임 LLM 없음."""
+    ty = int(target_year) if target_year else datetime.datetime.now(KST).date().year
+    hour_key = -1 if hour is None else int(hour)
+    raw, is_fallback = _cached_travel_hobby(
+        int(year), int(month), int(day), hour_key, int(minute or 0),
+        gender or "female", bool(is_lunar), ty,
+    )
+    return json.loads(raw), is_fallback
 
 
 def generate_yearly(

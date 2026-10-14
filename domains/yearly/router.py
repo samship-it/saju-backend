@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from domains.yearly.service import generate_yearly, CATEGORIES
+from domains.yearly.service import CATEGORIES, generate_travel_hobby, generate_yearly
 
 router = APIRouter()
 
@@ -22,6 +22,18 @@ class YearlyRequest(BaseModel):
 @router.get("/categories", summary="연간 운세 9개 카테고리")
 def categories():
     return {"status": "success", "categories": CATEGORIES}
+
+
+@router.post("/travel-hobby", summary="여행·취미 통합 운세")
+def travel_hobby_endpoint(req: YearlyRequest):
+    try:
+        data, is_fallback = generate_travel_hobby(
+            req.year, req.month, req.day, req.hour, req.minute or 0,
+            req.gender or "female", bool(req.is_lunar), req.target_year,
+        )
+        return {"status": "success", "is_fallback": is_fallback, **data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"여행·취미 운세 생성 실패: {str(e)}")
 
 
 @router.post("/{category}", summary="연간 운세 (카테고리별)")
