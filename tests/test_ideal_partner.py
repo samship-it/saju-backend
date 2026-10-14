@@ -68,6 +68,11 @@ def test_axes_map_to_static_copy():
     assert data["complement_element"]["element"] == "금"
     assert data["complement_element"]["support_element"] == "수"
     assert "비어" in data["user_diagnosis"]
+    assert "금(金)" in data["user_diagnosis"] and "결핍" in data["user_diagnosis"]
+    assert "금(金)" in data["complement_element"]["text"]
+    assert "수(水)" in data["complement_element"]["text"]
+    assert "발달한 상대" in data["complement_element"]["text"]
+    assert "리더형" in data["complement_element"]["text"]
     assert data["partner_personality"]["type"] == "리더형"
     assert "밥" in data["partner_synergy_tip"]  # 子 육합 → 토
     assert "서두르지 않아도" in data["partner_synergy_tip"]
@@ -78,6 +83,21 @@ def test_axes_map_to_static_copy():
     wood, _ = build_ideal_partner(_chart(day_branch="寅"))
     assert "산책" in wood["partner_synergy_tip"]
     assert wood["partner_synergy_tip"] != data["partner_synergy_tip"]
+
+
+def test_diagnosis_states_strong_and_missing_elements():
+    """불(火)이 강하고 수(水)가 없을 때, 진단은 그 팩트를 말하고 추천은 상대의 오행으로 이어진다."""
+    chart = _chart(day_master="甲", missing="수", complement="수", support="금")
+    chart["strength"]["elem_power"] = {"목": 0.4, "화": 3.2, "토": 1.1, "금": 1.4, "수": 0.0}
+    data, is_fallback = build_ideal_partner(chart)
+    assert is_fallback is False
+    diagnosis = data["user_diagnosis"]
+    assert diagnosis.startswith("불(火) 기운이 강하고")
+    assert "수(水) 기운이 결핍된 사주" in diagnosis
+    assert "넘치고" in diagnosis and "비어" in diagnosis
+    text = data["complement_element"]["text"]
+    assert text.startswith("그래서 수(水)와 금(金)이 발달한 상대")
+    assert "포용형" in text
 
 
 def test_yukhap_and_samhap_cover_every_branch():

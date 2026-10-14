@@ -8,8 +8,8 @@ from typing import Any, Dict, Optional, Tuple
 from core.constants import FIVE_ELEMENT_RELATIONS, GAN_ELEM, SAMHAP, YUKHAP
 from core.sipsin import calculate_sipsin, sipsin_group
 from domains.love.fragments import (
-    CHIP, DATE_TIP, ELEMENTS, FALLBACK, NEED, PALACE, PERSON, PERSONALITY,
-    SPOUSE_OPEN, SPOUSE_QUIET,
+    CHIP, DATE_TIP, ELEMENTS, FACT, FACT_AND, FACT_SUBJECT, FALLBACK, NEED,
+    PALACE, PERSON, PERSONALITY, SPOUSE_OPEN, SPOUSE_QUIET,
 )
 
 # 오미합은 상수표에 토가 빠져 있다. 전통 합화는 토.
@@ -75,11 +75,9 @@ def build_ideal_partner(saju: Dict[str, Any]) -> Tuple[dict, bool]:
     heesin = _first_known(strength.get("heesin"), ELEMENTS)
     zeros = [elem for elem in ELEMENTS if elem_power[elem] <= 0]
     complement = yongsin or (zeros[0] if zeros else min(ELEMENTS, key=lambda e: (elem_power[e], ELEMENTS.index(e))))
-    gap = complement if complement in zeros else (zeros[0] if zeros else None)
     if heesin == complement:
         heesin = None
 
-    strongest = max(ELEMENTS, key=lambda e: (elem_power[e], -ELEMENTS.index(e)))
     group = FIVE_ELEMENT_RELATIONS.get((dm_elem, complement), "인성")
     if group not in PERSONALITY:
         group = "인성"
@@ -99,36 +97,80 @@ def build_ideal_partner(saju: Dict[str, Any]) -> Tuple[dict, bool]:
 
     personality_type, personality_text = PERSONALITY[group]
     data = {
-        "user_diagnosis": _diagnosis(strongest, gap, complement, elem_power[strongest]),
-        "complement_element": _complement(complement, heesin),
+        "user_diagnosis": _diagnosis(elem_power),
+        "complement_element": _complement(complement, heesin, personality_type),
         "partner_personality": {"type": personality_type, "text": personality_text},
         "partner_synergy_tip": _synergy(spouse_present, hap_elem, palace_group, trio),
     }
     return data, False
 
 
-def _diagnosis(strongest: str, gap: Optional[str], complement: str, strong_power: float) -> str:
-    if strong_power <= 0:
-        return f"다섯 기운이 모두 얇게 깔린 사주예요. 곁에서 더해 주면 좋은 건 {NEED[complement]}입니다."
-    if gap and gap == complement and strongest != gap:
-        return (
-            f"{NEED[strongest]}은 두드러지고, {NEED[gap]}은 비어 있는 사주예요. "
-            "그 빈자리를 채워 주는 사람이 가장 잘 맞습니다."
-        )
-    if gap and gap != complement:
-        return (
-            f"{NEED[strongest]}은 두드러지고, {NEED[gap]}은 비어 있는 사주예요. "
-            f"곁에서 더해 주면 좋은 건 {NEED[complement]}입니다."
-        )
-    if strongest == complement:
-        return f"{NEED[strongest]}이 이미 두드러진 사주예요. 같은 결을 가진 사람이 곁에 있으면 그 힘이 더 또렷해집니다."
-    return f"{NEED[strongest]}이 두드러진 사주예요. 그중 더 채워 주면 좋은 건 {NEED[complement]}입니다."
+def _join_facts(elems) -> str:
+    """목(木)과 불(火)처럼 잇는다. 조사는 앞 글자 읽기 기준."""
+    if len(elems) == 1:
+        return FACT[elems[0]]
+    if len(elems) == 2:
+        return f"{FACT[elems[0]]}{FACT_AND[elems[0]]} {FACT[elems[1]]}"
+    head = ", ".join(FACT[elem] for elem in elems[:-1])
+    return f"{head}{FACT_AND[elems[-2]]} {FACT[elems[-1]]}"
 
 
-def _complement(element: str, support: Optional[str]) -> dict:
-    text = f"내게 필요한 핵심은 {CHIP[element]}이에요. {PERSON[element]}이 그 자리를 채워 줍니다."
+def _by_power(elems, elem_power: Dict[str, float], reverse: bool):
+    return sorted(elems, key=lambda elem: (elem_power[elem], -ELEMENTS.index(elem)), reverse=reverse)
+
+
+def _diagnosis(elem_power: Dict[str, float]) -> str:
+    """원국에서 강한 기운과 비거나 얇은 기운을 이름으로 짚고, 그 과다·부족을 풀어 쓴다."""
+    peak = max(elem_power.values())
+    if peak <= 0:
+        named = _join_facts(list(ELEMENTS))
+        return (
+            f"{named} 기운이 모두 얇게 깔린 사주예요. "
+            "어느 기운도 두드러지지 않고, 자리마다 비어 있는 쪽에 가깝습니다."
+        )
+
+    excess = _by_power(
+        [elem for elem in ELEMENTS if elem_power[elem] >= peak * 0.8 and elem_power[elem] > 0],
+        elem_power,
+        reverse=True,
+    )
+    absent = _by_power([elem for elem in ELEMENTS if elem_power[elem] <= 0], elem_power, reverse=False)
+    floor = min(elem_power.values())
+    thin = _by_power(
+        [elem for elem in ELEMENTS if elem not in excess and abs(elem_power[elem] - floor) <= 1e-9],
+        elem_power,
+        reverse=False,
+    )
+    excess_s = _join_facts(excess)
+
+    if absent:
+        lack_s = _join_facts(absent)
+        return (
+            f"{excess_s} 기운이 강하고 {lack_s} 기운이 결핍된 사주예요. "
+            f"{NEED[excess[0]]}은 넘치고, {NEED[absent[0]]}은 비어 있습니다."
+        )
+    if thin and floor < peak * 0.5:
+        lack_s = _join_facts(thin)
+        return (
+            f"{excess_s} 기운이 강하고 {lack_s} 기운이 부족한 사주예요. "
+            f"{NEED[excess[0]]}은 넘치고, {NEED[thin[0]]}은 얇습니다."
+        )
+    return (
+        f"{excess_s} 기운이 고르게 놓인 사주예요. "
+        "어느 한쪽이 특별히 넘치거나 비어 있지는 않습니다."
+    )
+
+
+def _complement(element: str, support: Optional[str], personality_type: str) -> dict:
+    """앞 진단에 이어, 상대에게 필요한 오행과 성향을 이름으로 추천한다."""
+    wanted = [element] if not support else [element, support]
+    developed = _join_facts(wanted) + FACT_SUBJECT[wanted[-1]]
+    text = (
+        f"그래서 {developed} 발달한 상대가 잘 맞아요. "
+        f"{PERSON[element]}이라, {personality_type}으로 나를 보완합니다."
+    )
     if support:
-        text += f" 그 힘을 북돋우는 {CHIP[support]}이 함께 있으면 더 편해요."
+        text += f" {FACT[support]} 기운이 함께 있으면 그 보완이 더 편해집니다."
     return {
         "element": element,
         "label": CHIP[element],
