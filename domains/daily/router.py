@@ -8,7 +8,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from config import KST, API_SECRET_KEY
+from config import API_SECRET_KEY, today_kst
 from core.saju_base import calculate_saju
 from domains.daily.content_db import make_key
 from domains.daily.ilju_image import ilju_animal_icon, target_name
@@ -224,7 +224,7 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
         if req.target_date:
             t_date = datetime.datetime.strptime(req.target_date, "%Y-%m-%d").date()
         else:
-            t_date = datetime.datetime.now(KST).date()
+            t_date = today_kst()
         target_date_str = t_date.strftime("%Y-%m-%d")
 
         subject = _subject(req)

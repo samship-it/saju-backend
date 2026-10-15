@@ -185,8 +185,23 @@ def test_prev_session_excludes_target_day(monkeypatch):
             return pd.DataFrame({"Close": [100.0, 101.0, 90.0]}, index=idx)
 
     monkeypatch.setattr(yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(indicators, "_spot_quote", lambda ticker: None)
     # 9/28 당일 봉(장중일 수 있음)은 제외 → 9/23 종가 기준 +1.00%
     assert _real_fetch_prev_session_change("2026-09-28") == {"session_date": "2026-09-23", "change_percent": 1.0}
+
+
+def test_wealth_omitted_date_follows_kst_today(monkeypatch):
+    import datetime
+
+    import core.saju_base as saju_base
+
+    monkeypatch.setattr(saju_base, "today_kst", lambda: datetime.date(2026, 10, 15))
+    response = client.post(
+        "/api/v1/wealth/analysis",
+        json={"year": 1990, "month": 5, "day": 15, "hour": 14, "minute": 30, "gender": "female"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["target_date"] == "2026-10-15"
 
 
 def test_api_response_shape_unchanged_and_fast():

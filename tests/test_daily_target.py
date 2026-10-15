@@ -112,6 +112,15 @@ def test_unknown_or_other_users_partner_is_404(partner):
     assert stolen.json()["code"] == "PARTNER_NOT_FOUND"
 
 
+def test_omitted_target_date_uses_kst_today(monkeypatch):
+    import domains.daily.router as daily_router
+
+    monkeypatch.setattr(daily_router, "today_kst", lambda: datetime.date(2026, 10, 15))
+    res = client.post("/api/v1/daily/fortune", headers=API_KEY, json={"user_id": OWNER, **SELF})
+    assert res.status_code == 200, res.text
+    assert res.json()["target_date"] == "2026-10-15"
+
+
 def test_self_without_birth_is_422():
     res = client.post("/api/v1/daily/fortune", headers=API_KEY, json={"user_id": OWNER})
     assert res.status_code == 422

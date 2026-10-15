@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional, List
 
 import sajupy
 
-from config import KST
+from config import today_kst
 from core.constants import GAN_ELEM, JI_ELEM
 from core.sipsin import calculate_sipsin
 from core.interactions import check_ji_interactions, analyze_branch_relations
@@ -126,7 +126,7 @@ def calculate_saju(
     spouse = spouse_star(day_master, gender, pillars, sipsin_map)
 
     # 날짜 컨텍스트
-    t_date = target_date or datetime.datetime.now(KST).date()
+    t_date = target_date or today_kst()
     try:
         today_res = _sajupy_calc(t_date.year, t_date.month, t_date.day, 12, 0)
     except Exception:

@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -29,6 +30,11 @@ _load_dotenv()
 
 # 한국 표준시 타임존 설정 (KST)
 KST = ZoneInfo("Asia/Seoul")
+
+
+def today_kst():
+    """달력상 오늘. 서버가 UTC여도 한국시간 자정에 날짜가 바뀐다."""
+    return datetime.now(KST).date()
 
 # Gemini 모델 및 API 키 설정
 # gemini-2.5-flash-lite 는 Google 이 신규 사용자 대상으로 완전히 중단(deprecated)시켜
