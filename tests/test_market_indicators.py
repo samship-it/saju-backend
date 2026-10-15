@@ -160,9 +160,10 @@ def test_unfilled_gap_retries_instead_of_sticking(monkeypatch):
     """일봉 구멍을 메우기 전에는 10월 13일 값을 하루 종일 고정하지 않는다."""
     calls = {"n": 0}
 
-    def fake(target_date):
+    def fake(target_date, ticker=None):
         calls["n"] += 1
-        if calls["n"] == 1:
+        # 조회 1회 = 나스닥 + 환율. 첫 쌍이 구멍이면 짧게만 유지하고, TTL 뒤 다시 받는다.
+        if calls["n"] <= 2:
             return {"session_date": "2026-10-13", "change_percent": -5.46, "gap_unfilled": True}
         return {"session_date": "2026-10-14", "change_percent": -0.44}
 
@@ -171,10 +172,10 @@ def test_unfilled_gap_retries_instead_of_sticking(monkeypatch):
     held = indicators.get_daily_market_direction("2026-10-15", now=10)
     assert first["session_date"] == "2026-10-13"
     assert held["session_date"] == "2026-10-13"
-    assert calls["n"] == 1
+    assert calls["n"] == 2
     refreshed = indicators.get_daily_market_direction("2026-10-15", now=301)
     assert refreshed["session_date"] == "2026-10-14"
-    assert calls["n"] == 2
+    assert calls["n"] == 4
 
 
 def test_history_hole_without_spot_is_not_cached_as_final(monkeypatch):

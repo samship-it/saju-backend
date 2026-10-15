@@ -11,7 +11,7 @@ from domains.market.indicators import _fetch_prev_session_change as _real_fetch_
 from domains.wealth import fragments as F
 from domains.wealth.engine import (
     _ending, behavior, build_report, classify_day_relation, classify_direction,
-    classify_wealth_type, is_conflict,
+    classify_wealth_type, is_conflict, morning_stance,
 )
 from domains.wealth.service import analyze_daily_finance
 
@@ -125,6 +125,10 @@ def test_chase_high_requires_active_score():
 def test_classifiers():
     assert classify_direction(0.5) == "상승" and classify_direction(-0.5) == "하락"
     assert classify_direction(0.49) == "보합" and classify_direction(None) == "보합"
+    # 나스닥과 환율이 같은 쪽으로 세면 한쪽만 믿고 쫓지 않도록 관망으로 낮춘다.
+    assert morning_stance(0.9, 0.9) == "보합" and morning_stance(-1.2, -0.8) == "보합"
+    assert morning_stance(0.9, -0.8) == "상승" and morning_stance(-1.2, 0.8) == "하락"
+    assert morning_stance(0.9, None) == "상승" and morning_stance(0.1, 1.5) == "보합"
     assert classify_wealth_type({"비겁": 4, "식상": 1, "재성": 1, "관성": 1, "인성": 1}) == "비겁"
     assert classify_wealth_type({"비겁": 2, "식상": 1, "재성": 3, "관성": 1, "인성": 1}) == "재성"
     assert classify_wealth_type({"비겁": 2, "식상": 2, "재성": 2, "관성": 2, "인성": 2}) == "균형"
@@ -135,6 +139,26 @@ def test_classifiers():
     assert classify_day_relation("子", "酉") == "마찰"  # 파
     assert classify_day_relation("子", "子") == "동일"
     assert classify_day_relation("子", "寅") == "무관"
+
+
+def test_market_point_explains_nasdaq_and_fx():
+    down = build_report(
+        day_master="甲", today_sipsin="편재", today_ji_sipsin="정재", day_relation="무관",
+        wealth_type="재성",
+        market={"status": "ok", "direction": "하락", "change_percent": -1.2, "fx_change_percent": 0.8,
+                "session_date": "2026-10-14"},
+        target_date=TARGET,
+    )
+    assert "나스닥이 하락한 여파" in down["market_point"]
+    assert "코스피" not in down["market_point"] and "%" not in down["market_point"]
+    up = build_report(
+        day_master="甲", today_sipsin="편재", today_ji_sipsin="정재", day_relation="무관",
+        wealth_type="재성",
+        market={"status": "ok", "direction": "상승", "change_percent": 1.1, "fx_change_percent": -0.7,
+                "session_date": "2026-10-14"},
+        target_date=TARGET,
+    )
+    assert "나스닥 반등" in up["market_point"]
 
 
 def test_market_unknown_falls_back_to_neutral():
@@ -149,24 +173,28 @@ def test_market_unknown_falls_back_to_neutral():
 def test_market_direction_fixed_for_the_day(monkeypatch):
     calls = []
 
-    def fake(target_date):
-        calls.append(target_date)
-        return {"session_date": "2026-09-23", "change_percent": 0.9 if len(calls) == 1 else -3.0}
+    def fake(target_date, ticker=None):
+        calls.append((target_date, ticker))
+        # 한 번 조회에 나스닥·환율 두 번. 그 결과가 같은 재테크 날짜에는 고정된다.
+        return {"session_date": "2026-09-23", "change_percent": 0.9 if len(calls) <= 2 else -3.0}
 
     monkeypatch.setattr(indicators, "_fetch_prev_session_change", fake)
     first = indicators.get_daily_market_direction(TARGET, now=0)
     later = indicators.get_daily_market_direction(TARGET, now=12 * 3600)  # 같은 날 12시간 뒤
-    assert first == later and len(calls) == 1
+    assert first == later and len(calls) == 2
+    assert first["change_percent"] == 0.9 and first["fx_change_percent"] == 0.9
 
 
 def test_market_direction_error_retries_after_short_ttl(monkeypatch):
-    def boom(target_date):
+    def boom(target_date, ticker=None):
         raise RuntimeError("yahoo down")
 
     monkeypatch.setattr(indicators, "_fetch_prev_session_change", boom)
     assert indicators.get_daily_market_direction(TARGET, now=0)["status"] == "error"
-    monkeypatch.setattr(indicators, "_fetch_prev_session_change",
-                        lambda d: {"session_date": "2026-09-23", "change_percent": 0.9})
+    monkeypatch.setattr(
+        indicators, "_fetch_prev_session_change",
+        lambda d, ticker=None: {"session_date": "2026-09-23", "change_percent": 0.9},
+    )
     assert indicators.get_daily_market_direction(TARGET, now=10)["status"] == "error"   # TTL 안
     assert indicators.get_daily_market_direction(TARGET, now=301)["status"] == "ok"     # TTL 후 재시도
 
@@ -190,18 +218,31 @@ def test_prev_session_excludes_target_day(monkeypatch):
     assert _real_fetch_prev_session_change("2026-09-28") == {"session_date": "2026-09-23", "change_percent": 1.0}
 
 
-def test_wealth_omitted_date_follows_kst_today(monkeypatch):
+def test_wealth_asof_rolls_at_kst_open():
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    from config import wealth_asof_date
+
+    kst = ZoneInfo("Asia/Seoul")
+    assert wealth_asof_date(datetime.datetime(2026, 10, 15, 8, 59, tzinfo=kst)) == datetime.date(2026, 10, 14)
+    assert wealth_asof_date(datetime.datetime(2026, 10, 15, 9, 0, tzinfo=kst)) == datetime.date(2026, 10, 15)
+    assert wealth_asof_date(datetime.datetime(2026, 10, 15, 8, 59)) == datetime.date(2026, 10, 14)
+
+
+def test_wealth_omitted_date_follows_open_clock(monkeypatch):
     import datetime
 
-    import core.saju_base as saju_base
-
-    monkeypatch.setattr(saju_base, "today_kst", lambda: datetime.date(2026, 10, 15))
+    monkeypatch.setattr(
+        "domains.wealth.service.wealth_asof_date",
+        lambda now=None: datetime.date(2026, 10, 14),
+    )
     response = client.post(
         "/api/v1/wealth/analysis",
         json={"year": 1990, "month": 5, "day": 15, "hour": 14, "minute": 30, "gender": "female"},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["target_date"] == "2026-10-15"
+    assert response.json()["target_date"] == "2026-10-14"
 
 
 def test_api_response_shape_unchanged_and_fast():
@@ -220,7 +261,8 @@ def test_api_response_shape_unchanged_and_fast():
                       "money_flow", "caution_point", "investment_behavior"}
     assert set(d["market"]) == {"indices", "is_live"}
     assert set(d["investment_behavior"]) == {"tendency", "aggressiveness", "chase_risk", "spending_tendency"}
-    assert "9월 23일(수)" in d["market_point"]
+    assert "나스닥" in d["market_point"] and "환율" in d["market_point"]
+    assert "코스피" not in d["market_point"] and "%" not in d["market_point"]
     assert elapsed < 0.2  # CI 여유치. 로컬 실측 p50≈16ms
 
 

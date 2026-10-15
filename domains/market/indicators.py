@@ -211,12 +211,14 @@ def clear_cache() -> None:
 
 
 # ───────────────────────── 재테크 운세용: 하루 고정 시장 방향 ─────────────────────────
-# "같은 날 아침과 저녁의 운세가 달라지면 안 된다" — 장중 실시간 등락이 아니라
-# target_date(KST) 이전의 '마지막 완결 거래일' 종가 대비 등락률을 쓴다.
+# 재테크의 target_date 는 한국시간 09:00에 바뀐다. 그 날짜 이전의 확정 나스닥 마감과
+# 원·달러 등락만 쓴다. 장중 시세가 아침과 저녁의 문장을 바꾸지 않는다.
 # 과거 종가로만 계산하므로 재시작·워커가 달라도 같은 날엔 항상 같은 값이 나온다.
 # 직전 거래일까지 메워진 성공 결과만 그날 고정한다.
 # 야후 일봉이 비어 아직 전전 거래일에 머무르면 짧게만 캐싱하고 다시 받는다.
 DIRECTION_TICKER = INDICATORS["KOSPI"]["ticker"]
+NASDAQ_TICKER = INDICATORS["NASDAQ"]["ticker"]
+FX_TICKER = INDICATORS["USDKRW"]["ticker"]
 _DIRECTION_ERROR_TTL_SECONDS = 300
 _DIRECTION_CACHE_MAX_DAYS = 14
 
@@ -232,9 +234,9 @@ def _single_weekday_hole(days: List[date], anchor: date) -> bool:
     return _previous_weekday(missing) in days
 
 
-def _fetch_prev_session_change(target_date: str) -> Dict[str, Any]:
-    closes = [(day, price) for day, price in _history_closes(DIRECTION_TICKER) if day is not None]
-    spot = _spot_quote(DIRECTION_TICKER)
+def _fetch_prev_session_change(target_date: str, ticker: str = DIRECTION_TICKER) -> Dict[str, Any]:
+    closes = [(day, price) for day, price in _history_closes(ticker) if day is not None]
+    spot = _spot_quote(ticker)
     anchor = spot.get("price_date") if spot else (closes[-1][0] if closes else None)
     previous_close = spot.get("prev") if spot else None
     if spot:
@@ -271,14 +273,31 @@ def get_daily_market_direction(target_date: str, now: Optional[float] = None) ->
             return hit["data"]
 
         try:
-            fetched = _fetch_prev_session_change(target_date)
-            # 빈 거래일을 메운 값만 그날 고정한다. 아직 구멍이 있으면 짧게 다시 받는다.
-            gap_unfilled = bool(fetched.pop("gap_unfilled", False))
-            data = {"status": "ok", **fetched}
+            nasdaq = _fetch_prev_session_change(target_date, NASDAQ_TICKER)
+            try:
+                fx = _fetch_prev_session_change(target_date, FX_TICKER)
+            except Exception as fx_error:
+                logger.warning(f"환율 등락 조회 실패 ({FX_TICKER}, {target_date}): {fx_error}")
+                fx = {}
+            # 나스닥 마감이 아직 구멍이면 그 아침 문장을 하루 종일 고정하지 않는다.
+            gap_unfilled = bool(nasdaq.pop("gap_unfilled", False) or fx.pop("gap_unfilled", False))
+            data = {
+                "status": "ok",
+                "change_percent": nasdaq["change_percent"],
+                "session_date": nasdaq["session_date"],
+                "fx_change_percent": fx.get("change_percent"),
+                "fx_session_date": fx.get("session_date"),
+            }
             expires_at = now + _DIRECTION_ERROR_TTL_SECONDS if gap_unfilled else None
         except Exception as e:
-            logger.warning(f"재테크 시장 방향 조회 실패 ({DIRECTION_TICKER}, {target_date}): {e}")
-            data = {"status": "error", "change_percent": None, "session_date": None}
+            logger.warning(f"재테크 시장 방향 조회 실패 ({NASDAQ_TICKER}, {target_date}): {e}")
+            data = {
+                "status": "error",
+                "change_percent": None,
+                "session_date": None,
+                "fx_change_percent": None,
+                "fx_session_date": None,
+            }
             expires_at = now + _DIRECTION_ERROR_TTL_SECONDS
 
         _direction_cache[target_date] = {"data": data, "expires_at": expires_at}

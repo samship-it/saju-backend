@@ -1,6 +1,6 @@
 """오늘의 재테크 사주 — 룰베이스 조립 엔진 (순수 함수, I/O 없음).
 
-입력은 명리 코어가 계산한 값(일간·오늘 십신·원국 세력)과 시장 모듈이 넘겨준 '직전 거래일 방향' 뿐이다.
+입력은 명리 코어가 계산한 값(일간·오늘 십신·원국 세력)과 시장 모듈이 넘겨준 나스닥·환율 등락뿐이다.
 시장 데이터를 직접 조회하지 않는다(시장 로직과 명리 엔진 분리 원칙).
 
 결정성: 같은 (target_date, 조합) 이면 항상 같은 문장. 변형 선택에 hashlib 를 쓰므로 프로세스·워커가 달라도 동일.
@@ -36,6 +36,23 @@ def classify_direction(change_percent: Optional[float]) -> str:
     if change_percent <= -DIRECTION_THRESHOLD_PCT:
         return "하락"
     return "보합"
+
+
+def morning_stance(nasdaq_pct: Optional[float], fx_pct: Optional[float] = None) -> str:
+    """오늘 아침 국내 장에 반영할 태도. 나스닥 마감이 중심이고, 환율은 그 태도를 누그러뜨린다.
+
+    환율 상승은 달러 강세(원화 약세)다. 나스닥과 환율이 같은 방향으로 세면
+    한쪽 신호만 믿고 쫓거나 던지지 않도록 관망으로 낮춘다.
+    """
+    nasdaq = classify_direction(nasdaq_pct)
+    if fx_pct is None:
+        return nasdaq
+    fx = classify_direction(fx_pct)
+    if nasdaq == "상승" and fx == "상승":
+        return "보합"
+    if nasdaq == "하락" and fx == "하락":
+        return "보합"
+    return nasdaq
 
 
 def classify_wealth_type(group_power: Dict[str, float]) -> str:
@@ -130,20 +147,19 @@ def _pick(variants: Sequence[str], *seed_parts: Any) -> str:
 
 
 # ───────────────────────── 조립 ─────────────────────────
-def _format_session_date(session_date: str) -> str:
-    import datetime as _dt
-    d = _dt.date.fromisoformat(session_date)
-    return f"{d.month}월 {d.day}일({'월화수목금토일'[d.weekday()]})"
-
-
 def _market_point(market: Dict[str, Any], direction: str, target_date: str) -> str:
     pct = market.get("change_percent")
-    session = market.get("session_date")
-    if market.get("status") != "ok" or pct is None or not session:
+    if market.get("status") != "ok" or pct is None:
         return F.MARKET_POINT_UNKNOWN
-    p = f"{pct:+.2f}%" if direction == "보합" else f"{abs(pct):.2f}%"
-    tpl = _pick(F.MARKET_POINT[direction], target_date, "mp", direction)
-    return tpl.format(d=_format_session_date(session), p=p)
+    nasdaq = classify_direction(pct)
+    fx_pct = market.get("fx_change_percent")
+    if fx_pct is None:
+        pool = F.MARKET_POINT_NASDAQ[nasdaq]
+        fx = "없음"
+    else:
+        fx = classify_direction(fx_pct)
+        pool = F.MARKET_POINT[(nasdaq, fx)]
+    return _pick(pool, target_date, "mp", nasdaq, fx, direction)
 
 
 def build_report(
