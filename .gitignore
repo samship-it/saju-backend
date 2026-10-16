@@ -12,3 +12,6 @@ scripts/_*.log
 scripts/_*.err
 scripts/_*.txt
 *.done
+
+# 아침 시황 브리핑 캐시 (크론/요청이 날짜별로 갱신)
+data/market_briefs/

@@ -263,6 +263,8 @@ def test_api_response_shape_unchanged_and_fast():
     assert set(d["investment_behavior"]) == {"tendency", "aggressiveness", "chase_risk", "spending_tendency"}
     assert "나스닥" in d["market_point"] and "환율" in d["market_point"]
     assert "코스피" not in d["market_point"] and "%" not in d["market_point"]
+    assert "재료를 새로 만들기 어렵" not in d["market_point"]
+    assert "장중까지 이어지는지 확인하면서" in d["investment_fortune"]
     assert elapsed < 0.2  # CI 여유치. 로컬 실측 p50≈16ms
 
 

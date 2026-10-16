@@ -148,6 +148,9 @@ def _pick(variants: Sequence[str], *seed_parts: Any) -> str:
 
 # ───────────────────────── 조립 ─────────────────────────
 def _market_point(market: Dict[str, Any], direction: str, target_date: str) -> str:
+    brief = market.get("point_text")
+    if isinstance(brief, str) and brief.strip():
+        return brief.strip()
     pct = market.get("change_percent")
     if market.get("status") != "ok" or pct is None:
         return F.MARKET_POINT_UNKNOWN
@@ -186,6 +189,9 @@ def build_report(
 
     i2 = F.I2_BRIDGE[t] if is_conflict(s, t) else F.I2[(t, m)]
     investment = _assemble([F.I1[(s, m)], i2, F.I3[d], F.I4[s], F.I5[t]], key + "|inv")
+    note = market.get("advice_note")
+    if isinstance(note, str) and note.strip():
+        investment = f"{investment} {note.strip()}"
     consumption = _assemble([F.C1[s], F.C2[t], F.C3[d], F.C4[m], F.C5[s]], key + "|con")
     flow_slots = [F.F1[j], F.F2[s]] + ([F.F_REL[r]] if r in F.F_REL else []) + [F.F3[t], F.F4[d], F.F5[m]]
     money_flow = _assemble(flow_slots, key + "|flow")
