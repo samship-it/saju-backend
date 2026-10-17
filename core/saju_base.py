@@ -137,7 +137,11 @@ def calculate_saju(
 
     age = t_date.year - year - ((t_date.month, t_date.day) < (month, day))
 
-    daewoon_info = calculate_daewoon_info(year, month, day, gender, year_pillar, month_pillar)
+    daewoon_info = calculate_daewoon_info(
+        year, month, day, gender, year_pillar, month_pillar,
+        hour=safe_hour if birth_time_known else None,
+        minute=safe_minute if birth_time_known else 0,
+    )
     current_daewoon = _current_daewoon(daewoon_info, age)
     seewoon_10yrs = get_seewoon_list(t_date.year, 10)
     wolwoon_current = get_wolwoon_list(t_date.year)

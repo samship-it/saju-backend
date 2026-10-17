@@ -4,8 +4,8 @@ import logging
 import os
 from bisect import bisect_left, bisect_right
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Tuple
 from functools import lru_cache
-from typing import Dict, Any, List, Tuple
 from korean_lunar_calendar import KoreanLunarCalendar
 
 from config import KST
@@ -334,12 +334,41 @@ def daewoon_step_facts(
     return out
 
 
+# sajupy.calculate_saju(use_solar_time=True, longitude=서울) 과 같은 경도 보정.
+# 균시차는 쓰지 않는다. 표준자오선 135°E 대비 서울이 약 32분 늦다.
+_SEOUL_LON = 126.9783
+_KST_UTC_OFFSET = 9
+
+
+def seoul_solar_datetime(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetime:
+    """시계 시각을 서울 진태양시로 옮긴다. 분 이하는 sajupy 와 같이 버린다."""
+    correction = (_SEOUL_LON - _KST_UTC_OFFSET * 15) * 4
+    total = hour * 60 + minute + correction
+    date_change = 0
+    if total < 0:
+        total += 24 * 60
+        date_change = -1
+    elif total >= 24 * 60:
+        total -= 24 * 60
+        date_change = 1
+    adjusted = datetime(year, month, day) + timedelta(days=date_change)
+    return adjusted.replace(hour=int(total // 60), minute=int(total % 60), second=0, microsecond=0)
+
+
 def calculate_daewoon_info(
     year: int, month: int, day: int, gender: str,
     year_pillar: str, month_pillar: str = "甲寅",
+    hour: Optional[int] = None, minute: int = 0,
 ) -> Dict[str, Any]:
-    """생년월일 + 연주/월주(한자)로 대운수·순역·10년 단위 대운 흐름을 산출한다."""
-    birth_dt = datetime(year, month, day, 12)
+    """생년월일 + 연주/월주(한자)로 대운수·순역·10년 단위 대운 흐름을 산출한다.
+
+    출생 시각이 있으면 그 시계 시각의 서울 진태양시로 절입 일수를 잰다.
+    시각을 모르면 기존과 같이 양력 날짜의 정오 12:00 을 쓴다.
+    """
+    if hour is None:
+        birth_dt = datetime(year, month, day, 12)
+    else:
+        birth_dt = seoul_solar_datetime(year, month, day, hour, minute or 0)
     year_stem = year_pillar[0] if year_pillar else "甲"
     is_yang = GAN_YANG_H.get(year_stem, True)
     is_male = gender.strip().lower() in _MALE_TOKENS

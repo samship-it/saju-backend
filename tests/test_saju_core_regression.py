@@ -318,6 +318,39 @@ class TestDaewoonNum:
         assert male_result["daewoon_num"] == 3
         assert female_result["direction"] != male_result["direction"]
 
+    def test_known_birth_time_uses_seoul_solar_instant(self):
+        """절입 직후 시계 시각은 서울 진태양시로 당기면 절입 전이다.
+
+        순행 대운수는 그 진태양시부터 다음 절입까지로 줄어, 시계 시각으로 잰 값과 달라진다.
+        시각을 비우면 정오 12:00 을 그대로 쓴다.
+        """
+        from datetime import datetime, timedelta
+
+        from core.daewoon import _load_jeol_times, seoul_solar_datetime
+
+        term = next(item for item in _load_jeol_times() if item.year == 1990 and item.hour >= 2)
+        clock = term + timedelta(minutes=10)
+        solar = seoul_solar_datetime(clock.year, clock.month, clock.day, clock.hour, clock.minute)
+        assert solar < term
+        clock_num = self.calculate_exact_daewoon_num(clock, True)
+        solar_num = self.calculate_exact_daewoon_num(solar, True)
+        assert solar_num == 1 and solar_num != clock_num
+
+        known = self.calculate_daewoon_info(
+            clock.year, clock.month, clock.day, "male",
+            year_pillar="甲子", month_pillar="甲寅",
+            hour=clock.hour, minute=clock.minute,
+        )
+        unknown = self.calculate_daewoon_info(
+            clock.year, clock.month, clock.day, "male",
+            year_pillar="甲子", month_pillar="甲寅",
+        )
+        assert known["direction"] == "순행"
+        assert known["daewoon_num"] == solar_num
+        assert unknown["daewoon_num"] == self.calculate_exact_daewoon_num(
+            datetime(clock.year, clock.month, clock.day, 12), True,
+        )
+
     @pytest.mark.parametrize("year,month,day,hour,is_forward", [
         (1983, 5, 14, 14, True),
         (1983, 5, 14, 14, False),

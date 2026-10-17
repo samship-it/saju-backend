@@ -47,6 +47,7 @@ import inspect
 import json
 import os
 import queue as _queue
+import random
 import re
 import sys
 import threading
@@ -1027,9 +1028,13 @@ def _unwrap_batch_payload(raw: dict, want_keys: List[str]) -> dict:
 
 def _valid_fn_wants_item(valid_fn) -> bool:
     """valid_fn(entry) 만 받는 도메인(대다수)과 valid_fn(entry, item) 로 실제 순번 등
-    조합 컨텍스트까지 검증하는 도메인(lifelong_stage)을 함수 시그니처만으로 구분한다."""
+    조합 컨텍스트까지 검증하는 도메인(lifelong_stage)을 함수 시그니처만으로 구분한다.
+
+    파라미터 '개수'가 아니라 이름이 정확히 'item' 인지로 판단한다 — yearly 등에서
+    쓰는 `lambda e, _c=category: ...` 같은 클로저 바인딩용 기본값 파라미터를 실수로
+    item 인자로 오인해 엉뚱한 값(튜플)을 그 자리에 넘기는 사고를 막기 위함."""
     try:
-        return len(inspect.signature(valid_fn).parameters) >= 2
+        return "item" in inspect.signature(valid_fn).parameters
     except (TypeError, ValueError):
         return False
 
@@ -3362,6 +3367,47 @@ def _v2_influence_words(dm: str, seg: str, sej: str) -> str:
     return "·".join(seen) or "무난"
 
 
+# 이 카테고리들은 personality_db(이미 확정된 성향/적성)와 직접 충돌할 수 있는 '직업·사업·재물'
+# 영역이라 fusion_character 엔진 + personality_db 실제 텍스트를 그라운딩으로 주입한다.
+# (personality_db/lifelong_domains 는 이미 이 엔진을 쓰는데 yearly만 빠져 있었음 — 설계
+# 리뷰에서 식별된 정합성 리스크, 사용자 승인 후 반영)
+_YEARLY_PERSONALITY_GROUNDED = ("business", "career_change", "wealth")
+
+_TEMPERAMENT_GROUPS = ["비겁", "식상", "재성", "관성", "인성"]
+
+
+def yearly_spotcheck_sample(category: str, per_group: int = 3, seed: int = 42) -> List[str]:
+    """2차 스팟체크(사람이 직접 읽고 판정)용 30건 표본을 뽑는다.
+
+    '이 해의 지배 십신군 = 일주 기질과 같은 계열'(ALIGN, 저위험)과 '이질적/상충
+    계열'(OPP, 고위험)을 5개 기질군(비겁/식상/재성/관성/인성)마다 정확히
+    per_group(기본 3)건씩 강제로 균등 추출한다 — 5 × 3 × 2 = 30건. 무작위로만
+    뽑으면 저위험 쪽에 치우칠 수 있음이 1차 테스트(10건 중 6:4)에서 확인됐다."""
+    rng = random.Random(seed)
+    by_tier: Dict[str, Dict[str, List[str]]] = {
+        "ALIGN": {g: [] for g in _TEMPERAMENT_GROUPS},
+        "OPP": {g: [] for g in _TEMPERAMENT_GROUPS},
+    }
+    for key in _yearly_v2_all_keys(category):
+        parts = key.split("_")
+        ilju, se = parts[0], parts[1]
+        dm, dbc = ilju[0], ilju[1]
+        seg, sej = se[0], se[1]
+        temp = ilju_temperament_group(dm, dbc)
+        g1 = sipsin_group(calculate_sipsin(dm, seg, is_gan=True))
+        g2 = sipsin_group(calculate_sipsin(dm, sej, is_gan=False))
+        tier = "ALIGN" if temp in (g1, g2) else "OPP"
+        if temp in by_tier[tier]:
+            by_tier[tier][temp].append(key)
+
+    sample: List[str] = []
+    for tier in ("ALIGN", "OPP"):
+        for g in _TEMPERAMENT_GROUPS:
+            pool = by_tier[tier][g]
+            sample.extend(rng.sample(pool, min(per_group, len(pool))))
+    return sample
+
+
 def _yearly_v2_item_block(key: str, category: str) -> str:
     parts = key.split("_")
     a, se = parts[0], parts[1]
@@ -3376,6 +3422,17 @@ def _yearly_v2_item_block(key: str, category: str) -> str:
     lines = [
         f"── 키: {key} ──",
         f"- 나: {_compat_persona(dm, dbc)}" + (f"  [성향: {me_tag}]" if me_tag else ""),
+    ]
+    if category in _YEARLY_PERSONALITY_GROUNDED:
+        temperament_group = ilju_temperament_group(dm, dbc)
+        base_nature = _personality_base_nature(a)
+        apt_snippet = _personality_aptitude_snippet(a)
+        lines.append(
+            "- 이미 확정된 '타고난 성향/적성'(다른 화면에 이미 표시됨 — 아래 특화 필드들이 "
+            f"이 내용과 논리적으로 모순되면 안 됨): {base_nature} {apt_snippet}".strip()
+        )
+        lines.append(f"- 기질 축(내부 참고용 — 용어 그대로 쓰지 말 것): {temperament_group}")
+    lines += [
         f"- 올해가 주는 자극(키워드 힌트, 그대로 쓰지 말 것): {_v2_influence_words(dm, seg, sej)}",
         f"- 올해 기운의 결(키워드 힌트, 그대로 쓰지 말 것): {together}",
     ]
@@ -3426,11 +3483,20 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
     if category == "study":
         stage_note = "\n- 각 조합의 '생애단계 맥락'에 철저히 맞춰 씁니다. 10대에게 자격증·이직 얘기, 30대 이상에게 수능 얘기를 하지 않습니다."
 
+    consistency_note = ""
+    if category in _YEARLY_PERSONALITY_GROUNDED:
+        consistency_note = (
+            "\n- 위 '이미 확정된 타고난 성향/적성'과 아래 특화 필드들이 논리적으로 모순되면 안 "
+            "됩니다. 올해 기운은 이 성향이 발현되는 방식·강도를 조금 조정할 뿐, 성향 자체를 "
+            "뒤집지 않습니다(예: 안정적인 환경을 선호하는 성향인데 갑자기 '이 해엔 위험을 무릅쓴 "
+            "과감한 확장이 잘 맞는다'처럼 정반대로 단정하지 말 것)."
+        )
+
     depth_note = spec.get("depth_note", "")
 
     return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {ko}'를 씁니다.
 각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
-(참고 명리 로직: {spec['logic']} — 이 관점의 해석이되, 용어는 절대 노출하지 않습니다.){stage_note}
+(참고 명리 로직: {spec['logic']} — 이 관점의 해석이되, 용어는 절대 노출하지 않습니다.){stage_note}{consistency_note}
 
 [공통 필드]
 - one_line: 올해 {ko}를 한 문장으로 압축 (12~26자). 아래 keywords 의 단어가 자연스럽게 녹아들게 씁니다. 부정적 단어로 시작하지 않습니다.
@@ -3447,6 +3513,7 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
 - 모든 문장을 친근한 존댓말로만 끝냅니다: '~해요 / ~예요 / ~입니다 / ~보세요 / ~됩니다' 등. '~한다/~된다/~있다/~거야/~겠지' 같은 반말·문어체 종결 금지. keywords·concept_object 만 명사.
 - 번호·순번·목록 기호 없이 서술형 문장으로. 특정 월(1월·7월 등)·특정 연도·특정 나이 숫자를 단정하지 않습니다('상반기·하반기·연초·초봄·한여름·가을 무렵·연말'만).
 - 사주 용어 노출 금지(십신·오행·합충·용신·"일주"·"간지"·"세운"·"천간"·"지지"). "나"와 "올해"로만 지칭. 참고 문구를 그대로 붙여넣지 말고 자기 문장으로. 한자 사용 금지.
+- 이 데이터는 실제 작년·재작년이 무엇이었는지 전혀 모릅니다. "작년보다 나아진다", "재작년에 비해" 처럼 다른 해와 비교하는 표현은 절대 쓰지 않습니다. ("연말에는 내년을 준비" 처럼 단순히 다음 해를 향한 마음가짐을 언급하는 정도는 괜찮습니다.) 또한 사용자의 실제 나이를 모르므로 "이 기운을 몇 번째로 맞이하는지", "환갑을 맞아 다시 돌아온 해" 처럼 이 조합이 몇 번째로 반복되는 경험인지도 절대 단정하지 않습니다.
 
 [생성할 조합 — 총 {len(items)}개]
 
@@ -3531,6 +3598,44 @@ def _yearly_v2_coerce(category: str, entry: Any) -> Any:
     return entry
 
 
+# yearly 는 lifelong_stage 의 '_N' 같은 명시적 순번이 키에 없다(60갑자 순환이라 같은
+# 조합이 60년마다 재사용됨). 대신 "다른 해와 비교"하는 서술이 새는 위험이 있다 — 이 정적
+# 데이터는 실제 작년/재작년이 무엇이었는지도, 사용자가 이 세운을 몇 번째로 맞는지도 전혀
+# 모르기 때문에 어떤 비교·반복 주장도 검증 불가능하다(설계 리뷰에서 식별, 실측: 전체
+# 38,400건 중 "작년보다"류 실제 비교 주장 13건 발견). "내년을 준비" 같은 단순 미래
+# 지향 언급까지 막으면 과하므로, '비교 조사(보다/에 비해 등)'가 붙은 경우만 잡는다.
+_YEARLY_RELYEAR_COMPARE_RE = re.compile(
+    r"(?:작년|지난해|지난\s*해|재작년|전년도?)\s*(?:보다|에\s*비해|만큼|처럼|같이|와\s*비슷)"
+)
+_YEARLY_CYCLE_CLAIM_RE = re.compile(
+    r"(?:\d{1,2}|첫|두|세|네|다섯)\s*번째\s*(?:로\s*)?(?:맞이|맞는|돌아오|찾아오)|환갑|갑자를\s*(?:다시|또)|육십갑자"
+)
+
+
+def has_relative_year_comparison(text: Any) -> bool:
+    """'작년보다'/'재작년에 비해' 처럼 다른 해와 비교하는 표현(검증 불가능한 주장)."""
+    return isinstance(text, str) and bool(_YEARLY_RELYEAR_COMPARE_RE.search(text))
+
+
+def has_cycle_repetition_claim(text: Any) -> bool:
+    """'이 기운을 두 번째로 맞는' · '환갑을 맞아 다시 돌아온' 처럼 60년 주기 반복
+    횟수를 단정하는 표현(사용자 나이를 모르는 정적 DB가 검증할 수 없는 주장)."""
+    return isinstance(text, str) and bool(_YEARLY_CYCLE_CLAIM_RE.search(text))
+
+
+def verdict_score_consistent(entry: Dict[str, Any]) -> bool:
+    """career_change 의 stay_vs_move: verdict("유지 권장"/"이직 추천")가 stay_score/
+    move_score 와 반대 방향이면 False. compare_fields 가 없는 카테고리는 해당 없음(True)."""
+    sv = entry.get("stay_vs_move")
+    if not isinstance(sv, dict):
+        return True
+    ss, ms, verdict = sv.get("stay_score"), sv.get("move_score"), sv.get("verdict")
+    if not isinstance(ss, int) or not isinstance(ms, int) or ss == ms:
+        return True  # 타입 이상은 기존 범위 검증이 따로 잡고, 동점은 어느 쪽 판정도 가능
+    implied = "이직 추천" if ms > ss else "유지 권장"
+    return verdict == implied
+
+
 def _yearly_v2_valid(category: str, entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
@@ -3547,6 +3652,8 @@ def _yearly_v2_valid(category: str, entry: Any) -> bool:
         v = str(entry.get(name, "")).strip()
         need = min_lens.get(name, 80 if name == "overall_flow" else 35)
         if len(v) < need:
+            return False
+        if has_relative_year_comparison(v) or has_cycle_repetition_claim(v):
             return False
     for name, subs, _ in spec.get("rating_fields", []):
         rv = entry.get(name)
@@ -3567,6 +3674,10 @@ def _yearly_v2_valid(category: str, entry: Any) -> bool:
             else:
                 if len(str(v or "").strip()) < 15:
                     return False
+                if has_relative_year_comparison(v) or has_cycle_repetition_claim(v):
+                    return False
+    if not verdict_score_consistent(entry):
+        return False
     return True
 
 
@@ -3925,6 +4036,8 @@ def _lifelong_stage_keys(only: Optional[str]) -> List[Tuple[str, str, str, str, 
 # (API 호출 비용을 두 배로 만들지 않으면서 화면/데이터는 분리하기 위함).
 _LIFELONG_STAGE_TEASER_FIELDS = ("theme_line", "keyword")
 _LIFELONG_STAGE_DETAIL_FIELDS = ("event_narrative", "strategy", "obstacle", "turning_point")
+# 이 값이 티저·상세 양쪽에 있으면 현재 프롬프트로 만든 항목이다. 없으면 재생성 대상.
+_STAGE_PROMPT_VERSION = "2026-10-16-nature"
 
 
 def _lifelong_stage_item_block(key: str, ilju: str, dominant: str, relation: str, step: int) -> str:
@@ -3934,13 +4047,15 @@ def _lifelong_stage_item_block(key: str, ilju: str, dominant: str, relation: str
     label = STAGE_LABELS[step]
     hint = hint_for_step(dominant, step)
     temperament_group = ilju_temperament_group(dm, db)
+    base_nature = _personality_base_nature(ilju)
     first_note = "이 사람 인생에서 가장 이른 시기의 대운(직전 국면 없음)" if step == 1 else "직전 국면이 있는 대운"
     return (
         f"── 조합 키: {key} ──\n{persona_prompt(dm, db)}\n"
         f"{fusion_prompt_block(temperament_group, dominant, title='공통 사주 판세(이 조합의 기본 뼈대)')}\n"
+        f"- 이미 확정된 타고난 성향(다른 화면에 표시됨. 같은 말을 반복하거나 정반대로 뒤집지 말 것): {base_nature}\n"
         f"- 이 시기: {first_note} · 참고 인생국면: {label} (이 국면 설명·순번 숫자를 문장에 그대로 "
         f"쓰지 말 것 — '몇 번째'라는 표현 자체를 쓰지 말 것. '첫'이라는 낱말도 서수적으로 쓰지 말 것)\n"
-        f"- 이 시기의 지배 기운: {dominant} · 참고 사건결: {hint}\n"
+        f"- 이 10년의 지배 기운: {dominant} · 참고 사건결: {hint}\n"
         f"- 일지 대비 충형 관계: {relation}"
     )
 
@@ -3963,6 +4078,8 @@ def lifelong_stage_batch_prompt(items: List[Tuple[str, str, str, str, int]]) -> 
   그 시기 자체의 흐름과 내용으로만 풉니다.
 - 위 '공통 사주 판세(융합 캐릭터)'를 이 시기 서술의 뼈대로 삼되 문장을 그대로 베끼지 말고
   자연스럽게 녹여 씁니다.
+- 위 '타고난 성향'을 뒤집지 않습니다. 이 10년은 그 성향이 지배 기운과 충형 관계 때문에
+  어떻게 드러나는지를 사건으로 씁니다. 입력에 없는 합격·이직·결혼·금전 액수를 단정하지 않습니다.
 
 [작성 규칙 — 화면에 바로 보이는 '티저' 2개]
 - theme_line: 이 시기 핵심 주제 한 줄(15~30자). 호기심을 끄는 제목처럼.
@@ -4041,6 +4158,22 @@ def _personality_base_nature(ilju: str) -> str:
     if _personality_db_cache is None:
         _personality_db_cache = _load_json(PERSONALITY_DB_PATH)
     return (_personality_db_cache.get(ilju, {}) or {}).get("character", {}).get("base_nature", "")
+
+
+def _personality_aptitude_snippet(ilju: str) -> str:
+    """personality_db.json[일주]의 업무·직업 성향 관련 필드만 압축
+    (aptitude.fit_field/good_env + character.work_style).
+
+    yearly business/career_change/wealth 가 이미 확정된 이 일주의 적성과 논리적으로
+    모순되지 않게 쓰기 위한 그라운딩 텍스트(신규 생성 없이 조회만)."""
+    global _personality_db_cache
+    if _personality_db_cache is None:
+        _personality_db_cache = _load_json(PERSONALITY_DB_PATH)
+    entry = _personality_db_cache.get(ilju, {}) or {}
+    apt = entry.get("aptitude", {}) or {}
+    char = entry.get("character", {}) or {}
+    parts = [apt.get("fit_field", ""), char.get("work_style", ""), apt.get("good_env", "")]
+    return " ".join(p for p in parts if p)
 
 
 def _lifelong_base_item_block(ilju: str) -> str:
@@ -4319,7 +4452,16 @@ def run_lifelong_stage(args) -> None:
     print(f"기존 항목: {len(db)}개 / 목표 14000개")
 
     targets = _lifelong_stage_keys(args.only)
-    todo = [t for t in targets if args.overwrite or t[0] not in db or t[0] not in detail_db]
+
+    def _stage_current(key: str) -> bool:
+        teaser = db.get(key) or {}
+        detail = detail_db.get(key) or {}
+        return (
+            teaser.get("_prompt_v") == _STAGE_PROMPT_VERSION
+            and detail.get("_prompt_v") == _STAGE_PROMPT_VERSION
+        )
+
+    todo = [t for t in targets if args.overwrite or not _stage_current(t[0])]
     print(f"이번 실행 대상: {len(todo)}개" + (" [--overwrite]" if args.overwrite else ""))
     if args.dry_run:
         for t in todo[: args.limit or 20]:
@@ -4338,9 +4480,11 @@ def run_lifelong_stage(args) -> None:
     def _store(_db, _key, _entry, _model):
         teaser = {k: _entry[k] for k in _LIFELONG_STAGE_TEASER_FIELDS}
         teaser["_model"] = _model
+        teaser["_prompt_v"] = _STAGE_PROMPT_VERSION
         db[_key] = teaser
         detail = {k: _entry[k] for k in _LIFELONG_STAGE_DETAIL_FIELDS}
         detail["_model"] = _model
+        detail["_prompt_v"] = _STAGE_PROMPT_VERSION
         detail_db[_key] = detail
         _atomic_write_json(detail_path, detail_db)
 
