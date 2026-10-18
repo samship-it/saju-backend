@@ -343,7 +343,7 @@ def test_domain_valence_closing_differs_from_generic_global_wording():
 # ============================================================================
 _DOMAIN_RESULT_SCHEMA = {
     "domain", "label", "eligible", "life_stage", "activation", "is_primary", "source",
-    "driving_sipsin", "driving_group", "specificity",
+    "driving_sipsin", "driving_group", "interpretation_key", "specificity",
     "valence", "confidence", "drivers", "evidence", "manifestation", "sentence",
 }
 # domain_scores(build_domain_pipeline()의 최종 출력)에 담기는 항목만 추가로 갖는 필드 —
@@ -838,3 +838,67 @@ def test_analyze_daewoon_period_deterministic():
     a, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
     b, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=30)
     assert a["data"]["domain_pipeline"] == b["data"]["domain_pipeline"]
+
+
+def test_interpretation_key_changes_when_relation_strength_or_yongsin_changes():
+    """같은 십성이어도 형충회합·신강/신약·용신 오행이 다르면 키와 문장이 갈린다."""
+    from domains.daewoon.axis import interpretation_key
+
+    natal = analyze_natal_stage(_sample_saju())
+    base = {
+        "ganji": "己未", "gan_sipsin": "정관", "ji_sipsin": "정관",
+        "gan_group": "관성", "ji_group": "관성", "gan_elem": "토", "ji_elem": "토",
+        "polarity": "neutral", "balance_shift": "neutral",
+    }
+    clash = DaewoonContext(
+        natal=natal, daewoon={**base, "relations": {"month": "충(충돌·이동)"}},
+        life_stage="성인", gender="female", strength={"verdict": "신강", "yongsin": ["금"], "gisin": []},
+        yongsin_elem="금", strength_band="신강",
+    )
+    combine = DaewoonContext(
+        natal=natal, daewoon={**base, "relations": {"month": "육합(협력·인연)"}},
+        life_stage="성인", gender="female", strength={"verdict": "신약", "yongsin": ["수"], "gisin": []},
+        yongsin_elem="수", strength_band="신약",
+    )
+    a = analyze_career(clash)
+    b = analyze_career(combine)
+    assert a["interpretation_key"] == interpretation_key("정관", "충", "신강", "금")
+    assert b["interpretation_key"] == interpretation_key("정관", "합", "신약", "수")
+    assert a["interpretation_key"] != b["interpretation_key"]
+    assert a["sentence"] != b["sentence"]
+    for text in (a["sentence"], b["sentence"], a["manifestation"][0], b["manifestation"][0]):
+        for banned in ("관운", "인성운", "정관", "신강", "신약", "용신"):
+            assert banned not in text
+
+
+def test_repeated_officer_decade_drops_role_definition_and_leads_with_setting():
+    """관성 다음 관성이면 직업 문장의 기본 정의 대신 환경 장면을 쓴다."""
+    from domains.daewoon.pipeline import CAREER_VOCAB
+
+    saju = _sample_saju()
+    facts = _sample_facts(saju)
+    assert facts[0]["sipsin_group"] == facts[1]["sipsin_group"] == "관성"
+    daewoon_num = saju["daewoon"]["daewoon_num"]
+    age = daewoon_num + 10 + 5
+    second = build_domain_pipeline(saju, facts[1], age=age, gender="female", prev_fact=facts[0], debug=True)
+    career = next(d for d in second["debug_all_domains"] if d["domain"] == "직업_사회")
+    assert "지난 시기의 기본 뜻은 반복하지 않고" in career["sentence"]
+    assert CAREER_VOCAB["성인"]["정관"] not in career["manifestation"][0]
+    assert "정관" not in career["manifestation"][0]
+    assert "관운" not in career["sentence"]
+
+
+def test_api_repeated_decade_theme_has_no_luck_term_and_keeps_polarity_tone():
+    from domains.daewoon.service import analyze_daewoon_period
+
+    # 1983 여성의 2단계(정관)는 1단계(편관)와 같은 관성 그룹이다.
+    saju = calculate_saju(1983, 5, 14, 14, 0, gender="female", is_lunar=False)
+    age = saju["daewoon"]["daewoon_num"] + 15
+    data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=age)
+    theme = data["data"]["decade_theme"]["sentence"]
+    assert "운(" not in theme
+    assert "관련된 기운입니다" not in theme
+    assert "지난 시기의 기본 뜻은 접어 두고" in theme
+    # 유료 해설 한 곳만 십신 이름을 유지한다.
+    assert "운" in data["data"]["saju_relation"]
+

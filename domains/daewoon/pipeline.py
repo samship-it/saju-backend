@@ -39,6 +39,15 @@ from typing import Any, Callable, Dict, List, Optional
 
 from core.constants import GAN_ELEM, JI_ELEM
 from core.daewoon import branch_relation
+from domains.daewoon.axis import (
+    axis_note,
+    continued_manifestation,
+    interpretation_key,
+    primary_yongsin,
+    same_group_run,
+    strength_band,
+    strongest_relation_class,
+)
 from domains.daewoon.content import _josa, resolve_polarity_for_elem
 
 GROUPS: List[str] = ["비겁", "식상", "재성", "관성", "인성"]
@@ -109,6 +118,10 @@ class DaewoonContext:
     life_stage: str
     gender: str
     strength: Dict[str, Any] = field(default_factory=dict)
+    # 이전 대운과 십성 그룹이 같으면 그 그룹 이름. 비면 이번 대운이 그 주제의 첫 10년이다.
+    continued_group: str = ""
+    yongsin_elem: str = ""
+    strength_band: str = "중화"
 
     @property
     def spouse_group(self) -> str:
@@ -577,7 +590,7 @@ def _confidence_elaboration(domain_key: str, gan_matched: bool, ji_matched: bool
 # closing이 전담한다 — closing 쪽은 이제 domain마다 다른 종결어를 쓰므로(위 참고)
 # "~흐름입니다" 반복도 함께 해소된다.
 def _build_sentence(domain_key: str, domain_label: str, manifestation_phrase: str, valence: str, confidence: str,
-                     gan_matched: bool, ji_matched: bool, relation_matched: bool) -> str:
+                     gan_matched: bool, ji_matched: bool, relation_matched: bool, axis_note_text: str = "") -> str:
     eun_neun = _josa(domain_label, "은", "는")
     manifest_josa = _josa(manifestation_phrase, "이", "가")
     core = f"{domain_label}{eun_neun} {manifestation_phrase}{manifest_josa} 나타납니다."
@@ -585,6 +598,8 @@ def _build_sentence(domain_key: str, domain_label: str, manifestation_phrase: st
     parts = [core]
     if closing:
         parts.append(closing)
+    if axis_note_text:
+        parts.append(axis_note_text)
     if confidence == "high":
         parts.append(_confidence_elaboration(domain_key, gan_matched, ji_matched, relation_matched))
     return " ".join(parts)
@@ -739,6 +754,8 @@ def _analyze_domain(ctx: DaewoonContext, domain_key: str) -> Dict[str, Any]:
     )
 
     activation = max(0, min(5, base + relation_bonus + (1 if age_focus else 0)))
+    # 문장 키의 형충회합은 영역 기둥 하나가 아니라, 이 대운 지지가 원국과 맺는 가장 강한 관계다.
+    rel_class = strongest_relation_class(daewoon.get("relations") or {})
 
     if gan_matched:
         driving_sipsin, driving_elem, driving_group = gan_sipsin, gan_elem, gan_group
@@ -752,6 +769,12 @@ def _analyze_domain(ctx: DaewoonContext, domain_key: str) -> Dict[str, Any]:
         # 오행이라 완전히 근거 없는 값은 아니지만, STEP2 정책 확정대로 이 valence는
         # "이 영역의 실질적 판단"으로 취급하지 않는다(디버그 전용).
         driving_sipsin, driving_elem, driving_group = gan_sipsin, gan_elem, gan_group
+
+    # 같은 십성 그룹이 이어지면 충/합(환경 변화)의 가중을 한 단계 올린다.
+    # 십성 기본 정의 대신 환경이 영역 순위에 더 드러나게 하려는 것이다.
+    repeated = bool(ctx.continued_group) and driving_group == ctx.continued_group
+    if repeated and rel_class in ("충", "합") and base > 0:
+        activation = min(5, activation + 1)
 
     valence = resolve_polarity_for_elem(driving_elem, ctx.strength)
 
@@ -784,8 +807,17 @@ def _analyze_domain(ctx: DaewoonContext, domain_key: str) -> Dict[str, Any]:
     manifestation_phrase = vocab_fn(ctx, driving_sipsin) or _GROUP_FALLBACK_MANIFESTATION.get(
         driving_group, "이 사람의 기운이 은은하게 작용하는 구조"
     )
+    # 연속된 같은 십성 그룹이면 직장/명예 같은 기본 정의 대신 충·합과 천간/지지 차이의 장면만 쓴다.
+    if repeated:
+        manifestation_phrase = continued_manifestation(domain_key, _stage_bucket(stage), rel_class)
+    stem_splits = bool(gan_group) and bool(ji_group) and gan_group != ji_group
+    key = interpretation_key(driving_sipsin, rel_class, ctx.strength_band, ctx.yongsin_elem)
+    note = axis_note(rel_class, stem_splits, ctx.strength_band, ctx.yongsin_elem, repeated)
     label = defn["label"]
-    sentence = _build_sentence(domain_key, label, manifestation_phrase, valence, confidence, gan_matched, ji_matched, relation_matched)
+    sentence = _build_sentence(
+        domain_key, label, manifestation_phrase, valence, confidence,
+        gan_matched, ji_matched, relation_matched, note,
+    )
 
     return {
         "domain": domain_key,
@@ -803,6 +835,7 @@ def _analyze_domain(ctx: DaewoonContext, domain_key: str) -> Dict[str, Any]:
         # vocab_fn을 조회해 왔지만(내부 변수), 필드로 노출된 적은 없었다 — additive 추가.
         "driving_sipsin": driving_sipsin,
         "driving_group": driving_group,
+        "interpretation_key": key,
         # specificity(STEP5-A 신규): 1/len(scope) — activation 계산에는 전혀 관여하지
         # 않고(STEP4-C~E에서 반복 검증됨), priority tier 내부의 표시 순서 전용으로만
         # 쓰인다(아래 _assign_priority_tiers 참고). scope는 dynamic_spouse가 있으면
@@ -889,9 +922,9 @@ _ANALYZERS: Dict[str, Callable[[DaewoonContext], Dict[str, Any]]] = {
 # analyze_daewoon_stage의 polarity)를 근거로 삼는다.
 # ============================================================================
 _GLOBAL_CONTEXT_TEMPLATE: Dict[str, str] = {
-    "favorable": "이 사람은 {verdict} 사주인데, 이번 대운의 기운이 전체 균형에 순하게 힘을 보태는 방향이라 전반적으로 흐름을 타기 쉬운 10년입니다.",
-    "unfavorable": "이 사람은 {verdict} 사주인데, 이번 대운의 기운이 전체 균형에는 부담을 더하는 방향이라 전반적으로 애쓴 만큼 결과가 따라오지 않거나 버겁게 느껴질 수 있는 10년입니다.",
-    "neutral": "이 사람은 {verdict} 사주인데, 이번 대운의 기운이 전체 균형에 뚜렷하게 쏠리지 않아 무난하게 흘러갈 수 있는 10년입니다.",
+    "favorable": "이번 대운의 기운이 전체 균형에 순하게 힘을 보태는 방향이라 전반적으로 흐름을 타기 쉬운 10년입니다.",
+    "unfavorable": "이번 대운의 기운이 전체 균형에는 부담을 더하는 방향이라 전반적으로 애쓴 만큼 결과가 따라오지 않거나 버겁게 느껴질 수 있는 10년입니다.",
+    "neutral": "이번 대운의 기운이 전체 균형에 뚜렷하게 쏠리지 않아 무난하게 흘러갈 수 있는 10년입니다.",
 }
 
 # 대운 지지가 원국 4기둥 중 어디와 가장 강하게 관계를 맺는지 — 같은 사람의 두 대운이
@@ -918,9 +951,8 @@ def _strongest_relation(relations: Dict[str, str]) -> Optional[tuple]:
 
 
 def _build_global_context(natal: Dict[str, Any], daewoon: Dict[str, Any]) -> str:
-    verdict = natal.get("strength_verdict", "중화")
     template = _GLOBAL_CONTEXT_TEMPLATE.get(daewoon.get("polarity", "neutral"), _GLOBAL_CONTEXT_TEMPLATE["neutral"])
-    sentence = template.format(verdict=verdict)
+    sentence = template
     strongest = _strongest_relation(daewoon.get("relations") or {})
     if strongest:
         palace, relation_key = strongest
@@ -999,6 +1031,7 @@ def _assign_priority_tiers(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 def build_domain_pipeline(
     saju: Dict[str, Any], fact: Dict[str, Any], age: int, gender: str, debug: bool = False,
+    prev_fact: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """엔진 전체 실행. saju=calculate_saju 산출물, fact=daewoon_step_facts()의 선택된
     단계 하나, age=이 대운을 보는 기준 나이, gender=원국 성별.
@@ -1013,7 +1046,16 @@ def build_domain_pipeline(
     natal = analyze_natal_stage(saju)
     daewoon = analyze_daewoon_stage(saju, fact)
     stage = life_stage(age)
-    ctx = DaewoonContext(natal=natal, daewoon=daewoon, life_stage=stage, gender=gender, strength=strength)
+    band = strength_band((strength.get("verdict")))
+    yongsin_elem = primary_yongsin(strength)
+    continued = fact.get("sipsin_group", "") if same_group_run(prev_fact, fact) else ""
+    chart_rel = strongest_relation_class(daewoon.get("relations") or {})
+    daewoon["interpretation_key"] = interpretation_key(fact.get("sipsin", ""), chart_rel, band, yongsin_elem)
+    daewoon["continued_group"] = continued or None
+    ctx = DaewoonContext(
+        natal=natal, daewoon=daewoon, life_stage=stage, gender=gender, strength=strength,
+        continued_group=continued, yongsin_elem=yongsin_elem, strength_band=band,
+    )
 
     eligible = get_eligible_domains(age)
     keys_to_analyze = DOMAIN_ORDER if debug else [k for k in DOMAIN_ORDER if k in eligible]

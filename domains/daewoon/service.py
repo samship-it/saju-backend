@@ -70,6 +70,14 @@ from domains.daewoon.content import (
     build_wealth_flow,
     resolve_decade_polarity,
 )
+from domains.daewoon.axis import (
+    overlay_domain_analysis,
+    primary_yongsin,
+    rewrite_decade_theme,
+    same_group_run,
+    strength_band,
+    strongest_relation_class,
+)
 from domains.daewoon.landscape import build_decade_landscape
 from domains.daewoon.pipeline import build_domain_pipeline
 from domains.lifelong.content_db import lookup_stage_detail
@@ -179,6 +187,7 @@ def analyze_daewoon_period(
     effective_age = target_age if target_age is not None else age
     step = _step_covering_age(facts, daewoon_num, effective_age)
     fact = next((f for f in facts if f["step"] == step), facts[0])
+    prev_fact = next((f for f in facts if f["step"] == step - 1), None)
     start_age = daewoon_num + (step - 1) * 10
     is_selected_current = step == current_step
     sipsin = fact["sipsin"]  # 천간 기준 십신 10종 — content.py 매칭 키
@@ -191,10 +200,8 @@ def analyze_daewoon_period(
     strength = saju.get("strength") or {}
     polarity = resolve_decade_polarity(fact["ganji"][0], strength)
 
-    # 7단계 파이프라인(2026-09-21): 원국 분석→대운 분석→9영역 매핑→영향도(0~5)→고/저영역
-    # 문장→자연어 합성(domains/daewoon/pipeline.py). 연령대(effective_age)에 따라 3단계
-    # 가중치가 자동으로 갈린다(20세 미만=학업/자아/가족/친구, 20세 이상=직업/재물/애정·결혼).
-    domain_pipeline = build_domain_pipeline(saju, fact, effective_age, gender)
+    # 7단계 파이프라인. prev_fact가 같은 십성 그룹이면 기본 정의 대신 환경·겉과 속 문장을 앞에 둔다.
+    domain_pipeline = build_domain_pipeline(saju, fact, effective_age, gender, prev_fact=prev_fact)
 
     is_fallback = False
     entry = lookup_stage_detail(ilju, fact["sipsin_group"], fact["branch_relation"], step)
@@ -221,6 +228,34 @@ def analyze_daewoon_period(
         }
 
     landscape = build_decade_landscape(saju.get("day_master_elem", ""), fact["ganji"], sipsin)
+    decade_theme = build_decade_theme(sipsin, polarity)
+
+    continued = same_group_run(prev_fact, fact)
+    chart_rel = strongest_relation_class((domain_pipeline.get("daewoon_summary") or {}).get("relations") or {})
+    stem_splits = fact.get("sipsin_group") != fact.get("sipsin_group_ji")
+    band = strength_band(strength.get("verdict"))
+    yongsin_elem = primary_yongsin(strength)
+    child_copy = effective_age < CHILD_AGE_THRESHOLD or (
+        is_transition_decade and effective_age < TRANSITION_SPLIT_AGE
+    )
+    domain_analysis = overlay_domain_analysis(
+        domain_analysis,
+        rel=chart_rel,
+        stem_splits=stem_splits,
+        band=band,
+        yongsin_elem=yongsin_elem,
+        continued=continued,
+        child=child_copy,
+    )
+    decade_theme = rewrite_decade_theme(
+        decade_theme,
+        rel=chart_rel,
+        stem_splits=stem_splits,
+        band=band,
+        yongsin_elem=yongsin_elem,
+        continued=continued,
+        adult=not child_copy,
+    )
 
     data = {
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
@@ -229,7 +264,7 @@ def analyze_daewoon_period(
         "summary": _compose_summary(entry.get("event_narrative", ""), domain_pipeline),
         "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
         "domain_analysis": domain_analysis,
-        "decade_theme": build_decade_theme(sipsin, polarity),
+        "decade_theme": decade_theme,
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
         "decade_tasks": list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"])),
         "step": step,
