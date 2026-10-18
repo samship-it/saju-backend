@@ -463,16 +463,18 @@ def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
 
 def test_analyze_daewoon_period_under_20_returns_the_four_child_domains():
     assert CHILD_AGE_THRESHOLD == 20
-    for target_age in (0, 5, 10, 15, 19):
+    for target_age in (0, 5, 10, 15):
         data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=target_age)
         domains = data["data"]["domain_analysis"]
-        assert set(domains.keys()) == {
-            "study_growth", "allowance_economy", "friendship", "family_environment",
-        }
+        assert set(domains.keys()) == {"study_growth", "friendship", "family_environment"}
+        assert "allowance_economy" not in domains
+        assert "용돈" not in str(domains)
         assert "career_or_study" not in domains
-        assert "wealth_flow" not in domains
-        assert "relationship" not in domains
-        assert "family" not in domains
+    data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=19)
+    domains = data["data"]["domain_analysis"]
+    assert set(domains.keys()) == {
+        "study_growth", "allowance_economy", "friendship", "family_environment",
+    }
 
 
 def test_analyze_daewoon_period_20_and_above_keeps_the_adult_domains():
@@ -535,9 +537,9 @@ def test_transition_decade_flow_changes_at_the_split_age():
 
 def test_non_transition_decades_are_unaffected_by_the_transition_logic():
     # 같은 사람의 다른(과도기가 아닌) 대운 단계는 일반 CHILD_AGE_THRESHOLD/성인 로직 그대로.
-    child, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=8)  # 1단계(8~17세)는 과도기 아님
+    child, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=8)  # 1단계(8~17세)는 과도기 아님. 18세 미만이라 용돈 칸은 없다.
     assert set(child["data"]["domain_analysis"].keys()) == {
-        "study_growth", "allowance_economy", "friendship", "family_environment",
+        "study_growth", "friendship", "family_environment",
     }
     adult, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=40)  # 4단계(38~47세)도 과도기 아님
     assert set(adult["data"]["domain_analysis"].keys()) == {
@@ -577,7 +579,7 @@ def test_analyze_daewoon_period_has_full_schema():
     assert set(d.keys()) == {
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
         "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
-        "age_range", "target_age", "target", "is_current_decade",
+        "age_range", "target_age", "target", "is_current_decade", "is_past_decade",
         "strength_verdict", "polarity", "domain_pipeline",
     }
     assert d["strength_verdict"] in {"신강", "신약", "중화"}

@@ -872,7 +872,7 @@ def test_interpretation_key_changes_when_relation_strength_or_yongsin_changes():
 
 
 def test_repeated_officer_decade_drops_role_definition_and_leads_with_setting():
-    """관성 다음 관성이면 직업 문장의 기본 정의 대신 환경 장면을 쓴다."""
+    """연속 관성에서도 직업 문장에 공통 첫머리를 붙이지 않고, 영역 어휘는 유지한다."""
     from domains.daewoon.pipeline import CAREER_VOCAB
 
     saju = _sample_saju()
@@ -882,23 +882,22 @@ def test_repeated_officer_decade_drops_role_definition_and_leads_with_setting():
     age = daewoon_num + 10 + 5
     second = build_domain_pipeline(saju, facts[1], age=age, gender="female", prev_fact=facts[0], debug=True)
     career = next(d for d in second["debug_all_domains"] if d["domain"] == "직업_사회")
-    assert "지난 시기의 기본 뜻은 반복하지 않고" in career["sentence"]
-    assert CAREER_VOCAB["성인"]["정관"] not in career["manifestation"][0]
-    assert "정관" not in career["manifestation"][0]
+    assert "지난 시기의 기본 뜻" not in career["sentence"]
+    assert CAREER_VOCAB["성인"]["정관"] in career["manifestation"][0] or CAREER_VOCAB["청년"]["정관"] in career["manifestation"][0] or CAREER_VOCAB["미성년"]["정관"] in career["manifestation"][0]
     assert "관운" not in career["sentence"]
 
 
 def test_api_repeated_decade_theme_has_no_luck_term_and_keeps_polarity_tone():
     from domains.daewoon.service import analyze_daewoon_period
 
-    # 1983 여성의 2단계(정관)는 1단계(편관)와 같은 관성 그룹이다.
     saju = calculate_saju(1983, 5, 14, 14, 0, gender="female", is_lunar=False)
     age = saju["daewoon"]["daewoon_num"] + 15
     data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=age)
     theme = data["data"]["decade_theme"]["sentence"]
     assert "운(" not in theme
-    assert "관련된 기운입니다" not in theme
-    assert "지난 시기의 기본 뜻은 접어 두고" in theme
-    # 유료 해설 한 곳만 십신 이름을 유지한다.
+    assert "지난 시기의 기본 뜻은 접어 두고" not in theme
+    assert "같은 주제가 10년 더 이어" in theme
+    assert data["data"]["is_past_decade"] is True
+    assert "였" in theme
     assert "운" in data["data"]["saju_relation"]
 

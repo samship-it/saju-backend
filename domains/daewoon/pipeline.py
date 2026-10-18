@@ -40,8 +40,7 @@ from typing import Any, Callable, Dict, List, Optional
 from core.constants import GAN_ELEM, JI_ELEM
 from core.daewoon import branch_relation
 from domains.daewoon.axis import (
-    axis_note,
-    continued_manifestation,
+    domain_relation_line,
     interpretation_key,
     primary_yongsin,
     same_group_run,
@@ -807,12 +806,9 @@ def _analyze_domain(ctx: DaewoonContext, domain_key: str) -> Dict[str, Any]:
     manifestation_phrase = vocab_fn(ctx, driving_sipsin) or _GROUP_FALLBACK_MANIFESTATION.get(
         driving_group, "이 사람의 기운이 은은하게 작용하는 구조"
     )
-    # 연속된 같은 십성 그룹이면 직장/명예 같은 기본 정의 대신 충·합과 천간/지지 차이의 장면만 쓴다.
-    if repeated:
-        manifestation_phrase = continued_manifestation(domain_key, _stage_bucket(stage), rel_class)
-    stem_splits = bool(gan_group) and bool(ji_group) and gan_group != ji_group
     key = interpretation_key(driving_sipsin, rel_class, ctx.strength_band, ctx.yongsin_elem)
-    note = axis_note(rel_class, stem_splits, ctx.strength_band, ctx.yongsin_elem, repeated)
+    # 영역마다 다른 한 문장만 붙인다. 같은 꼬리표를 전 영역에 복사하지 않는다.
+    note = domain_relation_line(domain_key, rel_class, minor=_stage_bucket(stage) == "미성년")
     label = defn["label"]
     sentence = _build_sentence(
         domain_key, label, manifestation_phrase, valence, confidence,

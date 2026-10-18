@@ -71,12 +71,15 @@ from domains.daewoon.content import (
     resolve_decade_polarity,
 )
 from domains.daewoon.axis import (
+    household_clause,
     overlay_domain_analysis,
+    past_task,
     primary_yongsin,
     rewrite_decade_theme,
     same_group_run,
     strength_band,
     strongest_relation_class,
+    to_past,
 )
 from domains.daewoon.landscape import build_decade_landscape
 from domains.daewoon.pipeline import build_domain_pipeline
@@ -238,6 +241,10 @@ def analyze_daewoon_period(
     child_copy = effective_age < CHILD_AGE_THRESHOLD or (
         is_transition_decade and effective_age < TRANSITION_SPLIT_AGE
     )
+    # 대운의 마지막 나이가 현재 나이보다 작으면 이미 지난 10년이다.
+    is_past_decade = (start_age + 9) < age
+    if child_copy and effective_age < 18 and "allowance_economy" in domain_analysis:
+        domain_analysis.pop("allowance_economy", None)
     domain_analysis = overlay_domain_analysis(
         domain_analysis,
         rel=chart_rel,
@@ -246,7 +253,20 @@ def analyze_daewoon_period(
         yongsin_elem=yongsin_elem,
         continued=continued,
         child=child_copy,
+        past=is_past_decade,
     )
+    if child_copy and effective_age < 18:
+        family_env = domain_analysis.get("family_environment")
+        if isinstance(family_env, dict):
+            clause = household_clause(is_past_decade)
+            base = family_env.get("home_atmosphere") or ""
+            family_env["home_atmosphere"] = f"{base} {clause}".strip()
+        for section in domain_analysis.values():
+            if not isinstance(section, dict):
+                continue
+            for field, leaf in list(section.items()):
+                if isinstance(leaf, str) and "용돈" in leaf:
+                    section[field] = leaf.replace("용돈", "집안 형편")
     decade_theme = rewrite_decade_theme(
         decade_theme,
         rel=chart_rel,
@@ -255,7 +275,22 @@ def analyze_daewoon_period(
         yongsin_elem=yongsin_elem,
         continued=continued,
         adult=not child_copy,
+        past=is_past_decade,
     )
+    decade_tasks = list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"]))
+    if is_past_decade:
+        decade_tasks = [past_task(task) for task in decade_tasks]
+        domain_pipeline["global_context"] = to_past(domain_pipeline.get("global_context") or "")
+        domain_pipeline["narrative"] = to_past(domain_pipeline.get("narrative") or "")
+        for entry in domain_pipeline.get("domain_scores") or []:
+            phrase = (entry.get("manifestation") or [""])[0]
+            if isinstance(phrase, str) and phrase.endswith("구조"):
+                stem = phrase[:-2].rstrip()
+                if stem.endswith("는"):
+                    stem = stem[:-1] + "던"
+                entry["manifestation"][0] = stem + " 흐름이었습니다"
+            if isinstance(entry.get("sentence"), str):
+                entry["sentence"] = to_past(entry["sentence"])
 
     data = {
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
@@ -266,12 +301,13 @@ def analyze_daewoon_period(
         "domain_analysis": domain_analysis,
         "decade_theme": decade_theme,
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
-        "decade_tasks": list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"])),
+        "decade_tasks": decade_tasks,
         "step": step,
         "age_range": [start_age, start_age + 9],
         "target_age": effective_age,
         "target": target if target in ("me", "partner") else "me",
         "is_current_decade": is_selected_current,
+        "is_past_decade": is_past_decade,
         # 억부 용신/기신 희기 — 프론트가 필요하면 배지 등에 쓸 수 있도록 함께 노출.
         # strength_verdict는 core/strength.analyze_strength()의 "신강"/"신약"/"중화".
         "strength_verdict": strength.get("verdict"),
