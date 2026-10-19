@@ -1,0 +1,96 @@
+"""천간 십성과 지지 오행이 함께 이어질 때만 20년 묶음, 색이 갈라지면 10년 단독."""
+import json
+
+from core.daewoon import mark_twenty_year_runs
+from domains.daewoon.service import analyze_daewoon_period
+from domains.daewoon.twenty_year import ARC_DB, ARC_DB_PATH
+
+
+def test_same_element_pair_bundles_and_leftover_stays_ten_years():
+    facts = [
+        {"step": 1, "sipsin_group": "비겁", "ganji": "甲寅"},
+        {"step": 2, "sipsin_group": "비겁", "ganji": "乙卯"},
+        {"step": 3, "sipsin_group": "비겁", "ganji": "甲寅"},
+        {"step": 4, "sipsin_group": "재성", "ganji": "丙午"},
+    ]
+    mark_twenty_year_runs(facts)
+    assert facts[0]["twenty_role"] == "front" and facts[0]["price_beans"] == 3
+    assert facts[1]["twenty_role"] == "back" and facts[1]["badge_text"] == "비겁운이 20년 동안 이어져요"
+    assert facts[2]["is_twenty_years"] is False
+    assert facts[2]["price_beans"] == 2 and facts[2]["badge_text"] is None
+    assert facts[3]["is_twenty_years"] is False
+
+
+def test_same_stem_group_with_different_branch_element_stays_separate():
+    """을해(수목)와 갑술(목토)는 비겁이 같아도 지지 오행이 달라 10년씩이다."""
+    facts = [
+        {"step": 1, "sipsin_group": "비겁", "ganji": "乙亥"},
+        {"step": 2, "sipsin_group": "비겁", "ganji": "甲戌"},
+    ]
+    mark_twenty_year_runs(facts)
+    assert facts[0]["is_twenty_years"] is False and facts[1]["is_twenty_years"] is False
+    assert facts[0]["price_beans"] == facts[1]["price_beans"] == 2
+    assert facts[0]["badge_text"] is None and facts[1]["badge_text"] is None
+
+
+def test_eulhae_gapsul_at_25_and_35_are_separate_ten_year_cards():
+    """1975-02-18 10시 남성. 25세 을해(수목)와 35세 갑술(목토)는 비겁이어도 10년씩이다."""
+    first, _ = analyze_daewoon_period(1975, 2, 18, 10, 0, "male", False, target_age=25)
+    second, _ = analyze_daewoon_period(1975, 2, 18, 10, 0, "male", False, target_age=35)
+    assert first["data"]["age_range"] == [25, 34]
+    assert second["data"]["age_range"] == [35, 44]
+    phases = {phase["step"]: phase for phase in first["data"]["timeline_phases"]}
+    assert phases[first["data"]["step"]]["ganji"] == "乙亥"
+    assert phases[second["data"]["step"]]["ganji"] == "甲戌"
+    for body in (first["data"], second["data"]):
+        assert body["is_twenty_years"] is False
+        assert body["price_beans"] == 2
+        assert body["badge_text"] is None
+        assert body["twenty_year_story"] is None
+
+
+def test_wood_on_wood_decades_stay_one_twenty_year_story():
+    """갑인·을묘는 천간과 지지가 모두 목이라 20년 한 묶음이다."""
+    front, _ = analyze_daewoon_period(1977, 7, 8, 8, 0, "female", False, target_age=70)
+    back, _ = analyze_daewoon_period(1977, 7, 8, 8, 0, "female", False, target_age=80)
+    assert front["data"]["is_twenty_years"] is True and back["data"]["is_twenty_years"] is True
+    assert front["data"]["price_beans"] == back["data"]["price_beans"] == 3
+    assert front["data"]["badge_text"] == back["data"]["badge_text"]
+    assert front["data"]["badge_text"].endswith("운이 20년 동안 이어져요")
+    assert front["data"]["twenty_year_story"]["age_range"] == [70, 89]
+    assert front["data"]["twenty_year_story"]["front"] != back["data"]["twenty_year_story"]["back"]
+
+
+def test_1983_officer_decades_split_because_branch_element_changes():
+    """무오(토·화)와 기미(토·토)는 관성만 같고 아래 오행이 달라 10년 카드다."""
+    front, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=8)
+    back, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=18)
+    for body in (front["data"], back["data"]):
+        assert body["is_twenty_years"] is False
+        assert body["price_beans"] == 2
+        assert body["badge_text"] is None
+        assert body["twenty_year_story"] is None
+        assert "이 20년은" not in body["decade_theme"]["sentence"]
+        assert "관성운" not in body["decade_theme"]["sentence"]
+
+
+def test_standalone_decade_stays_ten_years():
+    # 1980-03-12 여성은 1번째 대운 천간이 원소 쌍의 끝이라 다음 대운과 그룹이 갈린다.
+    data, _ = analyze_daewoon_period(1980, 3, 12, 8, 0, "female", False, target_age=30)
+    phases = data["data"]["timeline_phases"]
+    solo = next(phase for phase in phases if not phase["is_twenty_years"])
+    opened, _ = analyze_daewoon_period(
+        1980, 3, 12, 8, 0, "female", False, target_age=solo["age_range"][0],
+    )
+    body = opened["data"]
+    assert body["is_twenty_years"] is False
+    assert body["price_beans"] == 2
+    assert body["badge_text"] is None
+    assert body["twenty_year_story"] is None
+    assert "이 20년은" not in body["decade_theme"]["sentence"]
+
+
+def test_arc_db_file_matches_source():
+    with open(ARC_DB_PATH, encoding="utf-8") as handle:
+        stored = json.load(handle)
+    assert stored == ARC_DB

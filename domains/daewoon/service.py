@@ -82,7 +82,8 @@ from domains.daewoon.axis import (
     to_past,
 )
 from domains.daewoon.landscape import build_decade_landscape
-from domains.daewoon.pipeline import build_domain_pipeline
+from domains.daewoon.pipeline import analyze_daewoon_stage, build_domain_pipeline
+from domains.daewoon.twenty_year import build_twenty_year_story, joined_story
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
 from domains.lifelong.service import _current_step, _fallback_stage_detail, _ilju
@@ -159,9 +160,53 @@ def _build_timeline_phases(
             "ganji_label": _ganji_label(f["ganji"]),
             "is_selected": step == selected_step,
             "is_current": step == current_step,
+            "is_twenty_years": bool(f.get("is_twenty_years")),
+            "price_beans": f.get("price_beans", 2),
+            "badge_text": f.get("badge_text"),
+            "twenty_role": f.get("twenty_role"),
             "years": years,
         })
     return phases
+
+
+def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
+    start = daewoon_num + (step - 1) * 10
+    return start, start + 9
+
+
+def _twenty_year_story(
+    saju: Dict[str, Any],
+    facts: List[Dict[str, Any]],
+    fact: Dict[str, Any],
+    daewoon_num: int,
+    age: int,
+) -> Optional[Dict[str, Any]]:
+    """같은 십성 그룹이 이어진 두 대운의 총평·전반·후반. 10년 단독이면 None."""
+    if not fact.get("is_twenty_years"):
+        return None
+    partner_index = fact.get("twenty_partner_index")
+    if partner_index is None or not (0 <= partner_index < len(facts)):
+        return None
+    partner = facts[partner_index]
+    if fact.get("twenty_role") == "front":
+        front_fact, back_fact = fact, partner
+    else:
+        front_fact, back_fact = partner, fact
+    front_ages = _step_ages(daewoon_num, front_fact["step"])
+    back_ages = _step_ages(daewoon_num, back_fact["step"])
+    front_rel = strongest_relation_class(analyze_daewoon_stage(saju, front_fact).get("relations") or {})
+    back_rel = strongest_relation_class(analyze_daewoon_stage(saju, back_fact).get("relations") or {})
+    story = build_twenty_year_story(
+        fact.get("sipsin_group") or "",
+        front_rel,
+        back_rel,
+        front_ages,
+        back_ages,
+        front_past=(front_ages[1] < age),
+        back_past=(back_ages[1] < age),
+    )
+    story["role"] = fact.get("twenty_role")
+    return story
 
 
 def analyze_daewoon_period(
@@ -243,6 +288,7 @@ def analyze_daewoon_period(
     )
     # 대운의 마지막 나이가 현재 나이보다 작으면 이미 지난 10년이다.
     is_past_decade = (start_age + 9) < age
+    twenty_story = _twenty_year_story(saju, facts, fact, daewoon_num, age)
     if child_copy and effective_age < 18 and "allowance_economy" in domain_analysis:
         domain_analysis.pop("allowance_economy", None)
     domain_analysis = overlay_domain_analysis(
@@ -254,6 +300,7 @@ def analyze_daewoon_period(
         continued=continued,
         child=child_copy,
         past=is_past_decade,
+        arc_role=fact.get("twenty_role"),
     )
     if child_copy and effective_age < 18:
         family_env = domain_analysis.get("family_environment")
@@ -273,10 +320,16 @@ def analyze_daewoon_period(
         stem_splits=stem_splits,
         band=band,
         yongsin_elem=yongsin_elem,
-        continued=continued,
+        # 지지 오행이 갈라져 20년 묶음이 아니면, 십성 그룹이 같아도 이 10년만 말한다.
+        continued=False,
         adult=not child_copy,
         past=is_past_decade,
     )
+    if twenty_story and decade_theme is not None:
+        decade_theme = {
+            "pair_sipsin": decade_theme.get("pair_sipsin", ""),
+            "sentence": joined_story(twenty_story),
+        }
     decade_tasks = list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"]))
     if is_past_decade:
         decade_tasks = [past_task(task) for task in decade_tasks]
@@ -308,6 +361,10 @@ def analyze_daewoon_period(
         "target": target if target in ("me", "partner") else "me",
         "is_current_decade": is_selected_current,
         "is_past_decade": is_past_decade,
+        "is_twenty_years": bool(fact.get("is_twenty_years")),
+        "price_beans": fact.get("price_beans", 2),
+        "badge_text": fact.get("badge_text"),
+        "twenty_year_story": twenty_story,
         # 억부 용신/기신 희기 — 프론트가 필요하면 배지 등에 쓸 수 있도록 함께 노출.
         # strength_verdict는 core/strength.analyze_strength()의 "신강"/"신약"/"중화".
         "strength_verdict": strength.get("verdict"),

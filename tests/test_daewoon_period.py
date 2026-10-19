@@ -580,6 +580,7 @@ def test_analyze_daewoon_period_has_full_schema():
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
         "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
         "age_range", "target_age", "target", "is_current_decade", "is_past_decade",
+        "is_twenty_years", "price_beans", "badge_text", "twenty_year_story",
         "strength_verdict", "polarity", "domain_pipeline",
     }
     assert d["strength_verdict"] in {"신강", "신약", "중화"}

@@ -481,9 +481,11 @@ def overlay_domain_analysis(
     continued: bool,
     child: bool,
     past: bool = False,
+    arc_role: Optional[str] = None,
 ) -> Dict[str, Any]:
     """영역 카드에는 그 카테고리만의 한 문장을 덧붙인다. 연속 십성·신강·용신 설명은
-    풍경 문장 한 곳에만 두고, 카드마다 같은 첫머리를 붙이지 않는다."""
+    풍경 문장 한 곳에만 두고, 카드마다 같은 첫머리를 붙이지 않는다.
+    20년 묶음이면 그 구간의 역할(시작/안착) 한 줄을 리드 칸에만 더한다."""
     del stem_splits, band, yongsin_elem, continued
     out: Dict[str, Any] = {}
     for key, value in analysis.items():
@@ -506,7 +508,11 @@ def overlay_domain_analysis(
             if past:
                 original = to_past(original if original.endswith(".") else original + ".")
                 line = to_past(line)
-            copied[field] = f"{original} {line}".strip()
+            extra = ""
+            if arc_role:
+                from domains.daewoon.twenty_year import arc_slot_line
+                extra = arc_slot_line(slot, arc_role, past)
+            copied[field] = " ".join(part for part in (original, line, extra) if part)
         elif past:
             for field, leaf in list(copied.items()):
                 if isinstance(leaf, str):

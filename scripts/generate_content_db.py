@@ -4501,6 +4501,23 @@ def run_lifelong_stage(args) -> None:
            store_fn=_store, count_fn=_count)
 
 
+# ─────────────────────────────────────────────────────────── 20년 대운 묶음
+#
+# lifelong_stage_detail_db.json 의 키는 일주×십신군×충형×순번이라, 인접한 두 대운이
+# 같은 그룹인지는 사람마다 요청 때 계산된다. 그 14,000건을 다시 만들지 않고,
+# 20년 총평·전반·후반 문장만 이 정적 DB에 둔다. Gemini 를 호출하지 않는다.
+
+def run_twenty_year_arc(args=None) -> None:
+    from domains.daewoon.twenty_year import ARC_DB, ARC_DB_PATH, reload_arc_db
+
+    path = (args.out if args is not None else None) or ARC_DB_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _atomic_write_json(path, ARC_DB)
+    if os.path.abspath(path) == os.path.abspath(ARC_DB_PATH):
+        reload_arc_db()
+    print(f"twenty_year_arc {len(ARC_DB['front'])}관계 × 전반·후반 → {path}")
+
+
 # ─────────────────────────────────────────────────────────── main
 
 def main() -> None:
@@ -4513,7 +4530,8 @@ def main() -> None:
                             "yearly_business", "yearly_career_change", "yearly_study",
                             "yearly_health", "yearly_travel", "yearly_hobby",
                             "yearly_wealth", "yearly_love",
-                            "lifelong_base", "lifelong_domains", "lifelong_stage"],
+                            "lifelong_base", "lifelong_domains", "lifelong_stage",
+                            "twenty_year_arc"],
                    default="daily",
                    help="생성 도메인 (기본: daily). personality=일주 60 성격/적성 · "
                         "relationship=재회/짝사랑/결혼운 10,980조합(--limit 으로 청크 진행) · "
@@ -4582,6 +4600,8 @@ def main() -> None:
         run_lifelong_domains(args)
     elif args.domain == "lifelong_stage":
         run_lifelong_stage(args)
+    elif args.domain == "twenty_year_arc":
+        run_twenty_year_arc(args)
 
 
 if __name__ == "__main__":

@@ -303,6 +303,66 @@ def branch_relation(branch_a: str, branch_b: str) -> str:
     return "무관"
 
 
+def _mark_single_decade(fact: Dict[str, Any]) -> None:
+    fact["is_twenty_years"] = False
+    fact["price_beans"] = 2
+    fact["badge_text"] = None
+    fact["twenty_role"] = None
+    fact["twenty_partner_index"] = None
+
+
+def _pillar_elements(ganji: str) -> Optional[Tuple[str, str]]:
+    """간지의 (천간 오행, 지지 오행). 둘 중 하나라도 없으면 결을 비교하지 않는다."""
+    from core.constants import GAN_ELEM, JI_ELEM
+
+    if not ganji or len(ganji) < 2:
+        return None
+    stem = GAN_ELEM.get(ganji[0])
+    branch = JI_ELEM.get(ganji[1])
+    if not stem or not branch:
+        return None
+    return stem, branch
+
+
+def _organic_twenty_year(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    """천간 십성 그룹이 같고, 천간·지지 오행의 결도 같아야 20년이다.
+
+    을해(목 위, 수 아래) 다음 갑술(목 위, 토 아래)처럼 십성만 같고 지지 오행이
+    바뀌면 색과 결이 달라지므로 10년으로 나눈다. 갑인·을묘처럼 위아래 오행이
+    같이 이어질 때만 묶는다.
+    """
+    group = left.get("sipsin_group") or ""
+    if not group or group != (right.get("sipsin_group") or ""):
+        return False
+    left_elem = _pillar_elements(left.get("ganji") or "")
+    right_elem = _pillar_elements(right.get("ganji") or "")
+    return bool(left_elem) and left_elem == right_elem
+
+
+def mark_twenty_year_runs(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """인접 대운의 십성 그룹과 천간·지지 오행이 모두 이어질 때만 20년 묶음이다.
+
+    앞에서부터 겹치지 않게 둘씩 짝짓는다. 오행 결이 바뀌면 그 자리는 10년·2콩이고
+    배지는 없다.
+    """
+    i = 0
+    while i < len(facts) - 1:
+        if _organic_twenty_year(facts[i], facts[i + 1]):
+            for role, idx, partner in (("front", i, i + 1), ("back", i + 1, i)):
+                facts[idx]["is_twenty_years"] = True
+                facts[idx]["price_beans"] = 3
+                facts[idx]["badge_text"] = f"{facts[idx]['sipsin_group']}운이 20년 동안 이어져요"
+                facts[idx]["twenty_role"] = role
+                facts[idx]["twenty_partner_index"] = partner
+            i += 2
+        else:
+            _mark_single_decade(facts[i])
+            i += 1
+    if i == len(facts) - 1:
+        _mark_single_decade(facts[i])
+    return facts
+
+
 def daewoon_step_facts(
     day_master: str, day_branch: str, month_pillar: str, is_forward: bool, count: int = 8,
 ) -> List[Dict[str, Any]]:
@@ -331,7 +391,7 @@ def daewoon_step_facts(
             "sipsin_group_ji": sipsin_group(sipsin_ji) if sipsin_ji else "",
             "branch_relation": branch_relation(day_branch, ji),
         })
-    return out
+    return mark_twenty_year_runs(out)
 
 
 # sajupy.calculate_saju(use_solar_time=True, longitude=서울) 과 같은 경도 보정.
