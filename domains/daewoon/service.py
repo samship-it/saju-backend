@@ -198,6 +198,8 @@ def _twenty_year_story(
     back_rel = strongest_relation_class(analyze_daewoon_stage(saju, back_fact).get("relations") or {})
     story = build_twenty_year_story(
         fact.get("sipsin_group") or "",
+        front_fact.get("sipsin") or "",
+        back_fact.get("sipsin") or "",
         front_rel,
         back_rel,
         front_ages,

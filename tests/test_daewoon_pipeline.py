@@ -896,11 +896,12 @@ def test_api_repeated_decade_theme_has_no_luck_term_and_keeps_polarity_tone():
     theme = data["data"]["decade_theme"]["sentence"]
     assert "운(" not in theme
     assert "지난 시기의 기본 뜻은 접어 두고" not in theme
-    assert "이 20년은" not in theme
-    assert "이 10년은" in theme
-    assert data["data"]["is_twenty_years"] is False
-    assert data["data"]["price_beans"] == 2
-    assert data["data"]["badge_text"] is None
+    assert "20년의 공통 흐름" in theme
+    assert "첫 번째 10년 (편관운)" in theme
+    assert "두 번째 10년 (정관운)" in theme
+    assert data["data"]["is_twenty_years"] is True
+    assert data["data"]["price_beans"] == 3
+    assert data["data"]["badge_text"] == "관성운이 20년 동안 이어져요"
     assert "관성" not in theme
     assert data["data"]["is_past_decade"] is True
     assert "이었습니다" in theme

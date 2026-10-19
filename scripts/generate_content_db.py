@@ -4515,7 +4515,7 @@ def run_twenty_year_arc(args=None) -> None:
     _atomic_write_json(path, ARC_DB)
     if os.path.abspath(path) == os.path.abspath(ARC_DB_PATH):
         reload_arc_db()
-    print(f"twenty_year_arc {len(ARC_DB['front'])}관계 × 전반·후반 → {path}")
+    print(f"twenty_year_arc {len(ARC_DB['decades'])}십신 구간 → {path}")
 
 
 # ─────────────────────────────────────────────────────────── main

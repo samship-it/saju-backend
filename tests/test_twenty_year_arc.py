@@ -1,4 +1,4 @@
-"""천간 십성과 지지 오행이 함께 이어질 때만 20년 묶음, 색이 갈라지면 10년 단독."""
+"""천간 십성 대분류가 이어지면 20년 묶음이다. 지지가 달라도 나누지 않는다."""
 import json
 
 from core.daewoon import mark_twenty_year_runs
@@ -21,32 +21,33 @@ def test_same_element_pair_bundles_and_leftover_stays_ten_years():
     assert facts[3]["is_twenty_years"] is False
 
 
-def test_same_stem_group_with_different_branch_element_stays_separate():
-    """을해(수목)와 갑술(목토)는 비겁이 같아도 지지 오행이 달라 10년씩이다."""
+def test_same_stem_group_bundles_even_when_branch_element_differs():
+    """을해와 갑술은 지지 오행이 달라도 비겁이 이어지면 20년·3콩이다."""
     facts = [
         {"step": 1, "sipsin_group": "비겁", "ganji": "乙亥"},
         {"step": 2, "sipsin_group": "비겁", "ganji": "甲戌"},
     ]
     mark_twenty_year_runs(facts)
-    assert facts[0]["is_twenty_years"] is False and facts[1]["is_twenty_years"] is False
-    assert facts[0]["price_beans"] == facts[1]["price_beans"] == 2
-    assert facts[0]["badge_text"] is None and facts[1]["badge_text"] is None
+    assert facts[0]["is_twenty_years"] is True and facts[0]["twenty_role"] == "front"
+    assert facts[1]["is_twenty_years"] is True and facts[1]["twenty_role"] == "back"
+    assert facts[0]["price_beans"] == facts[1]["price_beans"] == 3
+    assert facts[0]["badge_text"] == "비겁운이 20년 동안 이어져요"
 
 
-def test_eulhae_gapsul_at_25_and_35_are_separate_ten_year_cards():
-    """1975-02-18 10시 남성. 25세 을해(수목)와 35세 갑술(목토)는 비겁이어도 10년씩이다."""
+def test_eulhae_gapsul_share_one_bigyeop_story():
+    """1975-02-18 10시 남성. 25세 을해와 35세 갑술은 지지가 달라도 비겁 20년이다."""
     first, _ = analyze_daewoon_period(1975, 2, 18, 10, 0, "male", False, target_age=25)
     second, _ = analyze_daewoon_period(1975, 2, 18, 10, 0, "male", False, target_age=35)
     assert first["data"]["age_range"] == [25, 34]
     assert second["data"]["age_range"] == [35, 44]
-    phases = {phase["step"]: phase for phase in first["data"]["timeline_phases"]}
-    assert phases[first["data"]["step"]]["ganji"] == "乙亥"
-    assert phases[second["data"]["step"]]["ganji"] == "甲戌"
-    for body in (first["data"], second["data"]):
-        assert body["is_twenty_years"] is False
-        assert body["price_beans"] == 2
-        assert body["badge_text"] is None
-        assert body["twenty_year_story"] is None
+    story = first["data"]["twenty_year_story"]
+    assert first["data"]["is_twenty_years"] is True and second["data"]["is_twenty_years"] is True
+    assert first["data"]["price_beans"] == 3
+    assert story["section_common"] == "20년의 공통 흐름"
+    assert story["section_front"].startswith("첫 번째 10년")
+    assert story["section_back"].startswith("두 번째 10년")
+    assert story["front"] != story["back"]
+    assert first["data"]["twenty_year_story"]["overview"] == second["data"]["twenty_year_story"]["overview"]
 
 
 def test_wood_on_wood_decades_stay_one_twenty_year_story():
@@ -61,17 +62,21 @@ def test_wood_on_wood_decades_stay_one_twenty_year_story():
     assert front["data"]["twenty_year_story"]["front"] != back["data"]["twenty_year_story"]["back"]
 
 
-def test_1983_officer_decades_split_because_branch_element_changes():
-    """무오(토·화)와 기미(토·토)는 관성만 같고 아래 오행이 달라 10년 카드다."""
+def test_1983_pyeongwan_jeonggwan_is_one_officer_story():
+    """무오 편관과 기미 정관은 지지가 달라도 관성 20년이고, 각 10년 문장은 다르다."""
     front, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=8)
-    back, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=18)
-    for body in (front["data"], back["data"]):
-        assert body["is_twenty_years"] is False
-        assert body["price_beans"] == 2
-        assert body["badge_text"] is None
-        assert body["twenty_year_story"] is None
-        assert "이 20년은" not in body["decade_theme"]["sentence"]
-        assert "관성운" not in body["decade_theme"]["sentence"]
+    story = front["data"]["twenty_year_story"]
+    assert front["data"]["is_twenty_years"] is True
+    assert front["data"]["price_beans"] == 3
+    assert front["data"]["badge_text"] == "관성운이 20년 동안 이어져요"
+    assert story["section_common"] == "20년의 공통 흐름"
+    assert story["section_front"] == "첫 번째 10년 (편관운)"
+    assert story["section_back"] == "두 번째 10년 (정관운)"
+    assert "압박" in story["front"]
+    assert "책임" in story["back"]
+    assert story["front"] != story["back"]
+    assert "편관" not in story["overview"]
+    assert "정관" not in story["overview"]
 
 
 def test_standalone_decade_stays_ten_years():
