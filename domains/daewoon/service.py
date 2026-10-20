@@ -189,8 +189,11 @@ def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
     return start, start + 9
 
 
+_HIDDEN_CORE_MARKS = ("천간", "지지", "원국", "신호를 가리키")
+
+
 def _core_reading(label: str, phrase: str) -> str:
-    """사용자에게 보일 한 줄. 구조·천간 같은 내부 표현은 넣지 않는다."""
+    """영향이 약해 본문이 비었을 때의 짧은 해석. 내부 용어는 넣지 않는다."""
     stem = (phrase or "").strip().rstrip(".")
     for suffix in ("하는 구조", "구조", "흐름"):
         if stem.endswith(suffix):
@@ -199,7 +202,24 @@ def _core_reading(label: str, phrase: str) -> str:
     name = (label or "이 영역").strip()
     if not stem:
         return f"{name} 쪽은 크게 드러나기보다 생활의 배경에서 은은하게 따라오는 흐름입니다."
-    return f"{name} 쪽에서는 {stem} 모습이 삶 가까이에 나타나는 흐름입니다."
+    return f"{name} 쪽에서는 {stem} 모습이 삶 가까이에 이어지는 흐름입니다."
+
+
+def _public_core_sentence(raw: str) -> str:
+    """파이프라인 문장에서 천간·지지 근거만 빼고, 영역 해석은 남긴다."""
+    pieces = []
+    for part in (raw or "").split(". "):
+        piece = part.strip()
+        if not piece:
+            continue
+        if not piece.endswith("."):
+            piece += "."
+        if any(mark in piece for mark in _HIDDEN_CORE_MARKS):
+            continue
+        piece = piece.replace("구조가 나타납니다", "모습이 이어지는 흐름입니다")
+        piece = piece.replace("구조가 나타났", "모습이 이어지는 흐름이었")
+        pieces.append(piece)
+    return " ".join(pieces)
 
 
 def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[str, Any], age: int, gender: str, past: bool) -> List[Dict[str, Any]]:
@@ -218,8 +238,12 @@ def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[st
     items = []
     for item in primary:
         activation = int(item.get("activation") or 0)
-        phrase = (item.get("manifestation") or [""])[0] if activation >= 3 else ""
-        sentence = _core_reading(item.get("label") or "", phrase if isinstance(phrase, str) else "")
+        phrase = (item.get("manifestation") or [""])[0] if isinstance((item.get("manifestation") or [""])[0], str) else ""
+        if activation < 3:
+            phrase = ""
+        sentence = _public_core_sentence(item.get("sentence") or "")
+        if not sentence:
+            sentence = _core_reading(item.get("label") or "", phrase)
         if past and isinstance(phrase, str) and phrase:
             phrase = to_past(phrase if phrase.endswith(".") else phrase + ".")
         if past and sentence:
