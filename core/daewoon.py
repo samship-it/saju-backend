@@ -345,6 +345,23 @@ def mark_twenty_year_runs(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return facts
 
 
+# 10년 대운 목록은 108세가 되기 전까지만 만든다. 70대에도 앞으로의 칸이 보이게 한다.
+DAEWOON_LIST_AGE_LIMIT = 108
+
+
+def daewoon_decade_count(daewoon_num: int, age_limit: int = DAEWOON_LIST_AGE_LIMIT) -> int:
+    """끝 나이가 age_limit 미만인 10년 칸의 개수.
+
+    대운수가 1이면 8칸은 71~80세에서 끝난다. 같은 규칙으로 91~100세까지 늘리고,
+    98~107세처럼 108세는 넣지 않는 선에서 마지막 칸을 정한다.
+    """
+    start = max(1, int(daewoon_num or 1))
+    last_start = age_limit - 10
+    if start > last_start:
+        return 1
+    return (last_start - start) // 10 + 1
+
+
 def daewoon_step_facts(
     day_master: str, day_branch: str, month_pillar: str, is_forward: bool, count: int = 8,
 ) -> List[Dict[str, Any]]:

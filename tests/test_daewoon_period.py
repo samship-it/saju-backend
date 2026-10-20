@@ -603,24 +603,40 @@ def test_analyze_daewoon_period_has_full_schema():
     assert "흐름의 10년입니다" not in d["saju_relation"]
 
 
-def test_analyze_daewoon_period_timeline_phases_has_all_eight_steps_with_ten_years_each():
+def test_analyze_daewoon_period_timeline_reaches_below_108():
     data, _ = analyze_daewoon_period(1990, 5, 15, 10, 0, "male", False, target_age=32)
     phases = data["data"]["timeline_phases"]
-    assert len(phases) == 8
-    assert [p["step"] for p in phases] == list(range(1, 9))
+    assert len(phases) > 8
+    assert [p["step"] for p in phases] == list(range(1, len(phases) + 1))
     for p in phases:
+        assert p["age_range"][1] < 108
+        assert p["age_range"][1] - p["age_range"][0] == 9
         assert len(p["years"]) == 10
         assert p["ganji_label"].endswith(f"({p['ganji']})")
         for y in p["years"]:
             assert isinstance(y["year"], int)
             assert y["ganji"]
+    next_start = phases[-1]["age_range"][0] + 10
+    assert next_start + 9 >= 108
     assert sum(1 for p in phases if p["is_selected"]) == 1
+
+
+def test_early_daewoon_no_longer_stops_at_80():
+    """대운수 1이면 예전 8칸은 80세에서 끝났다. 이제는 100세 칸까지 있다."""
+    from core.daewoon import daewoon_decade_count
+
+    assert daewoon_decade_count(1) == 10
+    assert daewoon_decade_count(8) == 10
 
 
 def test_analyze_daewoon_period_works_for_ages_across_the_full_lifespan():
     for target_age in (0, 5, 15, 25, 40, 60, 85, 100):
         data, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=target_age)
-        assert 1 <= data["data"]["step"] <= 8
+        phases = data["data"]["timeline_phases"]
+        assert 1 <= data["data"]["step"] <= len(phases)
+        assert phases[-1]["age_range"][1] < 108
+        if target_age >= phases[0]["age_range"][0]:
+            assert any(p["age_range"][0] <= target_age <= p["age_range"][1] for p in phases)
         assert data["data"]["summary"]
 
 

@@ -33,7 +33,7 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
   build_decade_theme) — 1단계(오행/십신 정의)는 saju_relation이 맡는다.
   2단계는 십신 핵심 키워드·주요 변화 영역, 3단계는 음양 쌍 십신(정/편)
   기반으로 대운 영향이 약한 영역의 흐름을 안내한다.
-- timeline_phases: 8단계 대운 전부 + 각 단계의 10년치 세운(연도·간지) 나열
+- timeline_phases: 108세 미만까지 10년 칸 + 각 칸의 세운(연도·간지) 나열
   (get_seewoon_list) — 프론트가 세운 옆에 "OOOO년 총운 보러가기" 버튼을 건다.
 - strength_verdict / polarity(2026-09-21 신규): 이 사람의 억부 신강/신약(core/strength.
   analyze_strength) 및 이 대운 "천간" 오행이 용신/희신(favorable)·기신(unfavorable)·
@@ -56,7 +56,10 @@ sipsin_group(5분류)을 쓴다 — 그 DB 자체가 5분류로 만들어져 있
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.saju_base import calculate_saju
-from core.daewoon import GAN as GAN_KO_LIST, GAN_H, JI as JI_KO_LIST, JI_H, daewoon_step_facts, get_seewoon_list
+from core.daewoon import (
+    GAN as GAN_KO_LIST, GAN_H, JI as JI_KO_LIST, JI_H,
+    daewoon_decade_count, daewoon_step_facts, get_seewoon_list,
+)
 from domains.daewoon.content import (
     DECADE_TASKS,
     KEYWORDS,
@@ -86,7 +89,7 @@ from domains.daewoon.pipeline import analyze_daewoon_stage, build_domain_pipelin
 from domains.daewoon.twenty_year import build_twenty_year_story, core_continues, joined_story
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
-from domains.lifelong.service import _current_step, _fallback_stage_detail, _ilju
+from domains.lifelong.service import _fallback_stage_detail, _ilju
 from shared.public import person_summary
 
 CONTENT_TYPE = "daewoon_period"
@@ -167,6 +170,16 @@ def _build_timeline_phases(
             "years": years,
         })
     return phases
+
+
+def _listed_current_step(daewoon_num: int, age: int, count: int) -> int:
+    """목록에 있는 칸 안에서 지금 나이를 가리킨다. 평생운세의 8칸 상한은 쓰지 않는다."""
+    if count < 1:
+        return 1
+    if age < daewoon_num:
+        return 1
+    step = (age - daewoon_num) // 10 + 1
+    return max(1, min(count, step))
 
 
 def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
@@ -275,8 +288,9 @@ def analyze_daewoon_period(
     is_forward = daewoon.get("direction") == "순행"
     age = saju.get("age", 0) or 0
 
-    facts = daewoon_step_facts(day_master, day_branch, month_ganji, is_forward, count=8)
-    current_step = _current_step(daewoon_num, age)
+    decade_count = daewoon_decade_count(daewoon_num)
+    facts = daewoon_step_facts(day_master, day_branch, month_ganji, is_forward, count=decade_count)
+    current_step = _listed_current_step(daewoon_num, age, len(facts))
 
     effective_age = target_age if target_age is not None else age
     step = _step_covering_age(facts, daewoon_num, effective_age)
