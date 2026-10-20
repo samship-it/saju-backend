@@ -85,6 +85,7 @@ def test_1983_pyeongwan_jeonggwan_is_one_officer_story():
     readings = [item.get("sentence") or "" for item in story["core_front"] + story["core_back"]]
     assert any(readings)
     for reading in readings:
+        assert reading.count(".") >= 2
         assert "천간" not in reading
         assert "구조가 나타납니다" not in reading
     assert story["tasks_title"] == "20년간 중요했던 일"

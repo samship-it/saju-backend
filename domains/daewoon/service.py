@@ -190,6 +190,11 @@ def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
 
 
 _HIDDEN_CORE_MARKS = ("천간", "지지", "원국", "신호를 가리키")
+_VALENCE_REASON = {
+    "favorable": "억지로 속도를 내기보다, 열리는 쪽에 손을 내밀면 이 영역이 편하게 자리를 잡는 시기입니다.",
+    "neutral": "크게 뒤집히기보다, 하던 결을 지키며 속도를 맞추면 되는 시기입니다.",
+    "unfavorable": "힘이 실린다고 모든 것을 바꾸려 하기보다, 지금 감당할 범위부터 정하면 덜 지치는 시기입니다.",
+}
 
 
 def _core_reading(label: str, phrase: str) -> str:
@@ -222,6 +227,17 @@ def _public_core_sentence(raw: str) -> str:
     return " ".join(pieces)
 
 
+def _rich_core_sentence(raw: str, label: str, phrase: str, valence: str) -> str:
+    """한 줄로 끊기지 않게, 상황과 대응을 함께 남긴다."""
+    body = _public_core_sentence(raw)
+    if not body:
+        body = _core_reading(label, phrase)
+    if body.count(".") < 2:
+        reason = _VALENCE_REASON.get(valence) or _VALENCE_REASON["neutral"]
+        body = f"{body.rstrip()} {reason}"
+    return body
+
+
 def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[str, Any], age: int, gender: str, past: bool) -> List[Dict[str, Any]]:
     """한 10년의 핵심 영역. 영향도 상위만 남기고, 지난 구간은 회고로 바꾼다."""
     prev = next((item for item in facts if item["step"] == fact["step"] - 1), None)
@@ -238,12 +254,9 @@ def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[st
     items = []
     for item in primary:
         activation = int(item.get("activation") or 0)
-        phrase = (item.get("manifestation") or [""])[0] if isinstance((item.get("manifestation") or [""])[0], str) else ""
-        if activation < 3:
-            phrase = ""
-        sentence = _public_core_sentence(item.get("sentence") or "")
-        if not sentence:
-            sentence = _core_reading(item.get("label") or "", phrase)
+        raw_phrase = (item.get("manifestation") or [""])[0] if isinstance((item.get("manifestation") or [""])[0], str) else ""
+        phrase = raw_phrase if activation >= 3 else ""
+        sentence = _rich_core_sentence(item.get("sentence") or "", item.get("label") or "", raw_phrase, item.get("valence") or "neutral")
         if past and isinstance(phrase, str) and phrase:
             phrase = to_past(phrase if phrase.endswith(".") else phrase + ".")
         if past and sentence:
