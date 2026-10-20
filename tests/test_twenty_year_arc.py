@@ -78,8 +78,15 @@ def test_1983_pyeongwan_jeonggwan_is_one_officer_story():
     assert "편관" not in story["overview"]
     assert "정관" not in story["overview"]
     assert story["action_title"] == "이 20년을 잘 보내기 위한 행동 지침"
-    assert "자격" in story["action_guide"]
+    assert "역할" in story["action_guide"]
+    assert "자격" not in story["action_guide"]
+    assert "소속의 이름" not in story["action_guide"]
     assert "관성" not in story["action_guide"]
+    readings = [item.get("sentence") or "" for item in story["core_front"] + story["core_back"]]
+    assert any(readings)
+    for reading in readings:
+        assert "천간" not in reading
+        assert "구조가 나타납니다" not in reading
     assert story["tasks_title"] == "20년간 중요했던 일"
     assert story["core_mode"] == "split"
     assert story["core_front"] and story["core_back"]

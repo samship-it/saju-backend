@@ -189,6 +189,19 @@ def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
     return start, start + 9
 
 
+def _core_reading(label: str, phrase: str) -> str:
+    """사용자에게 보일 한 줄. 구조·천간 같은 내부 표현은 넣지 않는다."""
+    stem = (phrase or "").strip().rstrip(".")
+    for suffix in ("하는 구조", "구조", "흐름"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)].rstrip()
+            break
+    name = (label or "이 영역").strip()
+    if not stem:
+        return f"{name} 쪽은 크게 드러나기보다 생활의 배경에서 은은하게 따라오는 흐름입니다."
+    return f"{name} 쪽에서는 {stem} 모습이 삶 가까이에 나타나는 흐름입니다."
+
+
 def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[str, Any], age: int, gender: str, past: bool) -> List[Dict[str, Any]]:
     """한 10년의 핵심 영역. 영향도 상위만 남기고, 지난 구간은 회고로 바꾼다."""
     prev = next((item for item in facts if item["step"] == fact["step"] - 1), None)
@@ -206,12 +219,16 @@ def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[st
     for item in primary:
         activation = int(item.get("activation") or 0)
         phrase = (item.get("manifestation") or [""])[0] if activation >= 3 else ""
+        sentence = _core_reading(item.get("label") or "", phrase if isinstance(phrase, str) else "")
         if past and isinstance(phrase, str) and phrase:
             phrase = to_past(phrase if phrase.endswith(".") else phrase + ".")
+        if past and sentence:
+            sentence = to_past(sentence if sentence.endswith(".") else sentence + ".")
         items.append({
             "domain": item.get("domain"),
             "label": item.get("label"),
             "manifestation": phrase,
+            "sentence": sentence,
             "valence": item.get("valence"),
             "activation": activation,
         })
