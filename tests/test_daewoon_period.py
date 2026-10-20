@@ -571,7 +571,8 @@ def test_analyze_daewoon_period_has_full_schema():
     d = data["data"]
     assert set(d.keys()) == {
         "daewoon_header", "landscape_scene", "saju_relation", "summary", "keywords",
-        "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks", "step",
+        "domain_analysis", "decade_theme", "timeline_phases", "decade_tasks",
+        "action_title", "action_guide", "step",
         "age_range", "target_age", "target", "is_current_decade", "is_past_decade",
         "is_twenty_years", "price_beans", "badge_text", "twenty_year_story",
         "strength_verdict", "polarity", "domain_pipeline",
@@ -594,6 +595,35 @@ def test_analyze_daewoon_period_has_full_schema():
     assert d["saju_relation"].count("**") == 2
     assert "에 해당합니다" in d["saju_relation"]
     assert "흐름의 10년입니다" not in d["saju_relation"]
+    assert d["action_title"] == "이 10년을 잘 보내기 위한 행동 지침"
+    assert d["action_guide"].endswith("시기입니다.")
+
+
+def test_decade_action_matches_sipsin_without_naming_it():
+    from domains.daewoon.content import build_decade_action
+
+    names = (
+        "비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인",
+        "비겁", "식상", "재성", "관성", "인성",
+    )
+    lines = [
+        build_decade_action(name)
+        for name in ("비견", "겁재", "식신", "상관", "편재", "정재", "편관", "정관", "편인", "정인")
+    ]
+    assert len(set(lines)) == 10
+    for line in lines:
+        assert line.endswith("시기입니다.")
+        for name in names:
+            assert name not in line
+    assert "자격" in build_decade_action("정관")
+    assert "실력" in build_decade_action("편관")
+
+    past, _ = analyze_daewoon_period(1983, 5, 14, 14, 0, "female", False, target_age=8)
+    guide = past["data"]["action_guide"]
+    assert past["data"]["is_past_decade"] is True
+    assert guide.endswith("시기였습니다.")
+    assert "편관" not in guide and "관성" not in guide
+    assert "실력" in guide
 
 
 def test_analyze_daewoon_period_timeline_reaches_below_108():

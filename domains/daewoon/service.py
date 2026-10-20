@@ -62,6 +62,7 @@ from core.daewoon import (
 )
 from domains.daewoon.content import (
     DECADE_TASKS,
+    build_decade_action,
     KEYWORDS,
     build_career_or_study,
     build_child_domains,
@@ -400,7 +401,9 @@ def analyze_daewoon_period(
             "sentence": joined_story(twenty_story),
         }
     decade_tasks = list(DECADE_TASKS.get(sipsin, DECADE_TASKS["비견"]))
+    action_guide = build_decade_action(sipsin)
     if is_past_decade:
+        action_guide = to_past(action_guide if action_guide.endswith(".") else action_guide + ".")
         decade_tasks = [past_task(task) for task in decade_tasks]
         domain_pipeline["global_context"] = to_past(domain_pipeline.get("global_context") or "")
         domain_pipeline["narrative"] = to_past(domain_pipeline.get("narrative") or "")
@@ -424,6 +427,8 @@ def analyze_daewoon_period(
         "decade_theme": decade_theme,
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
         "decade_tasks": decade_tasks,
+        "action_title": "이 10년을 잘 보내기 위한 행동 지침",
+        "action_guide": action_guide,
         "step": step,
         "age_range": [start_age, start_age + 9],
         "target_age": effective_age,
