@@ -68,6 +68,7 @@ from domains.daewoon.content import (
     build_decade_theme,
     build_family,
     build_relationship,
+    build_boundary_span_domains,
     build_transition_back_domains,
     build_transition_front_domains,
     build_wealth_flow,
@@ -317,8 +318,14 @@ def analyze_daewoon_period(
         is_fallback = True
         entry = _fallback_stage_detail(fact["sipsin_group"], step)
 
+    # 14~23세처럼 18세와 19세가 한 칸에 있으면 성인 네 칸을 유지하고 문장만 잇는다.
+    spans_boundary = start_age <= 18 < start_age + 9
     is_transition_decade = TRANSITION_START_MIN <= start_age <= TRANSITION_START_MAX
-    if is_transition_decade:
+    if spans_boundary:
+        domain_analysis = build_boundary_span_domains(
+            sipsin, love_status, is_selected_current, polarity
+        )
+    elif is_transition_decade:
         if effective_age < TRANSITION_SPLIT_AGE:
             domain_analysis = build_transition_front_domains(sipsin, polarity)
         else:
@@ -343,8 +350,10 @@ def analyze_daewoon_period(
     stem_splits = fact.get("sipsin_group") != fact.get("sipsin_group_ji")
     band = strength_band(strength.get("verdict"))
     yongsin_elem = primary_yongsin(strength)
-    child_copy = effective_age < CHILD_AGE_THRESHOLD or (
-        is_transition_decade and effective_age < TRANSITION_SPLIT_AGE
+    child_copy = (not spans_boundary) and (
+        effective_age < CHILD_AGE_THRESHOLD or (
+            is_transition_decade and effective_age < TRANSITION_SPLIT_AGE
+        )
     )
     # 대운의 마지막 나이가 현재 나이보다 작으면 이미 지난 10년이다.
     is_past_decade = (start_age + 9) < age

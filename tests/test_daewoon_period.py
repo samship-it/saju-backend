@@ -461,20 +461,28 @@ def test_analyze_daewoon_period_branches_career_or_study_by_target_age():
     assert ADULT_AGE_THRESHOLD == 25
 
 
+def _spans_adult_boundary(age_range) -> bool:
+    start = age_range[0]
+    return start <= 18 < start + 9
+
+
 def test_analyze_daewoon_period_under_20_returns_the_four_child_domains():
     assert CHILD_AGE_THRESHOLD == 20
     for target_age in (0, 5, 10, 15):
         data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=target_age)
+        if _spans_adult_boundary(data["data"]["age_range"]):
+            continue
         domains = data["data"]["domain_analysis"]
         assert set(domains.keys()) == {"study_growth", "friendship", "family_environment"}
         assert "allowance_economy" not in domains
         assert "용돈" not in str(domains)
         assert "career_or_study" not in domains
     data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=19)
-    domains = data["data"]["domain_analysis"]
-    assert set(domains.keys()) == {
-        "study_growth", "allowance_economy", "friendship", "family_environment",
-    }
+    if not _spans_adult_boundary(data["data"]["age_range"]):
+        domains = data["data"]["domain_analysis"]
+        assert set(domains.keys()) == {
+            "study_growth", "allowance_economy", "friendship", "family_environment",
+        }
 
 
 def test_analyze_daewoon_period_20_and_above_keeps_the_adult_domains():
@@ -489,6 +497,8 @@ def test_analyze_daewoon_period_20_and_above_keeps_the_adult_domains():
 def test_analyze_daewoon_period_under_20_never_outputs_forbidden_adult_words():
     for target_age in (0, 5, 10, 15, 19):
         data, _ = analyze_daewoon_period(2015, 3, 10, 9, 0, "male", False, target_age=target_age)
+        if _spans_adult_boundary(data["data"]["age_range"]):
+            continue
         rendered = str(data["data"]["domain_analysis"])
         for word in FORBIDDEN_ADULT_WORDS:
             assert word not in rendered
@@ -506,33 +516,16 @@ def test_transition_decade_start_age_is_within_the_transitional_window():
     assert TRANSITION_START_MIN <= data["data"]["age_range"][0] <= TRANSITION_START_MAX
 
 
-def test_transition_decade_front_half_uses_the_child_shape_with_transition_study_content():
-    # 대운 시작(18세)부터 TRANSITION_SPLIT_AGE(22) 직전까지는 학업/입시 관점(전반부).
-    for target_age in range(18, TRANSITION_SPLIT_AGE):
-        data, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=target_age)
-        domains = data["data"]["domain_analysis"]
-        assert set(domains.keys()) == {
-            "study_growth", "allowance_economy", "friendship", "family_environment",
-        }
-        rendered = str(domains)
-        for word in FORBIDDEN_ADULT_WORDS:
-            assert word not in rendered
-
-
-def test_transition_decade_back_half_uses_the_adult_shape_with_first_job_content():
-    # TRANSITION_SPLIT_AGE(22)부터 대운 끝(27세)까지는 첫 직장/사회초년 관점(후반부) —
-    # "직장" 같은 단어는 여기서는 의도적으로 등장해야 한다(전반부와 달리 필터링하지 않음).
-    for target_age in range(TRANSITION_SPLIT_AGE, 28):
+def test_boundary_span_keeps_adult_labels_and_connects_both_halves():
+    """18~27세는 18세와 19세 이후가 한 칸이다. 라벨은 성인 네 칸, 문장은 앞뒤를 잇는다."""
+    for target_age in (18, 21, 23, 27):
         data, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=target_age)
         domains = data["data"]["domain_analysis"]
         assert set(domains.keys()) == {"career_or_study", "wealth_flow", "relationship", "family"}
-        assert "직장" in domains["career_or_study"]["core_change"] or "직장" in domains["career_or_study"]["how_it_shows"]
-
-
-def test_transition_decade_flow_changes_at_the_split_age():
-    before, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=TRANSITION_SPLIT_AGE - 1)
-    after, _ = analyze_daewoon_period(*_TRANSITION_BIRTH, target_age=TRANSITION_SPLIT_AGE)
-    assert set(before["data"]["domain_analysis"].keys()) != set(after["data"]["domain_analysis"].keys())
+        career = str(domains["career_or_study"])
+        assert "앞부분에는" in career
+        assert "뒤로 갈수록" in career
+        assert "직장" in career
 
 
 def test_non_transition_decades_are_unaffected_by_the_transition_logic():

@@ -1365,6 +1365,64 @@ def build_transition_back_domains(
     }
 
 
+def _bridge(early: str, late: str) -> str:
+    """한 10년 안에서 앞 나이의 문장과 뒤 나이의 문장을 한 흐름으로 잇는다."""
+    head = (early or "").strip()
+    tail = (late or "").strip()
+    if head and not head.endswith("."):
+        head += "."
+    if not head:
+        return tail
+    if not tail:
+        return head
+    return f"앞부분에는 {head} 뒤로 갈수록 {tail}"
+
+
+def build_boundary_span_domains(
+    sipsin: str, love_status: Optional[str], is_current: bool, polarity: str = "neutral"
+) -> Dict[str, object]:
+    """18세 이하와 19세 이상이 한 10년에 같이 있을 때의 네 칸.
+
+    라벨은 성인 네 칸(직업·재물·인연·가족)을 유지하고, 각 문장은 앞의 학업·성장·
+    진로 탐색에서 뒤의 사회 진출·재물·인간관계로 이어진다.
+    """
+    front = build_transition_front_domains(sipsin, polarity)
+    back = build_transition_back_domains(sipsin, love_status, is_current, polarity)
+    study = front["study_growth"]
+    friends = front["friendship"]
+    home = front["family_environment"]
+    career = back["career_or_study"]
+    wealth = back["wealth_flow"]
+    relation = back["relationship"]
+    family = back["family"]
+    return {
+        "career_or_study": {
+            "core_change": _bridge(study.get("aptitude_path", ""), career.get("core_change", "")),
+            "how_it_shows": _bridge(study.get("school_life", ""), career.get("how_it_shows", "")),
+            "cautions": career.get("cautions", ""),
+        },
+        "wealth_flow": {
+            "earning_style": _bridge(
+                "집안 형편 안에서 쓰는 돈의 감각을 익히는 흐름입니다.",
+                wealth.get("earning_style", ""),
+            ),
+            "cash_flow": _bridge(
+                "버는 돈보다 집에서 오가는 살림이 기준이 되는 흐름입니다.",
+                wealth.get("cash_flow", ""),
+            ),
+            "management_caution": wealth.get("management_caution", ""),
+        },
+        "relationship": {
+            "flow": _bridge(friends.get("peer_relationship", ""), relation.get("flow", "")),
+            "guide_by_status": relation.get("guide_by_status"),
+        },
+        "family": {
+            "change_flow": _bridge(home.get("parent_relationship", ""), family.get("change_flow", "")),
+            "warning": family.get("warning", ""),
+        },
+    }
+
+
 # ── 10년의 풍경 하단 — 2/3단계: 핵심 변화 영역 + 음양 쌍 십신 기반 유지 영역 안내 ──
 # landscape.py의 saju_relation이 1단계(오행/십신 정의)를 맡고, 여기는 그 뒤를 잇는
 # 2단계(이 십신과 관련된 핵심 키워드·주요 변화 영역)·3단계(대운 영향이 약한 영역은
