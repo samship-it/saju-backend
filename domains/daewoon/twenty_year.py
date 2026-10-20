@@ -25,14 +25,23 @@ _GROUP_FLOW = {
 _SIPSIN_DECADE = {
     "편관": "{ages}는 기준이 세고 평가가 매서운 환경입니다. 압박과 도전을 통과하면서 실력이 자라는 구간입니다.",
     "정관": "{ages}는 틀과 역할이 안정된 환경입니다. 제도에 적응하며 책임을 구체화하는 구간입니다.",
-    "편인": "{ages}는 정규 길 바깥에서 배우게 되는 환경입니다. 생각이 옆으로 뻗고 남다른 방식으로 실마리를 잡는 구간입니다.",
+    "편인": "{ages}는 정규 과정 바깥에서 배우게 되는 환경입니다. 생각이 옆으로 뻗고 남다른 방식으로 실마리를 잡는 구간입니다.",
     "정인": "{ages}는 보호와 정석 학습이 받쳐 주는 환경입니다. 자격과 생각을 차분히 쌓아 올리는 구간입니다.",
     "편재": "{ages}는 기회가 넓게 열리고 돈이 움직이는 환경입니다. 판을 옮기며 성과를 거두는 구간입니다.",
     "정재": "{ages}는 들어오는 돈과 나가는 돈이 일정한 환경입니다. 살림을 단속하고 결과를 차곡차곡 쌓는 구간입니다.",
     "식신": "{ages}는 만들고 내놓는 일이 편한 환경입니다. 솜씨를 꾸준히 갈고 결과물을 남기는 구간입니다.",
     "상관": "{ages}는 틀을 깨고 드러내는 환경입니다. 자기 표현이 앞서고 기존 방식과 마찰을 빚는 구간입니다.",
     "비견": "{ages}는 나와 비슷한 사람과 나란히 서는 환경입니다. 자기 몫을 지키며 동료와 속도를 맞추는 구간입니다.",
-    "겁재": "{ages}는 몫을 나누고 경쟁이 붙는 환경입니다. 내 자리를 뺏기지 않으려 힘을 쓰는 구간입니다.",
+    "겁재": "{ages}는 몫을 나누고 경쟁이 붙는 환경입니다. 내 자리를 빼앗기지 않으려 힘을 쓰는 구간입니다.",
+}
+
+# 본문에는 십성 이름을 넣지 않는다. 제목과 배지만 그 이름을 쓴다.
+_ACTION = {
+    "관성": "자격과 맡은 자리, 소속의 이름을 모아 두면 이후의 자리가 든든해지는 시기입니다.",
+    "인성": "공부와 수양, 오래 남는 자산을 모아 두면 이후의 선택이 넓어지는 시기입니다.",
+    "재성": "벌어 들인 결과와 살림의 기반을 모아 두면 이후의 생활이 안정되는 시기입니다.",
+    "식상": "솜씨와 사람들 앞에 내놓은 결과를 모아 두면 이후의 일이 이어지는 시기입니다.",
+    "비겁": "자기 몫과 믿을 만한 동료를 모아 두면 이후의 자리가 분명해지는 시기입니다.",
 }
 
 _REL_NOTE = {
@@ -48,7 +57,7 @@ _REL_NOTE = {
 _SLOTS = {
     "front": {
         "study": "이 구간의 학업은 배우는 방식을 익히며 시작하는 일입니다.",
-        "friendship": "이 구간의 교우는 무리를 겪으며 관계를 시작하는 일입니다.",
+        "friendship": "이 구간의 교우는 사람 사이에서 관계를 시작하는 일입니다.",
         "home": "이 구간의 가정은 부모의 기준 안에서 생활의 틀을 시작하는 일입니다.",
         "allowance": "이 구간의 살림은 돈이 들고 나는 감각을 익히며 시작하는 일입니다.",
         "career": "이 구간의 일은 맡은 자리를 배우며 단련을 시작하는 일입니다.",
@@ -69,10 +78,11 @@ _SLOTS = {
 }
 
 ARC_DB: Dict[str, Any] = {
-    "_prompt_v": "2026-10-19-twenty-sections",
+    "_prompt_v": "2026-10-20-twenty-guide",
     "groups": _GROUP_FLOW,
     "decades": _SIPSIN_DECADE,
     "relations": _REL_NOTE,
+    "actions": _ACTION,
     "slots": _SLOTS,
 }
 
@@ -97,6 +107,11 @@ def _maybe_past(text: str, past: bool) -> str:
         return text
     body = text if text.endswith(".") else text + "."
     return to_past(body)
+
+
+def core_continues(front_rel: str, back_rel: str, front_domains: Tuple[str, ...], back_domains: Tuple[str, ...]) -> bool:
+    """환경(형충)과 핵심 영역이 같으면 20년 핵심 영역 하나다."""
+    return front_rel == back_rel and tuple(front_domains) == tuple(back_domains)
 
 
 def _decade_title(order: str, sipsin: str) -> str:
@@ -126,6 +141,7 @@ def build_twenty_year_story(
     overview = (db.get("groups") or {}).get(group) or db["groups"]["비겁"]
     front_text = _decade_body(db, front_sipsin, front_rel, front_ages)
     back_text = _decade_body(db, back_sipsin, back_rel, back_ages)
+    action = (db.get("actions") or {}).get(group) or db["actions"]["비겁"]
     return {
         "section_common": "20년의 공통 흐름",
         "section_front": _decade_title("첫 번째 10년", front_sipsin),
@@ -133,6 +149,9 @@ def build_twenty_year_story(
         "overview": _maybe_past(overview, back_past),
         "front": _maybe_past(front_text, front_past),
         "back": _maybe_past(back_text, back_past),
+        "action_title": "이 20년을 잘 보내기 위한 행동 지침",
+        "action_guide": _maybe_past(action, back_past),
+        "tasks_title": "20년간 중요했던 일" if back_past else "이 20년에 중요한 일",
         "age_range": [front_ages[0], back_ages[1]],
         "front_age_range": [front_ages[0], front_ages[1]],
         "back_age_range": [back_ages[0], back_ages[1]],

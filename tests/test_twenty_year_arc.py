@@ -3,7 +3,7 @@ import json
 
 from core.daewoon import mark_twenty_year_runs
 from domains.daewoon.service import analyze_daewoon_period
-from domains.daewoon.twenty_year import ARC_DB, ARC_DB_PATH
+from domains.daewoon.twenty_year import ARC_DB, ARC_DB_PATH, core_continues
 
 
 def test_same_element_pair_bundles_and_leftover_stays_ten_years():
@@ -77,6 +77,12 @@ def test_1983_pyeongwan_jeonggwan_is_one_officer_story():
     assert story["front"] != story["back"]
     assert "편관" not in story["overview"]
     assert "정관" not in story["overview"]
+    assert story["action_title"] == "이 20년을 잘 보내기 위한 행동 지침"
+    assert "자격" in story["action_guide"]
+    assert "관성" not in story["action_guide"]
+    assert story["tasks_title"] == "20년간 중요했던 일"
+    assert story["core_mode"] == "split"
+    assert story["core_front"] and story["core_back"]
 
 
 def test_standalone_decade_stays_ten_years():
@@ -93,6 +99,15 @@ def test_standalone_decade_stays_ten_years():
     assert body["badge_text"] is None
     assert body["twenty_year_story"] is None
     assert "이 20년은" not in body["decade_theme"]["sentence"]
+
+
+def test_same_environment_and_domains_share_one_core():
+    assert core_continues("합", "합", ("career", "wealth"), ("career", "wealth")) is True
+
+
+def test_changed_environment_splits_core_areas():
+    assert core_continues("충", "합", ("career",), ("career",)) is False
+    assert core_continues("합", "합", ("career",), ("wealth",)) is False
 
 
 def test_arc_db_file_matches_source():

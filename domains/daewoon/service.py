@@ -83,7 +83,7 @@ from domains.daewoon.axis import (
 )
 from domains.daewoon.landscape import build_decade_landscape
 from domains.daewoon.pipeline import analyze_daewoon_stage, build_domain_pipeline
-from domains.daewoon.twenty_year import build_twenty_year_story, joined_story
+from domains.daewoon.twenty_year import build_twenty_year_story, core_continues, joined_story
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
 from domains.lifelong.service import _current_step, _fallback_stage_detail, _ilju
@@ -174,12 +174,42 @@ def _step_ages(daewoon_num: int, step: int) -> Tuple[int, int]:
     return start, start + 9
 
 
+def _core_items(saju: Dict[str, Any], facts: List[Dict[str, Any]], fact: Dict[str, Any], age: int, gender: str, past: bool) -> List[Dict[str, Any]]:
+    """한 10년의 핵심 영역. 영향도 상위만 남기고, 지난 구간은 회고로 바꾼다."""
+    prev = next((item for item in facts if item["step"] == fact["step"] - 1), None)
+    pipeline = build_domain_pipeline(saju, fact, age, gender, debug=True, prev_fact=prev)
+    scores = pipeline.get("domain_scores") or []
+    primary = [item for item in scores if item.get("priority_tier") == "primary"]
+    if not primary:
+        eligible = [
+            item for item in pipeline.get("debug_all_domains") or []
+            if item.get("eligible") and int(item.get("activation") or 0) > 0
+        ]
+        peak = max((int(item.get("activation") or 0) for item in eligible), default=0)
+        primary = [item for item in eligible if int(item.get("activation") or 0) == peak]
+    items = []
+    for item in primary:
+        activation = int(item.get("activation") or 0)
+        phrase = (item.get("manifestation") or [""])[0] if activation >= 3 else ""
+        if past and isinstance(phrase, str) and phrase:
+            phrase = to_past(phrase if phrase.endswith(".") else phrase + ".")
+        items.append({
+            "domain": item.get("domain"),
+            "label": item.get("label"),
+            "manifestation": phrase,
+            "valence": item.get("valence"),
+            "activation": activation,
+        })
+    return items
+
+
 def _twenty_year_story(
     saju: Dict[str, Any],
     facts: List[Dict[str, Any]],
     fact: Dict[str, Any],
     daewoon_num: int,
     age: int,
+    gender: str,
 ) -> Optional[Dict[str, Any]]:
     """같은 십성 그룹이 이어진 두 대운의 총평·전반·후반. 10년 단독이면 None."""
     if not fact.get("is_twenty_years"):
@@ -208,6 +238,20 @@ def _twenty_year_story(
         back_past=(back_ages[1] < age),
     )
     story["role"] = fact.get("twenty_role")
+    front_core = _core_items(saju, facts, front_fact, front_ages[0], gender, front_ages[1] < age)
+    back_core = _core_items(saju, facts, back_fact, back_ages[0], gender, back_ages[1] < age)
+    front_keys = tuple(item.get("domain") or "" for item in front_core)
+    back_keys = tuple(item.get("domain") or "" for item in back_core)
+    if core_continues(front_rel, back_rel, front_keys, back_keys):
+        story["core_mode"] = "shared"
+        story["core_shared"] = front_core
+        story["core_front"] = []
+        story["core_back"] = []
+    else:
+        story["core_mode"] = "split"
+        story["core_shared"] = []
+        story["core_front"] = front_core
+        story["core_back"] = back_core
     return story
 
 
@@ -290,7 +334,7 @@ def analyze_daewoon_period(
     )
     # 대운의 마지막 나이가 현재 나이보다 작으면 이미 지난 10년이다.
     is_past_decade = (start_age + 9) < age
-    twenty_story = _twenty_year_story(saju, facts, fact, daewoon_num, age)
+    twenty_story = _twenty_year_story(saju, facts, fact, daewoon_num, age, gender)
     if child_copy and effective_age < 18 and "allowance_economy" in domain_analysis:
         domain_analysis.pop("allowance_economy", None)
     domain_analysis = overlay_domain_analysis(
