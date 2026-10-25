@@ -148,7 +148,7 @@ def test_sections_keep_one_direction():
     hobby["active_activities"] = "크로스핏으로 기록을 단축해요. 클라이밍으로 완등해요. 새로운 종목을 많이 시작해요."
     hobby["benefits"] = "근력이 올라요. 타인의 주목을 받아요."
     calm = assemble(travel, hobby, move_high=False, play_high=True, company="either", timing_months=["4월", "6월", "7월"])
-    assert "가까운" in calm["section_1_overall_flow"]
+    assert "HFLOW" in calm["section_1_overall_flow"]
     assert "대담" not in calm["section_1_overall_flow"]
     assert "극적" not in calm["section_1_overall_flow"]
     assert "액티비티" not in calm["section_1_overall_flow"]
@@ -186,6 +186,24 @@ def test_sections_keep_one_direction():
     assert "해외" not in active["symbol"]["headline"]
     assert "주목" not in active["section_6_final_reward"]
     assert "완등" not in active["section_6_final_reward"]
+
+
+def test_style_definition_comes_before_lodging_and_company():
+    travel = _travel()
+    travel["travel_style"] = (
+        "숙소는 조용한 한옥이 맞아요. "
+        "동행은 말수가 적은 사람이 좋아요. "
+        "올해 여행 스타일은 아늑한 휴양형이에요."
+    )
+    data = assemble(travel, _hobby(), move_high=False, play_high=False, company="either", timing_months=["8월"])
+    text = data["section_2_travel_style"]
+    assert text.index("휴양형") < text.index("한옥")
+    assert text.index("휴양형") < text.index("동행")
+
+    travel["travel_style"] = "숙소는 조용한 한옥이 맞아요. 가족이나 연인과 함께 조용히 떠납니다."
+    led = assemble(travel, _hobby(), move_high=False, play_high=False, company="either", timing_months=["8월"])
+    body = led["section_2_travel_style"]
+    assert body.index("조용히") < body.index("한옥")
 
 
 def test_distinct_stored_sentences_stay_and_paraphrases_drop():

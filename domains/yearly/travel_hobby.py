@@ -280,6 +280,66 @@ def _pick_hobby(text: str, used: Set[str], play_high: bool) -> List[str]:
     return picked
 
 
+_HYPE = ("완벽하게", "극대화", "압도", "최고의", "최고로", "눈부신", "놀라운", "탁월", "온몸", "짜릿", "전율")
+_STYLE_CONFLICT = {
+    "rest": ("핫플", "액티비티", "강렬", "대담"),
+    "plan": ("발길", "즉흥", "동선 없이"),
+    "impulse": ("통제", "스케줄"),
+}
+
+
+def _style_role(sentence: str) -> str:
+    if _has(sentence, ("무리하면", "주의할", "지치기", "컨디션이")):
+        return "caution"
+    if _has(sentence, ("스타일", "형입니다", "형이에요", "여행이 맞", "잘 맞는 여행")):
+        return "define"
+    if _has(sentence, ("숙소", "호텔", "펜션", "한옥", "독채", "동행", "연인", "가족", "친구", "동반", "일정", "기간", "짐", "준비물", "캐리어", "체력")):
+        return "detail"
+    return "body"
+
+
+def _plain_prefer(sentences: List[str]) -> List[str]:
+    """같은 내용이면 과장된 문장 대신 담백한 문장을 남긴다."""
+    kept: List[str] = []
+    for sentence in sentences:
+        if _has(sentence, _HYPE) and any(
+            not _has(other, _HYPE) and _similar(sentence, other) for other in sentences
+        ):
+            continue
+        kept.append(sentence)
+    return kept
+
+
+def _detail_rank(sentence: str) -> int:
+    if _has(sentence, ("숙소", "호텔", "펜션", "한옥", "독채")):
+        return 3
+    if _has(sentence, ("짐", "준비물", "캐리어", "체력")):
+        return 2
+    if _has(sentence, ("일정", "기간", "스케줄")):
+        return 1
+    return 0
+
+
+def _arrange_style(sentences: List[str]) -> List[str]:
+    """스타일 정의, 부연, 그 스타일에 맞는 세부 조언, 주의 순으로 묶는다."""
+    sentences = _plain_prefer(sentences)
+    define = [s for s in sentences if _style_role(s) == "define"]
+    body = [s for s in sentences if _style_role(s) == "body"]
+    detail = [s for s in sentences if _style_role(s) == "detail"]
+    caution = [s for s in sentences if _style_role(s) == "caution"]
+    anchor = " ".join(define + body)
+    if _has(anchor, ("휴양", "조용", "휴식", "아늑")):
+        detail = [s for s in detail if not _has(s, _STYLE_CONFLICT["rest"])]
+    elif _has(anchor, ("스케줄", "효율", "동선")) and not _has(anchor, ("즉흥", "발길")):
+        detail = [s for s in detail if not _has(s, _STYLE_CONFLICT["plan"])]
+    detail = sorted(detail, key=_detail_rank)
+    if define or body:
+        groups = [define + body, detail, caution[:1]]
+    else:
+        groups = [[s for s in detail if _detail_rank(s) == 0], [s for s in detail if _detail_rank(s) > 0], caution[:1]]
+    return [" ".join(group) for group in groups if group]
+
+
 def _take(text: str, used: Set[str], pred: Optional[Callable[[str], bool]] = None) -> List[str]:
     """걸러진 문장 중 서로 다른 내용만 남긴다. 개수를 미리 자르지 않는다."""
     picked: List[str] = []
@@ -323,12 +383,16 @@ def assemble(
     axis = (move_high, play_high)
     lead_flow = str(t["overall_flow"] if lead_travel else h["overall_flow"])
 
-    intro = _OPENING[axis].split(".")[0].strip() + "."
-    used.add(intro)
-    flow = _take(lead_flow, used, pred=lambda sentence: not _opposes_move(sentence, move_high))
-    parts = [intro, *flow] if flow else [_OPENING[axis]]
+    flow = _plain_prefer(_take(lead_flow, used, pred=lambda sentence: not _opposes_move(sentence, move_high)))
+    if flow:
+        lead_bits = [s for s in flow if _has(s, ("흐름", "방향", "진행", "해입니다", "해예요"))]
+        rest_bits = [s for s in flow if s not in lead_bits]
+        parts = [" ".join(lead_bits + rest_bits)]
+    else:
+        parts = [_OPENING[axis]]
+        used.add(_OPENING[axis])
 
-    style = _take(str(t["travel_style"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high))
+    style = _arrange_style(_take(str(t["travel_style"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high)))
     if not style:
         style = [
             "기간은 짧게 잡고, 하루 일정은 비워 두는 편이 맞아요."
