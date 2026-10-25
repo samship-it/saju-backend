@@ -60,27 +60,28 @@ def test_fields_do_not_reuse_the_same_source_paragraph():
     assert "TFLOW" in moved["section_1_overall_flow"]
     assert "HFLOW" not in moved["section_1_overall_flow"]
     assert "TSTYLE" in moved["section_2_travel_style"]
-    assert "TSPOT" in moved["section_3_recommended_spot"]
+    assert "TSPOT" not in moved["section_3_recommended_spot"]
     assert "TLUCK" not in moved["section_3_recommended_spot"]
     assert "4월" in moved["section_3_recommended_spot"]
     assert "HACT" in moved["section_4_matched_activity"]
     assert "HFLOW" not in moved["section_4_matched_activity"]
-    assert "HGAIN" in moved["section_6_final_reward"]
     assert "TLUCK" in moved["section_6_final_reward"]
+    assert "HGAIN" in moved["section_6_final_reward"]
     assert moved["symbol"]["keywords"][0] == "#이동"
     assert moved["symbol"]["object"] == "지도"
     assert moved["symbol"]["headline"] == "TLINE"
 
     both = assemble(_travel(), _hobby(), move_high=True, play_high=True, company="either", timing_months=["5월"])
     assert "TFLOW" in both["section_1_overall_flow"]
-    assert "HFLOW" in both["section_1_overall_flow"]
+    assert "HFLOW" not in both["section_1_overall_flow"]
     assert "HFLOW" not in both["section_4_matched_activity"]
 
     stayed = assemble(_travel(), _hobby(), move_high=False, play_high=True, company="together", timing_months=["6월"])
     assert "HFLOW" in stayed["section_1_overall_flow"]
     assert "TFLOW" not in stayed["section_1_overall_flow"]
     assert stayed["symbol"]["headline"] == "HLINE"
-    assert "HGAIN" in stayed["section_6_final_reward"].split("TLUCK")[0]
+    assert "HGAIN" in stayed["section_6_final_reward"]
+    assert "TLUCK" in stayed["section_6_final_reward"]
 
 
 def test_solo_verdict_drops_the_opposite_hobby_paragraph():
@@ -112,6 +113,78 @@ def test_axes_separate_movement_and_company():
     }, "乙丑")
     assert together["move_high"] is False
     assert together["company"] == "together"
+
+
+def test_combined_view_drops_seasonal_repeats_and_ungrounded_claims():
+    travel = _travel()
+    travel["overall_flow"] = "올해는 숨통이 트이는 흐름이에요. 초봄에는 제주 동쪽 바닷가로 떠나요. 한여름에는 해외로 나가요."
+    travel["travel_style"] = "짧은 일정으로 혼자 걷는 편이 맞아요. 오픈카를 타고 익스트림을 즐겨요."
+    travel["recommended_spots"] = "서쪽 방위로 가면 좋아요. 조용한 곳이 마음에 맞아요."
+    travel["travel_luck"] = "일정 끝을 비워 두면 예상 못 한 사람을 만나요."
+    hobby = _hobby("혼자 하는 시간이 필요해요.")
+    hobby["overall_flow"] = "취미는 깊이를 보는 해예요. 가을에는 전시회를 열어요."
+    hobby["active_activities"] = "크로스핏과 웨이트가 잘 맞아요. 펜으로 그림을 그리는 시간이 잘 맞아요."
+    data = assemble(travel, hobby, move_high=True, play_high=True, company="solo", timing_months=["4월"])
+    blob = " ".join(str(data[key]) for key in FIELDS if key != "symbol")
+    for word in ("제주", "동쪽", "서쪽", "해외", "오픈카", "익스트림", "크로스핏", "웨이트", "초봄", "한여름", "가을"):
+        assert word not in blob
+    assert "숨통이 트이는 흐름" in data["section_1_overall_flow"]
+    assert "취미는 깊이를" not in data["section_1_overall_flow"]
+    assert "혼자 걷는" in data["section_2_travel_style"]
+    assert "4월" in data["section_3_recommended_spot"]
+    assert "조용한 곳" not in data["section_3_recommended_spot"]
+    assert "그림을 그리는" in data["section_4_matched_activity"]
+    assert "얕아져요" in data["section_6_final_reward"]
+
+
+def test_sections_keep_one_direction():
+    travel = _travel()
+    travel["one_line"] = "화려한 해외여행"
+    travel["overall_flow"] = "극적인 여행 장면이 연출돼요. 익숙한 길에서 조금 벗어나면 충분해요. 대담한 해외여행과 강렬한 액티비티가 맞아요."
+    travel["travel_style"] = "짧게 다녀오는 여행이 맞아요. 하루에 여러 곳을 촘촘하게 돌아요. 일정은 꽉 채워서 아침부터 밤까지 돌아요. 자연과 도시와 액티비티를 함께 즐겨요."
+    travel["recommended_spots"] = "봄과 여름과 가을과 겨울이 모두 좋아요. 남쪽이나 동쪽으로 가세요."
+    travel["travel_luck"] = "운명적인 만남이 찾아와요."
+    hobby = _hobby("함께 클라이밍을 하면 좋아요. 그룹으로 운동해요.")
+    hobby["active_activities"] = "크로스핏으로 기록을 단축해요. 클라이밍으로 완등해요. 새로운 종목을 많이 시작해요."
+    hobby["benefits"] = "근력이 올라요. 타인의 주목을 받아요."
+    calm = assemble(travel, hobby, move_high=False, play_high=True, company="either", timing_months=["4월", "6월", "7월"])
+    assert "가까운" in calm["section_1_overall_flow"]
+    assert "대담" not in calm["section_1_overall_flow"]
+    assert "극적" not in calm["section_1_overall_flow"]
+    assert "액티비티" not in calm["section_1_overall_flow"]
+    assert "짧게" in calm["section_2_travel_style"] and "비워" in calm["section_2_travel_style"]
+    assert "여러 곳" not in calm["section_2_travel_style"]
+    assert "촘촘" not in calm["section_2_travel_style"]
+    assert "꽉 채" not in calm["section_2_travel_style"]
+    spot = calm["section_3_recommended_spot"]
+    assert "4월" in spot and "6월" in spot and "7월" in spot
+    assert "남쪽" not in spot and "동쪽" not in spot and "겨울" not in spot
+    assert "크로스핏" not in calm["section_4_matched_activity"]
+    assert "클라이밍" not in calm["section_4_matched_activity"]
+    assert "하나에" in calm["section_4_matched_activity"]
+    assert "클라이밍" not in calm["section_5_solo_vs_together"]
+    assert "여행이든 취미든" in calm["section_5_solo_vs_together"]
+    reward = calm["section_6_final_reward"]
+    assert "운명" not in reward and "주목" not in reward and "근력" not in reward
+    assert "깊이" in reward
+
+    active_travel = _travel()
+    active_travel["one_line"] = "화려한 해외여행"
+    active_travel["overall_flow"] = "서두르지 않아도 돼요. 익숙한 길만 걸어요."
+    active_travel["travel_style"] = "하루에 여러 곳을 돌아요."
+    active_travel["travel_luck"] = "타인의 주목을 받아요."
+    active_hobby = _hobby()
+    active_hobby["benefits"] = "완등으로 기록이 줄어요."
+    active_hobby["active_activities"] = "악기를 배우는 시간이 맞아요."
+    active = assemble(active_travel, active_hobby, move_high=True, play_high=False, company="solo", timing_months=[])
+    assert "서두르지" not in active["section_1_overall_flow"]
+    assert "여러 곳" not in active["section_2_travel_style"]
+    assert "월" not in active["section_3_recommended_spot"]
+    assert "방향" in active["section_3_recommended_spot"]
+    assert "악기" in active["section_4_matched_activity"]
+    assert "해외" not in active["symbol"]["headline"]
+    assert "주목" not in active["section_6_final_reward"]
+    assert "완등" not in active["section_6_final_reward"]
 
 
 def test_no_runtime_llm_on_the_module():

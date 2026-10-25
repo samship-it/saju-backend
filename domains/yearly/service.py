@@ -518,7 +518,7 @@ def _build_travel_hobby(year, month, day, hour, minute, gender, is_lunar, ty):
     )
     yy = str(ty)[2:]
     out = {
-        "content_type": f"{yy}년 여행·취미운",
+        "content_type": f"{yy}년 여행·취미",
         "category": "travel_hobby",
         "target_year": ty,
         "day_master": saju.get("day_master"),
