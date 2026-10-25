@@ -60,7 +60,7 @@ def test_fields_do_not_reuse_the_same_source_paragraph():
     assert "TFLOW" in moved["section_1_overall_flow"]
     assert "HFLOW" not in moved["section_1_overall_flow"]
     assert "TSTYLE" in moved["section_2_travel_style"]
-    assert "TSPOT" not in moved["section_3_recommended_spot"]
+    assert "TSPOT" in moved["section_3_recommended_spot"]
     assert "TLUCK" not in moved["section_3_recommended_spot"]
     assert "4월" in moved["section_3_recommended_spot"]
     assert "HACT" in moved["section_4_matched_activity"]
@@ -132,7 +132,7 @@ def test_combined_view_drops_seasonal_repeats_and_ungrounded_claims():
     assert "취미는 깊이를" not in data["section_1_overall_flow"]
     assert "혼자 걷는" in data["section_2_travel_style"]
     assert "4월" in data["section_3_recommended_spot"]
-    assert "조용한 곳" not in data["section_3_recommended_spot"]
+    assert "조용한 곳" in data["section_3_recommended_spot"]
     assert "그림을 그리는" in data["section_4_matched_activity"]
     assert "얕아져요" in data["section_6_final_reward"]
 
@@ -152,7 +152,8 @@ def test_sections_keep_one_direction():
     assert "대담" not in calm["section_1_overall_flow"]
     assert "극적" not in calm["section_1_overall_flow"]
     assert "액티비티" not in calm["section_1_overall_flow"]
-    assert "짧게" in calm["section_2_travel_style"] and "비워" in calm["section_2_travel_style"]
+    assert "짧게" in calm["section_2_travel_style"]
+    assert "비워" not in calm["section_2_travel_style"]
     assert "여러 곳" not in calm["section_2_travel_style"]
     assert "촘촘" not in calm["section_2_travel_style"]
     assert "꽉 채" not in calm["section_2_travel_style"]
@@ -162,8 +163,8 @@ def test_sections_keep_one_direction():
     assert "크로스핏" not in calm["section_4_matched_activity"]
     assert "클라이밍" not in calm["section_4_matched_activity"]
     assert "하나에" in calm["section_4_matched_activity"]
-    assert "클라이밍" not in calm["section_5_solo_vs_together"]
-    assert "여행이든 취미든" in calm["section_5_solo_vs_together"]
+    assert "함께 클라이밍" in calm["section_5_solo_vs_together"]
+    assert "혼자만" not in calm["section_5_solo_vs_together"]
     reward = calm["section_6_final_reward"]
     assert "운명" not in reward and "주목" not in reward and "근력" not in reward
     assert "깊이" in reward
@@ -180,11 +181,39 @@ def test_sections_keep_one_direction():
     assert "서두르지" not in active["section_1_overall_flow"]
     assert "여러 곳" not in active["section_2_travel_style"]
     assert "월" not in active["section_3_recommended_spot"]
-    assert "방향" in active["section_3_recommended_spot"]
+    assert "TSPOT" in active["section_3_recommended_spot"]
     assert "악기" in active["section_4_matched_activity"]
     assert "해외" not in active["symbol"]["headline"]
     assert "주목" not in active["section_6_final_reward"]
     assert "완등" not in active["section_6_final_reward"]
+
+
+def test_distinct_stored_sentences_stay_and_paraphrases_drop():
+    travel = _travel()
+    travel["overall_flow"] = (
+        "골목의 불빛 아래에서 발걸음이 느려져요. "
+        "골목의 불빛 아래에서 발걸음이 느려집니다. "
+        "바닷바람이 부는 언덕에서 숨을 고르는 시간이 필요해요."
+    )
+    travel["recommended_spots"] = "호수가 고요한 곳이 마음에 맞아요. 남쪽으로 떠나야 해요."
+    hobby = _hobby("친구와 전시를 보는 시간이 좋아요. 혼자 정리하는 저녁도 필요해요.")
+    hobby["active_activities"] = (
+        "수채화로 하루의 색을 남기는 시간이 맞아요. "
+        "수채화로 하루의 색을 남기는 시간이 잘 맞아요. "
+        "어두운 방에서 필름을 현상하는 과정이 집중을 되찾아 줘요."
+    )
+    data = assemble(travel, hobby, move_high=False, play_high=False, company="either", timing_months=["3월"])
+    flow = data["section_1_overall_flow"]
+    assert flow.count("골목의 불빛") == 1
+    assert "바닷바람" in flow
+    assert "남쪽" not in data["section_3_recommended_spot"]
+    assert "호수가 고요한" in data["section_3_recommended_spot"]
+    assert "3월" in data["section_3_recommended_spot"]
+    hobby_text = data["section_4_matched_activity"]
+    assert hobby_text.count("수채화") == 1
+    assert "필름" in hobby_text
+    company = data["section_5_solo_vs_together"]
+    assert "전시" in company and "혼자 정리" in company
 
 
 def test_no_runtime_llm_on_the_module():

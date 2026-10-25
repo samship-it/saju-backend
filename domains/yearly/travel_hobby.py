@@ -43,17 +43,17 @@ _SENTENCE = re.compile(r"(?<=[\.!?])\s+")
 _SEASON = ("연초", "초봄", "한여름", "늦여름", "가을", "겨울", "연말", "상반기", "하반기", "봄", "여름", "사계절", "계절이")
 _UNGROUNDED = (
     "해외", "동쪽", "서쪽", "남쪽", "북쪽", "방위", "제주", "유럽", "일본", "발리", "비행기",
-    "오픈카", "익스트림", "스카이다이빙", "번지", "명소",
+    "오픈카", "익스트림", "스카이다이빙", "번지",
 )
 _NARROW_SPORT = ("크로스핏", "웨이트", "헬스")
 _SPORTS = _NARROW_SPORT + ("클라이밍", "등산", "수영", "요가", "러닝", "달리기", "서핑")
 _STYLE_PILE = ("자연", "도시", "액티비티", "스포츠", "핫플", "액티브", "액션", "축제")
 _DENSE = ("여러 곳", "촘촘", "빡빡", "하루에 여러", "빼곡", "꽉 채", "아침부터 밤", "구석구석", "수없이", "발품")
+_LONG = ("장기 체류", "일주일 이상", "한 달 이상", "몇 달", "넉넉한 기간")
 _BOLD = ("대담", "강렬", "화려", "적극적", "핫플", "액티비티")
 _INTENSE = (
-    "열정", "에너지", "폭발", "극적", "거침", "축제", "액티브", "액션", "도전",
-    "미지", "날아", "강력", "뜨거운", "활기", "뛰어들", "과감", "불타", "한계",
-    "파티", "클럽", "인싸", "휴양", "비행", "역동", "심장", "모험", "승리", "많이 움직",
+    "폭발", "극적", "거침", "미지", "날아", "뛰어들", "과감", "불타",
+    "파티", "클럽", "인싸", "모험", "승리", "많이 움직", "세계를 누",
 )
 _QUIET = ("서두르지", "익숙한 길", "큰 계획", "짧게 다녀", "가까이만")
 _FATE = ("운명", "주목", "환영", "알아봐", "시선", "인생 친구", "인연", "당첨", "행운", "대박", "평생")
@@ -67,7 +67,12 @@ _HOBBY_TYPES = {
     "social": ("동호회", "모임"),
 }
 _SPREAD = ("여러 개", "많이 시작", "이것저것", "종목을 많이")
-_HOT = ("열정", "에너지", "도전", "성취", "역동", "폭발", "활력")
+_EXCLUSIVE = ("혼자만", "오직 혼자", "반드시 혼자", "함께만", "무조건 함께", "반드시 그룹", "단체로만")
+_STOP = {
+    "올해", "여행", "흐름", "취미", "이번", "사람", "시간", "마음", "가장", "정말",
+    "아주", "함께", "혼자", "있는", "하는", "되는", "대한", "통해", "위해", "같은",
+    "이런", "그런", "하며", "면서", "에서", "으로", "입니다", "이에요", "해요", "합니다",
+}
 
 _COMPANY = {
     "solo": "올해는 혼자 움직이는 쪽이 더 잘 맞아요. 사람을 맞추느라 일정이 늘어지면 금방 지칩니다.",
@@ -199,46 +204,61 @@ def _blocked(sentence: str) -> bool:
         or "치트키" in sentence
         or "그 영상" in sentence
         or "등이 있" in sentence
+        or "구체적인 활동으로는" in sentence
     )
 
 
 def _opposes_move(sentence: str, move_high: bool) -> bool:
     """짧은 해에 대담한 일정을, 움직이는 해에 눌러 앉는 문장을 붙이지 않는다."""
-    if (
-        _blocked(sentence)
-        or _has(sentence, _DENSE)
-        or _has(sentence, _FATE)
-        or "실천 가이드" in sentence
-        or sum(word in sentence for word in _SPORTS) >= 2
-        or sum(word in sentence for word in _STYLE_PILE) >= 2
-    ):
+    if _blocked(sentence) or _has(sentence, _FATE) or _has(sentence, _DENSE) or "실천 가이드" in sentence:
+        return True
+    if sum(word in sentence for word in _SPORTS) >= 2 or sum(word in sentence for word in _STYLE_PILE) >= 2:
         return True
     if move_high:
         return _has(sentence, _QUIET)
-    return _has(sentence, _BOLD) or _has(sentence, _INTENSE)
+    return _has(sentence, _BOLD) or _has(sentence, _INTENSE) or _has(sentence, _LONG)
 
 
 def _hobby_types(sentence: str) -> List[str]:
     return [name for name, words in _HOBBY_TYPES.items() if _has(sentence, words)]
 
 
+def _content_tokens(sentence: str) -> Set[str]:
+    return {token for token in re.findall(r"[가-힣]{2,}", sentence) if token not in _STOP}
+
+
+def _similar(left: str, right: str) -> bool:
+    """같은 말의 반복만 걸러 낸다. 소재가 다르면 남긴다."""
+    if left.strip() == right.strip():
+        return True
+    a, b = _content_tokens(left), _content_tokens(right)
+    if len(a) < 2 or len(b) < 2:
+        return False
+    return len(a & b) / min(len(a), len(b)) >= 0.72
+
+
+def _overlaps(sentence: str, seen: Set[str]) -> bool:
+    return any(_similar(sentence, prev) for prev in seen)
+
+
 def _pick_hobby(text: str, used: Set[str], play_high: bool) -> List[str]:
-    """한 가지 유형만 남긴다. 종목이 둘 이상이거나 기록 단정은 넣지 않는다."""
+    """같은 유형의 문장을 겹치지 않게 남긴다. 유형을 한꺼번에 늘어놓지 않는다."""
+    del play_high  # 유형은 저장 문장의 비중으로 고른다. 운동으로 고정하지 않는다.
     kept: List[str] = []
     for sentence in _sentences(text):
-        if sentence in used or _blocked(sentence) or _has(sentence, _RECORD) or _has(sentence, _SPREAD):
+        if sentence in used or _blocked(sentence) or _overlaps(sentence, used):
             continue
-        if "보다는" in sentence or _has(sentence, _NARROW_SPORT):
+        if _has(sentence, _RECORD) or _has(sentence, _SPREAD) or _has(sentence, _NARROW_SPORT):
+            continue
+        if "보다는" in sentence or _has(sentence, _FATE) or _has(sentence, _INTENSE):
             continue
         kinds = _hobby_types(sentence)
-        sports = sum(word in sentence for word in _SPORTS)
-        bodyish = "body" in kinds or _has(sentence, _BODY_PUSH)
-        if sports >= 2 or len(kinds) >= 2 or (bodyish and not play_high):
+        if sum(word in sentence for word in _SPORTS) >= 2 or len(kinds) >= 2:
             continue
         kept.append(sentence)
     if not kept:
         return []
-    preference = ("make", "mind", "watch", "social", "body")
+    preference = ("make", "mind", "watch", "social", "other", "body")
     counts: Dict[str, int] = {}
     for sentence in kept:
         kinds = _hobby_types(sentence)
@@ -249,32 +269,29 @@ def _pick_hobby(text: str, used: Set[str], play_high: bool) -> List[str]:
         return (counts[name], -preference.index(name) if name in preference else -len(preference))
 
     chosen = max(counts, key=rank)
+    picked: List[str] = []
     for sentence in kept:
         kinds = _hobby_types(sentence)
         name = kinds[0] if kinds else "other"
-        if name == chosen:
-            used.add(sentence)
-            return [sentence]
-    return []
-
-
-def _hot(sentence: str) -> Set[str]:
-    return {word for word in _HOT if word in sentence}
-
-
-def _take(text: str, used: Set[str], limit: int, pred: Optional[Callable[[str], bool]] = None) -> List[str]:
-    picked: List[str] = []
-    for sentence in _sentences(text):
-        if sentence in used or _blocked(sentence):
-            continue
-        if pred is not None and not pred(sentence):
-            continue
-        if picked and _hot(sentence) and _hot(sentence) <= _hot(" ".join(picked)):
+        if name != chosen or _overlaps(sentence, used) or _overlaps(sentence, set(picked)):
             continue
         used.add(sentence)
         picked.append(sentence)
-        if len(picked) >= limit:
-            break
+    return picked
+
+
+def _take(text: str, used: Set[str], pred: Optional[Callable[[str], bool]] = None) -> List[str]:
+    """걸러진 문장 중 서로 다른 내용만 남긴다. 개수를 미리 자르지 않는다."""
+    picked: List[str] = []
+    for sentence in _sentences(text):
+        if sentence in used or _blocked(sentence) or _overlaps(sentence, used):
+            continue
+        if pred is not None and not pred(sentence):
+            continue
+        if _overlaps(sentence, set(picked)):
+            continue
+        used.add(sentence)
+        picked.append(sentence)
     return picked
 
 
@@ -306,56 +323,62 @@ def assemble(
     axis = (move_high, play_high)
     lead_flow = str(t["overall_flow"] if lead_travel else h["overall_flow"])
 
-    parts = [_OPENING[axis], *_take(lead_flow, used, 1, pred=lambda sentence: not _opposes_move(sentence, move_high))]
+    intro = _OPENING[axis].split(".")[0].strip() + "."
+    used.add(intro)
+    flow = _take(lead_flow, used, pred=lambda sentence: not _opposes_move(sentence, move_high))
+    parts = [intro, *flow] if flow else [_OPENING[axis]]
 
-    if move_high:
-        style = _take(str(t["travel_style"]), used, 1, pred=lambda sentence: not _opposes_move(sentence, True))
-    else:
-        style = ["기간은 짧게 잡고, 하루 일정은 비워 두는 편이 맞아요."]
-        style.extend(_take(
-            str(t["travel_style"]), used, 1,
-            pred=lambda sentence: not _opposes_move(sentence, False) and "짧게" not in sentence,
-        ))
+    style = _take(str(t["travel_style"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high))
     if not style:
-        style = ["장소를 여러 종류로 늘리기보다, 움직이는 방식 하나를 정하는 편이 맞아요."]
+        style = [
+            "기간은 짧게 잡고, 하루 일정은 비워 두는 편이 맞아요."
+            if not move_high
+            else "장소를 여러 종류로 늘리기보다, 움직이는 방식 하나를 정하는 편이 맞아요."
+        ]
 
+    spot = _take(str(t["recommended_spots"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high))
     if months:
         when = ", ".join(months[:3])
-        spot = [f"올해 흐름이 더 편한 달은 {when}이에요. 여행은 그 무렵이 덜 거슬리고, 그 밖에는 계절마다 떠날 필요는 없어요."]
-    else:
-        spot = ["특정한 달이나 방향을 정해 두지는 않았어요. 일정과 체력이 맞는 거리를 고르면 충분해요."]
+        spot.insert(0, f"올해 흐름이 더 편한 달은 {when}이에요.")
+    elif not spot:
+        spot = ["특정한 달이나 방향을 정해 두지는 않았어요. 일정과 체력이 맞는 거리와 분위기를 고르면 충분해요."]
 
     activity = _pick_hobby(str(h["active_activities"]), used, play_high)
     if not activity:
         activity = ["새로운 것을 여러 개 벌리기보다, 이미 손이 가는 것 하나에 머무는 편이 맞아요."]
 
-    company_parts = [_COMPANY[company]]
-    detail = str(h.get("solo_vs_group") or "")
-    lean = _lean(detail)
-    if company != "either" and lean == company:
-        company_parts.extend(_take(
-            detail, used, 1,
-            pred=lambda sentence: not _has(sentence, _NARROW_SPORT) and not _has(sentence, _RECORD),
-        ))
+    def _company_ok(sentence: str) -> bool:
+        if _has(sentence, _NARROW_SPORT) or _has(sentence, _RECORD) or _has(sentence, _FATE) or _has(sentence, _INTENSE):
+            return False
+        if _has(sentence, _EXCLUSIVE):
+            return False
+        if company == "either":
+            return True
+        return _lean(sentence) in (company, "either")
+
+    company_body = _take(str(h.get("solo_vs_group") or ""), used, pred=_company_ok)
+    company_parts = company_body or [_COMPANY[company]]
 
     reward: List[str] = []
     travel_gain = _take(
-        str(t["travel_luck"]), used, 1,
+        str(t["travel_luck"]), used,
         pred=lambda sentence: not _has(sentence, _FATE) and not _opposes_move(sentence, move_high),
     )
     hobby_gain = _take(
-        str(h["benefits"]), used, 1,
+        str(h["benefits"]), used,
         pred=lambda sentence: (
             not _has(sentence, _RECORD)
             and not _has(sentence, _FATE)
             and not _has(sentence, _BODY_PUSH)
-            and (play_high or not _has(sentence, _INTENSE))
+            and not _opposes_move(sentence, move_high)
         ),
     )
     if travel_gain:
         reward.append(f"길 위에서는 {travel_gain[0]}")
+        reward.extend(travel_gain[1:])
     if hobby_gain:
         reward.append(f"취미에서는 {hobby_gain[0]}")
+        reward.extend(hobby_gain[1:])
     reward.append(_CAUTION[axis])
 
     headline = str(t["one_line"] if lead_travel else h["one_line"])
