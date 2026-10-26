@@ -57,7 +57,7 @@ _INTENSE = (
 )
 _QUIET = ("서두르지", "익숙한 길", "큰 계획", "짧게 다녀", "가까이만")
 _FATE = ("운명", "주목", "환영", "알아봐", "시선", "인생 친구", "인연", "당첨", "행운", "대박", "평생")
-_RECORD = ("기록", "단축", "완등", "근력")
+_RECORD = ("단축", "완등", "근력", "기록을 깨", "기록 경신", "최고 기록")
 _BODY_PUSH = ("근육", "중량", "격렬", "심폐", "비명", "체력", "운동")
 _HOBBY_TYPES = {
     "body": _SPORTS,
@@ -67,7 +67,13 @@ _HOBBY_TYPES = {
     "social": ("동호회", "모임"),
 }
 _SPREAD = ("여러 개", "많이 시작", "이것저것", "종목을 많이")
-_EXCLUSIVE = ("혼자만", "오직 혼자", "반드시 혼자", "함께만", "무조건 함께", "반드시 그룹", "단체로만")
+_EXCLUSIVE = ("오직 혼자", "반드시 혼자", "혼자만 하", "혼자만 해", "함께만", "무조건 함께", "반드시 그룹", "단체로만")
+_PUSH_ALL = ("모든 에너지", "체력이 소모되어도", "1분 1초", "강행군")
+_CHANCE = ("돌발", "우연", "변수", "예측 불허", "뜻밖", "우연히")
+_CHANCE_ANCHOR = (
+    "맛집", "명소", "사람", "친구", "도움", "사진", "스냅", "카메라", "아카이빙",
+    "골목", "찻집", "풍경", "낙엽", "일기", "코스",
+)
 _STOP = {
     "올해", "여행", "흐름", "취미", "이번", "사람", "시간", "마음", "가장", "정말",
     "아주", "함께", "혼자", "있는", "하는", "되는", "대한", "통해", "위해", "같은",
@@ -75,9 +81,16 @@ _STOP = {
 }
 
 _COMPANY = {
-    "solo": "올해는 혼자 움직이는 쪽이 더 잘 맞아요. 사람을 맞추느라 일정이 늘어지면 금방 지칩니다.",
-    "together": "올해는 함께 나갈 때 흥이 살아나요. 혼자 버티기보다 한두 사람과 호흡을 맞추는 편이 편합니다.",
-    "either": "여행이든 취미든, 혼자 있는 시간과 한두 사람과 있는 시간이 둘 다 필요해요. 어느 한쪽만으로 한 해를 채우면 금방 지칩니다.",
+    "solo": "취미는 혼자 두는 시간이 더 잘 맞아요. 사람을 맞추느라 흐름이 끊기면 금방 지칩니다.",
+    "together": "취미는 한두 사람과 함께할 때 흥이 살아나요. 혼자 버티기보다 호흡을 맞추는 편이 편합니다.",
+    "either": "취미는 혼자 있는 시간과 한두 사람과 있는 시간이 둘 다 필요해요. 어느 한쪽만으로 한 해를 채우면 금방 지칩니다.",
+}
+
+# 축이 같아도 스타일이 다르면 마지막 조언이 달라진다. 저장 문장에 그 스타일이 있을 때만 고른다.
+_STYLE_CLOSE = {
+    "active": "움직이는 양과 회복하는 양을 같이 두세요. 힘을 쓴 뒤에 쉬는 시간이 있어야 성취도 취미의 몰입도 남아요.",
+    "rest": "일정을 더 채우기보다, 머무른 자리에서 충분히 쉬는 편이 올해의 여행과 취미에 맞아요.",
+    "impulse": "경로가 바뀌는 즉흥은 두되, 이동만 늘리지는 마세요. 한 번 움직인 뒤에는 쉬는 시간이 필요해요.",
 }
 
 _FALLBACK_TRAVEL = {
@@ -168,16 +181,6 @@ def _tags(keywords) -> List[str]:
         seen.add(word)
         out.append(f"#{word}")
     return out
-
-
-def _lean(text: str) -> str:
-    solo = text.count("혼자")
-    together = text.count("함께") + text.count("같이") + text.count("동호회") + text.count("그룹")
-    if solo > together:
-        return "solo"
-    if together > solo:
-        return "together"
-    return "either"
 
 
 def _body(src: Optional[dict], fallback: dict) -> dict:
@@ -320,11 +323,50 @@ def _detail_rank(sentence: str) -> int:
     return 0
 
 
-def _arrange_style(sentences: List[str]) -> List[str]:
-    """스타일 정의, 부연, 그 스타일에 맞는 세부 조언, 주의 순으로 묶는다."""
+def _style_tone(text: str) -> str:
+    """보이는 문장에 실제로 있는 스타일만 고른다. 연도를 활동형으로 몰지 않는다."""
+    if _has(text, ("즉흥", "탐험", "배낭")):
+        return "impulse"
+    if _has(text, ("휴양", "힐링", "아늑", "치유")):
+        return "rest"
+    if _has(text, ("액티브", "액티비티", "한계", "도전", "원정", "열정")):
+        return "active"
+    return ""
+
+
+def _chance_keep(sentence: str, state: Dict[str, bool]) -> bool:
+    """돌발·우연을 결과 없이 반복하는 문장만 걸러 낸다. 맛집·사진처럼 결과가 있으면 남긴다."""
+    if not _has(sentence, _CHANCE):
+        return True
+    if state.get("used") and not _has(sentence, _CHANCE_ANCHOR):
+        return False
+    state["used"] = True
+    return True
+
+
+def _keep_style_sentence(sentence: str, move_high: bool, tone: str) -> bool:
+    """스타일 이름 자체는 남긴다. 쉴 틈을 없애라는 조언은 뒤에 오는 회복 조언과 부딪혀 뺀다."""
+    if _blocked(sentence) or _has(sentence, _FATE) or _has(sentence, _DENSE) or _has(sentence, _PUSH_ALL):
+        return False
+    role = _style_role(sentence)
+    if role != "define" and sum(word in sentence for word in _STYLE_PILE) >= 2:
+        return False
+    if role == "define":
+        return True
+    if tone == "active" and role == "body":
+        return not _has(sentence, _QUIET)
+    if tone == "rest":
+        return not _has(sentence, _BOLD) and not _has(sentence, _INTENSE) and not _has(sentence, _LONG)
+    if tone == "impulse" and role == "body":
+        return not _has(sentence, _QUIET)
+    return not _opposes_move(sentence, move_high)
+
+
+def _arrange_style(sentences: List[str], chance: Dict[str, bool]) -> List[str]:
+    """정의 한 문장, 그 스타일의 경험, 동행·일정·준비·숙소 순으로 묶는다."""
     sentences = _plain_prefer(sentences)
     define = [s for s in sentences if _style_role(s) == "define"]
-    body = [s for s in sentences if _style_role(s) == "body"]
+    body = [s for s in sentences if _style_role(s) == "body" and _chance_keep(s, chance)]
     detail = [s for s in sentences if _style_role(s) == "detail"]
     caution = [s for s in sentences if _style_role(s) == "caution"]
     anchor = " ".join(define + body)
@@ -333,11 +375,61 @@ def _arrange_style(sentences: List[str]) -> List[str]:
     elif _has(anchor, ("스케줄", "효율", "동선")) and not _has(anchor, ("즉흥", "발길")):
         detail = [s for s in detail if not _has(s, _STYLE_CONFLICT["plan"])]
     detail = sorted(detail, key=_detail_rank)
-    if define or body:
-        groups = [define + body, detail, caution[:1]]
-    else:
-        groups = [[s for s in detail if _detail_rank(s) == 0], [s for s in detail if _detail_rank(s) > 0], caution[:1]]
+    groups: List[List[str]] = []
+    if define:
+        groups.append(define)
+    if body:
+        groups.append(body)
+    if detail:
+        if define or body:
+            groups.append(detail)
+        else:
+            groups.append([s for s in detail if _detail_rank(s) == 0])
+            rest = [s for s in detail if _detail_rank(s) > 0]
+            if rest:
+                groups.append(rest)
+    if caution:
+        groups.append(caution[:1])
     return [" ".join(group) for group in groups if group]
+
+
+def _arrange_company(sentences: List[str]) -> List[str]:
+    """취미를 혼자 둘 때, 함께할 때, 그날 고르는 말 순. 문장 틀은 저장 문장 그대로다."""
+    solo: List[str] = []
+    together: List[str] = []
+    both: List[str] = []
+    choice: List[str] = []
+    for sentence in sentences:
+        if _has(sentence, ("상황에 맞", "상황에 따", "방식을 자유", "방식을 조절", "방식을 바꾸")):
+            choice.append(sentence)
+            continue
+        alone = _has(sentence, ("혼자", "방 안", "조용히 앉아", "사색"))
+        shared = _has(sentence, ("함께", "같이", "동호회", "모임", "크루", "사람들"))
+        if alone and shared:
+            both.append(sentence)
+        elif alone:
+            solo.append(sentence)
+        elif shared:
+            together.append(sentence)
+        else:
+            both.append(sentence)
+    if solo:
+        return solo + together + both + choice
+    # 혼자 두는 상황 문장이 없으면, 혼자와 함께의 차이를 먼저 말한다.
+    return both + together + choice
+
+
+def _one_drive(sentences: List[str]) -> List[str]:
+    """성취·열정을 같은 수확 안에서 두 번 말하지 않는다."""
+    seen = False
+    kept: List[str] = []
+    for sentence in sentences:
+        if _has(sentence, ("성취", "열정", "돌진")):
+            if seen:
+                continue
+            seen = True
+        kept.append(sentence)
+    return kept
 
 
 def _take(text: str, used: Set[str], pred: Optional[Callable[[str], bool]] = None) -> List[str]:
@@ -392,15 +484,46 @@ def assemble(
         parts = [_OPENING[axis]]
         used.add(_OPENING[axis])
 
-    style = _arrange_style(_take(str(t["travel_style"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high)))
+    chance: Dict[str, bool] = {}
+    style_src = str(t["travel_style"])
+    define_for_tone = [
+        sentence for sentence in _sentences(style_src)
+        if _style_role(sentence) == "define"
+        and not _blocked(sentence)
+        and not _has(sentence, _FATE)
+        and not _has(sentence, _DENSE)
+    ]
+    tone = _style_tone(" ".join(define_for_tone))
+    style = _arrange_style(
+        _take(style_src, used, pred=lambda sentence: _keep_style_sentence(sentence, move_high, tone)),
+        chance,
+    )
     if not style:
         style = [
             "기간은 짧게 잡고, 하루 일정은 비워 두는 편이 맞아요."
             if not move_high
             else "장소를 여러 종류로 늘리기보다, 움직이는 방식 하나를 정하는 편이 맞아요."
         ]
+    # 동행 문장에 즉흥이 있어도 스타일 정의가 액티브면 액티브로 둔다.
+    tone = _style_tone(style[0]) or tone
+    if tone == "active" and _has(" ".join(style), ("에너지", "발산", "온몸")):
+        chance["energy"] = True
 
-    spot = _take(str(t["recommended_spots"]), used, pred=lambda sentence: not _opposes_move(sentence, move_high))
+    def _spot_ok(sentence: str) -> bool:
+        if _opposes_move(sentence, move_high):
+            return False
+        if tone == "impulse" and _has(sentence, ("이동 그 자체", "두루 거치")):
+            return False
+        if (
+            tone == "active"
+            and chance.get("energy")
+            and _has(sentence, ("에너지", "발산", "온몸"))
+            and not _has(sentence, ("동행", "친구", "짐", "숙소", "사람", "명소"))
+        ):
+            return False
+        return _chance_keep(sentence, chance)
+
+    spot = _take(str(t["recommended_spots"]), used, pred=_spot_ok)
     if months:
         when = ", ".join(months[:3])
         spot.insert(0, f"올해 흐름이 더 편한 달은 {when}이에요.")
@@ -412,38 +535,46 @@ def assemble(
         activity = ["새로운 것을 여러 개 벌리기보다, 이미 손이 가는 것 하나에 머무는 편이 맞아요."]
 
     def _company_ok(sentence: str) -> bool:
+        # 여행 동행은 스타일 섹션에 있다. 여기에는 취미를 혼자 둘지 함께할지만 남긴다.
+        if _has(sentence, ("동행은", "숙소는", "캐리어")):
+            return False
         if _has(sentence, _NARROW_SPORT) or _has(sentence, _RECORD) or _has(sentence, _FATE) or _has(sentence, _INTENSE):
             return False
-        if _has(sentence, _EXCLUSIVE):
-            return False
-        if company == "either":
-            return True
-        return _lean(sentence) in (company, "either")
+        return not _has(sentence, _EXCLUSIVE)
 
-    company_body = _take(str(h.get("solo_vs_group") or ""), used, pred=_company_ok)
+    company_body = _arrange_company(_take(str(h.get("solo_vs_group") or ""), used, pred=_company_ok))
     company_parts = company_body or [_COMPANY[company]]
 
     reward: List[str] = []
     travel_gain = _take(
         str(t["travel_luck"]), used,
-        pred=lambda sentence: not _has(sentence, _FATE) and not _opposes_move(sentence, move_high),
-    )
-    hobby_gain = _take(
-        str(h["benefits"]), used,
         pred=lambda sentence: (
-            not _has(sentence, _RECORD)
-            and not _has(sentence, _FATE)
-            and not _has(sentence, _BODY_PUSH)
+            not _has(sentence, _FATE)
+            and not _has(sentence, _PUSH_ALL)
+            and _chance_keep(sentence, chance)
             and not _opposes_move(sentence, move_high)
         ),
     )
+    if tone == "active":
+        travel_gain = _one_drive(travel_gain)
+
+    def _hobby_gain_ok(sentence: str) -> bool:
+        if _blocked(sentence) or _has(sentence, _RECORD) or _has(sentence, _FATE) or _has(sentence, _BODY_PUSH):
+            return False
+        if _has(sentence, ("모든 에너지",)):
+            return False
+        if tone == "active":
+            return True
+        return not _opposes_move(sentence, move_high)
+
+    hobby_gain = _take(str(h["benefits"]), used, pred=_hobby_gain_ok)
     if travel_gain:
-        reward.append(f"길 위에서는 {travel_gain[0]}")
-        reward.extend(travel_gain[1:])
+        reward.append("여행에서 얻는 수확")
+        reward.extend(travel_gain)
     if hobby_gain:
-        reward.append(f"취미에서는 {hobby_gain[0]}")
-        reward.extend(hobby_gain[1:])
-    reward.append(_CAUTION[axis])
+        reward.append("취미에서 얻는 수확")
+        reward.extend(hobby_gain)
+    reward.append(_STYLE_CLOSE.get(tone) or _CAUTION[axis])
 
     headline = str(t["one_line"] if lead_travel else h["one_line"])
     if _opposes_move(headline, move_high):

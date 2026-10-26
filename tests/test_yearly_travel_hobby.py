@@ -50,7 +50,9 @@ def _hobby(solo="혼자 걷는 시간이 필요해요. 함께보다 혼자예요
 
 
 def test_rule_copy_has_no_technical_terms():
-    blob = " ".join(_OPENING.values()) + " " + " ".join(_COMPANY.values())
+    from domains.yearly.travel_hobby import _STYLE_CLOSE
+
+    blob = " ".join(_OPENING.values()) + " " + " ".join(_COMPANY.values()) + " " + " ".join(_STYLE_CLOSE.values())
     for term in BANNED:
         assert term not in blob
 
@@ -84,15 +86,21 @@ def test_fields_do_not_reuse_the_same_source_paragraph():
     assert "TLUCK" in stayed["section_6_final_reward"]
 
 
-def test_solo_verdict_drops_the_opposite_hobby_paragraph():
+def test_hobby_company_keeps_alone_and_together_without_travel():
     data = assemble(
         _travel(),
-        _hobby("함께 동호회에서 같이 배우면 좋아요."),
+        _hobby(
+            "동행은 말수 적은 친구가 좋아요. "
+            "혼자 정리하는 저녁이 집중에 맞아요. "
+            "동호회에서 같이 보면 이야기가 늘어요. "
+            "상황에 맞춰 그날의 방식을 고르면 돼요."
+        ),
         move_high=True, play_high=False, company="solo", timing_months=["3월"],
     )
     text = data["section_5_solo_vs_together"]
-    assert "혼자 움직이는" in text
-    assert "동호회" not in text
+    assert "동행" not in text
+    assert text.index("혼자 정리") < text.index("동호회") < text.index("상황에")
+    assert "여행" not in text
 
 
 def test_axes_separate_movement_and_company():
@@ -232,6 +240,47 @@ def test_distinct_stored_sentences_stay_and_paraphrases_drop():
     assert "필름" in hobby_text
     company = data["section_5_solo_vs_together"]
     assert "전시" in company and "혼자 정리" in company
+
+
+def test_style_label_leads_and_harvest_splits_travel_from_hobby():
+    travel = _travel()
+    travel["travel_style"] = (
+        "일정은 아침부터 밤까지 강행군이에요. "
+        "동행은 즉흥적인 스케줄을 따라오는 에너지 넘치는 친구가 좋아요. "
+        "나에게 어울리는 올해의 여행 스타일은 한계에 도전하는 액티브형과 열정적인 도시형의 조합이에요. "
+        "이번 여행은 한계를 넘는 원정대 타임이에요."
+    )
+    travel["travel_luck"] = "낯선 사람에게 길을 배워요. 해낸 일의 성취감이 남아요. 열정적으로 부딪치면 문이 열려요."
+    hobby = _hobby("혼자 정리하는 저녁이 집중에 맞아요. 동호회에서 같이 보면 이야기가 늘어요. 상황에 맞춰 방식을 고르면 돼요.")
+    hobby["benefits"] = "거침없이 몰입한 끝에 자신감이 붙어요. 매 순간 모든 에너지를 쏟아붓는 대담함이 필요해요."
+    data = assemble(travel, hobby, move_high=False, play_high=False, company="either", timing_months=["2월"])
+    style = data["section_2_travel_style"]
+    assert style.index("액티브형") < style.index("원정대") < style.index("동행")
+    assert "강행군" not in style
+    reward = data["section_6_final_reward"]
+    assert reward.index("여행에서 얻는 수확") < reward.index("성취감")
+    assert reward.index("취미에서 얻는 수확") < reward.index("자신감")
+    assert "모든 에너지" not in reward
+    assert "열정적으로" not in reward
+    assert "회복" in reward
+    assert "억지로 판을 키우면" not in reward
+    assert "경로가 바뀌는 즉흥" not in reward
+
+
+def test_rest_and_impulse_closings_are_not_the_same_sentence():
+    rest = _travel()
+    rest["travel_style"] = "올해 여행 스타일은 아늑한 휴양형이에요. 숙소는 한옥이 맞아요."
+    impulse = _travel()
+    impulse["travel_style"] = "올해 여행 스타일은 즉흥적인 탐험형이에요. 숙소는 호스텔이 맞아요."
+    rest_data = assemble(rest, _hobby(), move_high=False, play_high=False, company="either")
+    impulse_data = assemble(impulse, _hobby(), move_high=True, play_high=False, company="either")
+    rest_reward = rest_data["section_6_final_reward"]
+    impulse_reward = impulse_data["section_6_final_reward"]
+    assert "충분히 쉬는" in rest_reward
+    assert "즉흥" in impulse_reward
+    assert rest_reward != impulse_reward
+    assert "억지로 판을 키우면" not in rest_reward
+    assert "일정을 계속 늘리면" not in impulse_reward
 
 
 def test_no_runtime_llm_on_the_module():
