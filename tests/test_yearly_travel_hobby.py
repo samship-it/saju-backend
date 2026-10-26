@@ -358,6 +358,40 @@ def _skill_leak(sentence: str) -> bool:
     return not fits_section("travel_gain", sentence, "travel_gain")
 
 
+def test_hobby_names_the_activity_before_the_effect_and_months_sort():
+    travel = _travel()
+    hobby = _hobby()
+    hobby["active_activities"] = (
+        "강도 높은 웨이트 트레이닝이나 크로스핏이 잘 맞습니다. "
+        "무거운 중량을 들어 올리면 잡생각이 사라지고 몰입이 찾아옵니다. "
+        "운동이 끝난 뒤 해방감을 느낍니다."
+    )
+    hobby["benefits"] = "반복한 끝에 자신감이 붙어요."
+    data = assemble(travel, hobby, move_high=False, play_high=False, company="either", timing_months=["11월", "2월", "9월"])
+    activity = data["section_4_matched_activity"]
+    assert activity.index("웨이트 트레이닝") < activity.index("몰입")
+    assert "크로스핏" not in activity
+    assert "해방감" in activity
+    assert "용신" not in activity and "오행" not in activity
+    spot = data["section_3_recommended_spot"]
+    assert spot.index("2월") < spot.index("9월") < spot.index("11월")
+
+    plain = _hobby()
+    plain["active_activities"] = "손을 움직이는 시간이 좋아요."
+    unnamed = assemble(_travel(), plain, move_high=False, play_high=False, company="either", timing_months=["12월", "3월", "1월"])
+    blob = unnamed["section_4_matched_activity"]
+    assert "도예" not in blob and "웨이트" not in blob
+    months = unnamed["section_3_recommended_spot"]
+    assert months.index("1월") < months.index("3월") < months.index("12월")
+
+    both = _travel()
+    both["travel_style"] = "올해 여행 스타일은 한계에 도전하는 액티브형이에요. 동행은 친구가 좋아요."
+    kept = assemble(both, hobby, move_high=False, play_high=False, company="either", timing_months=["8월"])
+    assert "액티브형" in kept["section_2_travel_style"]
+    assert "회복" in kept["section_1_overall_flow"]
+    assert "회복" not in _between(kept["section_6_final_reward"], "취미에서 얻는 수확", "")
+
+
 def test_no_runtime_llm_on_the_module():
     import domains.yearly.travel_hobby as mod
     source = inspect.getsource(mod)

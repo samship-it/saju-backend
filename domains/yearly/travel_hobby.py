@@ -326,21 +326,134 @@ def _overlaps(sentence: str, seen: Set[str]) -> bool:
     return any(_similar(sentence, prev) for prev in seen)
 
 
+# 저장 문장에 실제로 나온 활동만 쓴다. 앞에 있는 이름이 더 구체적인 이름이다.
+_ACTIVITY_NAMES = (
+    ("웨이트 트레이닝", ("웨이트 트레이닝", "웨이트")),
+    ("크로스핏", ("크로스핏",)),
+    ("클라이밍", ("클라이밍",)),
+    ("러닝", ("러닝", "달리기")),
+    ("수영", ("수영",)),
+    ("요가", ("요가",)),
+    ("등산", ("등산",)),
+    ("그림 그리기", ("그림 그리기", "그림을 그리", "드로잉")),
+    ("수채화", ("수채화",)),
+    ("유화", ("유화",)),
+    ("사진 촬영", ("사진 촬영", "카메라 출사", "스냅 사진", "출사")),
+    ("도예", ("도예",)),
+    ("악기 연주", ("악기",)),
+    ("글쓰기", ("글쓰",)),
+    ("독서", ("독서",)),
+    ("공예", ("공예",)),
+)
+_ACTIVITY_FAMILY = {
+    "웨이트 트레이닝": "body", "크로스핏": "body", "클라이밍": "body", "러닝": "body",
+    "수영": "body", "요가": "body", "등산": "body",
+    "그림 그리기": "draw", "수채화": "draw", "유화": "draw",
+    "사진 촬영": "photo", "도예": "craft", "공예": "craft",
+    "악기 연주": "music", "글쓰기": "write", "독서": "write",
+}
+
+
+def _labels_in(sentence: str) -> List[str]:
+    found = []
+    for label, keys in _ACTIVITY_NAMES:
+        positions = [sentence.find(key) for key in keys if key in sentence]
+        if positions:
+            found.append((min(positions), label))
+    found.sort()
+    return [label for _, label in found]
+
+
+def _mentions(sentence: str, label: str) -> bool:
+    keys = next(keys for name, keys in _ACTIVITY_NAMES if name == label)
+    return any(key in sentence for key in keys)
+
+
+def _primary_hobby(text: str) -> str:
+    """한 가지만 말하는 문장을 우선한다. 나열 문장은 그 이름이 없을 때만 쓴다."""
+    scores = []
+    laundry = ""
+    for index, sentence in enumerate(_sentences(text)):
+        if _has(sentence, _RECORD) or _has(sentence, _SPREAD) or _has(sentence, _FATE):
+            continue
+        labels = _labels_in(sentence)
+        if len(labels) >= 2:
+            laundry = laundry or labels[0]
+            continue
+        if len(labels) == 1:
+            scores.append((index, labels[0]))
+    if not scores:
+        return laundry
+    counts: Dict[str, List[int]] = {}
+    for index, label in scores:
+        counts.setdefault(label, []).append(index)
+    ranked = sorted(counts.items(), key=lambda item: (len(item[1]), -item[1][0]), reverse=True)
+    return ranked[0][0]
+
+
+def _hobby_particle(name: str) -> str:
+    code = ord(name[-1]) - 0xAC00
+    if 0 <= code <= 11171 and code % 28 != 0:
+        return "이에요"
+    return "예요"
+
+
+def _month_number(label: str) -> int:
+    found = re.search(r"(\d+)", label or "")
+    if not found:
+        return 99
+    number = int(found.group(1))
+    return number if 1 <= number <= 12 else 99
+
+
+def _sort_months(months: List[str]) -> List[str]:
+    """추천 월의 구성은 유지하고 숫자만 오름차순으로 둔다."""
+    return sorted(months, key=_month_number)
+
+
 def _pick_hobby(text: str, used: Set[str], play_high: bool) -> List[str]:
-    """같은 유형의 문장을 겹치지 않게 남긴다. 유형을 한꺼번에 늘어놓지 않는다."""
+    """활동 이름을 먼저 밝히고, 같은 취미의 경험 문장을 뒤에 붙인다."""
     del play_high  # 유형은 저장 문장의 비중으로 고른다. 운동으로 고정하지 않는다.
+    primary = _primary_hobby(text)
     kept: List[str] = []
     for sentence in _sentences(text):
         if sentence in used or _blocked(sentence) or _overlaps(sentence, used):
             continue
-        if _has(sentence, _RECORD) or _has(sentence, _SPREAD) or _has(sentence, _NARROW_SPORT):
+        if _has(sentence, _RECORD) or _has(sentence, _SPREAD):
             continue
         if "보다는" in sentence or _has(sentence, _FATE) or _has(sentence, _INTENSE):
             continue
-        kinds = _hobby_types(sentence)
-        if sum(word in sentence for word in _SPORTS) >= 2 or len(kinds) >= 2:
+        labels = _labels_in(sentence)
+        if len(labels) >= 2:
             continue
+        if primary:
+            if labels and _ACTIVITY_FAMILY.get(labels[0]) != _ACTIVITY_FAMILY.get(primary):
+                continue
+            if _has(sentence, _NARROW_SPORT) and _ACTIVITY_FAMILY.get(primary) != "body":
+                continue
+        else:
+            if _has(sentence, _NARROW_SPORT):
+                continue
+            kinds = _hobby_types(sentence)
+            if sum(word in sentence for word in _SPORTS) >= 2 or len(kinds) >= 2:
+                continue
         kept.append(sentence)
+    if primary:
+        picked: List[str] = []
+        for sentence in kept:
+            if _overlaps(sentence, used) or _overlaps(sentence, set(picked)):
+                continue
+            used.add(sentence)
+            picked.append(sentence)
+        if not any(_mentions(sentence, primary) for sentence in picked):
+            lead = f"올해 잘 맞는 취미는 {primary}{_hobby_particle(primary)}"
+            picked.insert(0, lead)
+            used.add(lead)
+        else:
+            index = next(i for i, sentence in enumerate(picked) if _mentions(sentence, primary))
+            if index:
+                picked.insert(0, picked.pop(index))
+        return picked
     if not kept:
         return []
     preference = ("make", "mind", "watch", "social", "other", "body")
@@ -354,7 +467,7 @@ def _pick_hobby(text: str, used: Set[str], play_high: bool) -> List[str]:
         return (counts[name], -preference.index(name) if name in preference else -len(preference))
 
     chosen = max(counts, key=rank)
-    picked: List[str] = []
+    picked = []
     for sentence in kept:
         kinds = _hobby_types(sentence)
         name = kinds[0] if kinds else "other"
@@ -616,7 +729,7 @@ def assemble(
 
     spot = _take(str(t["recommended_spots"]), used, pred=_spot_ok)
     if months:
-        when = ", ".join(months[:3])
+        when = ", ".join(_sort_months(months[:3]))
         spot.insert(0, f"올해 흐름이 더 편한 달은 {when}이에요.")
     elif not spot:
         spot = ["특정한 달이나 방향을 정해 두지는 않았어요. 일정과 체력이 맞는 거리와 분위기를 고르면 충분해요."]
