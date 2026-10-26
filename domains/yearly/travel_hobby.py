@@ -93,6 +93,46 @@ _STYLE_CLOSE = {
     "impulse": "경로가 바뀌는 즉흥은 두되, 이동만 늘리지는 마세요. 한 번 움직인 뒤에는 쉬는 시간이 필요해요.",
 }
 
+# 섹션이 답하는 질문. 공통 문장도 이 목록에 있는 의미만 들어간다.
+_CONTRACT = {
+    "flow": frozenset({"year_flow", "year_pace"}),
+    "travel_style": frozenset({"travel_style", "travel_plan"}),
+    "timing": frozenset({"timing"}),
+    "hobby": frozenset({"hobby_activity", "hobby_scope"}),
+    "company": frozenset({"hobby_company"}),
+    "travel_gain": frozenset({"travel_gain"}),
+    "hobby_gain": frozenset({"hobby_gain"}),
+}
+# 한 해의 속도를 조절하라는 말. 수확이 아니다.
+_YEAR_PACE = (
+    "움직이는 양과 회복",
+    "같은 주에 욕심",
+    "판을 키우면",
+    "나가는 일과 머무는 일",
+)
+# 일정·이동을 조절하라는 말. '일정'이라는 단어만으로는 잡지 않는다.
+_TRAVEL_PLAN = (
+    "일정을 계속 늘리",
+    "일정을 늘리",
+    "일정을 더 채우",
+    "일정을 채우기보다",
+    "이동만 늘",
+    "이동을 늘",
+    "한 번 움직인 뒤",
+    "다녀와도 남지",
+    "무리한 이동",
+)
+# 취미를 몇 개나 붙잡을지에 대한 말.
+_HOBBY_SCOPE = (
+    "취미를 여러 개",
+    "여러 개 동시에",
+    "하나에서 깊이를 보는",
+    "어느 것도 손에 남지",
+)
+# 연습과 실력만 말하는 문장. 여정에서 겪은 일과 겹치면 여행 수확으로 남긴다.
+_SKILL_ONLY = ("실력이", "실력은", "연습해", "연습하면", "작품을 마치", "캔버스에", "연주하", "습작")
+_JOURNEY_EVENT = ("길에서", "골목", "동행", "숙소", "다녀온", "일정 끝", "여정")
+
 _FALLBACK_TRAVEL = {
     "one_line": "익숙한 길에서 한 걸음만 벗어나도 숨이 트이는 해",
     "keywords": ["환기"],
@@ -198,6 +238,48 @@ def _sentences(text: str) -> List[str]:
 
 def _has(sentence: str, words) -> bool:
     return any(word in sentence for word in words)
+
+
+def _speech_role(sentence: str) -> str:
+    """문장이 지시하는 일이 있으면 그 역할만 돌려준다. 단어 하나로 영역을 가르지 않는다."""
+    if _has(sentence, _YEAR_PACE):
+        return "year_pace"
+    if _has(sentence, _TRAVEL_PLAN):
+        return "travel_plan"
+    if _has(sentence, _HOBBY_SCOPE):
+        return "hobby_scope"
+    return ""
+
+
+def _skill_without_journey(sentence: str) -> bool:
+    return _has(sentence, _SKILL_ONLY) and not _has(sentence, _JOURNEY_EVENT)
+
+
+def fits_section(section: str, sentence: str, source_role: str) -> bool:
+    """이 문장이 그 섹션의 질문에 답하면 참. 확신이 없으면 넣지 않는다."""
+    role = _speech_role(sentence) or source_role
+    if role not in _CONTRACT.get(section, frozenset()):
+        return False
+    if section in ("flow", "travel_style", "timing", "travel_gain") and _skill_without_journey(sentence):
+        return False
+    return True
+
+
+def _closing_home(tone: str, axis: tuple) -> Optional[tuple]:
+    """공통 주의는 그 문장이 답하는 섹션에만 둔다. 맞지 않으면 어디에도 넣지 않는다."""
+    if tone == "active":
+        return ("flow", _STYLE_CLOSE["active"])
+    if tone == "rest":
+        return ("travel_style", _STYLE_CLOSE["rest"])
+    if tone == "impulse":
+        return ("travel_style", _STYLE_CLOSE["impulse"])
+    if axis == (True, False):
+        return ("travel_style", _CAUTION[axis])
+    if axis == (False, True):
+        return ("hobby", _CAUTION[axis])
+    if axis in ((True, True), (False, False)):
+        return ("flow", _CAUTION[axis])
+    return None
 
 
 def _blocked(sentence: str) -> bool:
@@ -475,7 +557,10 @@ def assemble(
     axis = (move_high, play_high)
     lead_flow = str(t["overall_flow"] if lead_travel else h["overall_flow"])
 
-    flow = _plain_prefer(_take(lead_flow, used, pred=lambda sentence: not _opposes_move(sentence, move_high)))
+    flow = _plain_prefer(_take(
+        lead_flow, used,
+        pred=lambda sentence: not _opposes_move(sentence, move_high) and fits_section("flow", sentence, "year_flow"),
+    ))
     if flow:
         lead_bits = [s for s in flow if _has(s, ("흐름", "방향", "진행", "해입니다", "해예요"))]
         rest_bits = [s for s in flow if s not in lead_bits]
@@ -495,7 +580,13 @@ def assemble(
     ]
     tone = _style_tone(" ".join(define_for_tone))
     style = _arrange_style(
-        _take(style_src, used, pred=lambda sentence: _keep_style_sentence(sentence, move_high, tone)),
+        _take(
+            style_src, used,
+            pred=lambda sentence: (
+                _keep_style_sentence(sentence, move_high, tone)
+                and fits_section("travel_style", sentence, "travel_style")
+            ),
+        ),
         chance,
     )
     if not style:
@@ -521,7 +612,7 @@ def assemble(
             and not _has(sentence, ("동행", "친구", "짐", "숙소", "사람", "명소"))
         ):
             return False
-        return _chance_keep(sentence, chance)
+        return _chance_keep(sentence, chance) and fits_section("timing", sentence, "timing")
 
     spot = _take(str(t["recommended_spots"]), used, pred=_spot_ok)
     if months:
@@ -530,7 +621,10 @@ def assemble(
     elif not spot:
         spot = ["특정한 달이나 방향을 정해 두지는 않았어요. 일정과 체력이 맞는 거리와 분위기를 고르면 충분해요."]
 
-    activity = _pick_hobby(str(h["active_activities"]), used, play_high)
+    activity = [
+        s for s in _pick_hobby(str(h["active_activities"]), used, play_high)
+        if fits_section("hobby", s, "hobby_activity")
+    ]
     if not activity:
         activity = ["새로운 것을 여러 개 벌리기보다, 이미 손이 가는 것 하나에 머무는 편이 맞아요."]
 
@@ -540,7 +634,7 @@ def assemble(
             return False
         if _has(sentence, _NARROW_SPORT) or _has(sentence, _RECORD) or _has(sentence, _FATE) or _has(sentence, _INTENSE):
             return False
-        return not _has(sentence, _EXCLUSIVE)
+        return not _has(sentence, _EXCLUSIVE) and fits_section("company", sentence, "hobby_company")
 
     company_body = _arrange_company(_take(str(h.get("solo_vs_group") or ""), used, pred=_company_ok))
     company_parts = company_body or [_COMPANY[company]]
@@ -553,6 +647,7 @@ def assemble(
             and not _has(sentence, _PUSH_ALL)
             and _chance_keep(sentence, chance)
             and not _opposes_move(sentence, move_high)
+            and fits_section("travel_gain", sentence, "travel_gain")
         ),
     )
     if tone == "active":
@@ -564,8 +659,8 @@ def assemble(
         if _has(sentence, ("모든 에너지",)):
             return False
         if tone == "active":
-            return True
-        return not _opposes_move(sentence, move_high)
+            return fits_section("hobby_gain", sentence, "hobby_gain")
+        return not _opposes_move(sentence, move_high) and fits_section("hobby_gain", sentence, "hobby_gain")
 
     hobby_gain = _take(str(h["benefits"]), used, pred=_hobby_gain_ok)
     if travel_gain:
@@ -574,7 +669,14 @@ def assemble(
     if hobby_gain:
         reward.append("취미에서 얻는 수확")
         reward.extend(hobby_gain)
-    reward.append(_STYLE_CLOSE.get(tone) or _CAUTION[axis])
+    home = _closing_home(tone, axis)
+    if home:
+        target, line = home
+        source = {"flow": "year_flow", "travel_style": "travel_style", "hobby": "hobby_activity"}[target]
+        # 지정된 섹션에도 의미가 안 맞으면 비워 둔다. 다른 섹션으로 옮기지 않는다.
+        if fits_section(target, line, source) and not _overlaps(line, used):
+            used.add(line)
+            {"flow": parts, "travel_style": style, "hobby": activity}[target].append(line)
 
     headline = str(t["one_line"] if lead_travel else h["one_line"])
     if _opposes_move(headline, move_high):

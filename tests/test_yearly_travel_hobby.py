@@ -142,7 +142,8 @@ def test_combined_view_drops_seasonal_repeats_and_ungrounded_claims():
     assert "4월" in data["section_3_recommended_spot"]
     assert "조용한 곳" in data["section_3_recommended_spot"]
     assert "그림을 그리는" in data["section_4_matched_activity"]
-    assert "얕아져요" in data["section_6_final_reward"]
+    assert "얕아져요" in data["section_1_overall_flow"]
+    assert "얕아져요" not in data["section_6_final_reward"]
 
 
 def test_sections_keep_one_direction():
@@ -175,7 +176,8 @@ def test_sections_keep_one_direction():
     assert "혼자만" not in calm["section_5_solo_vs_together"]
     reward = calm["section_6_final_reward"]
     assert "운명" not in reward and "주목" not in reward and "근력" not in reward
-    assert "깊이" in reward
+    assert "깊이" in calm["section_4_matched_activity"]
+    assert "일정을 계속 늘리면" not in reward
 
     active_travel = _travel()
     active_travel["one_line"] = "화려한 해외여행"
@@ -262,7 +264,8 @@ def test_style_label_leads_and_harvest_splits_travel_from_hobby():
     assert reward.index("취미에서 얻는 수확") < reward.index("자신감")
     assert "모든 에너지" not in reward
     assert "열정적으로" not in reward
-    assert "회복" in reward
+    assert "회복" in data["section_1_overall_flow"]
+    assert "회복" not in reward
     assert "억지로 판을 키우면" not in reward
     assert "경로가 바뀌는 즉흥" not in reward
 
@@ -274,13 +277,85 @@ def test_rest_and_impulse_closings_are_not_the_same_sentence():
     impulse["travel_style"] = "올해 여행 스타일은 즉흥적인 탐험형이에요. 숙소는 호스텔이 맞아요."
     rest_data = assemble(rest, _hobby(), move_high=False, play_high=False, company="either")
     impulse_data = assemble(impulse, _hobby(), move_high=True, play_high=False, company="either")
-    rest_reward = rest_data["section_6_final_reward"]
-    impulse_reward = impulse_data["section_6_final_reward"]
-    assert "충분히 쉬는" in rest_reward
-    assert "즉흥" in impulse_reward
-    assert rest_reward != impulse_reward
-    assert "억지로 판을 키우면" not in rest_reward
-    assert "일정을 계속 늘리면" not in impulse_reward
+    assert "충분히 쉬는" in rest_data["section_2_travel_style"]
+    assert "이동만 늘리" in impulse_data["section_2_travel_style"]
+    assert "충분히 쉬는" not in rest_data["section_6_final_reward"]
+    assert "이동만 늘리" not in impulse_data["section_6_final_reward"]
+    assert "억지로 판을 키우면" not in rest_data["section_6_final_reward"]
+    assert "일정을 계속 늘리면" not in impulse_data["section_6_final_reward"]
+
+
+def _between(text: str, start: str, end: str) -> str:
+    if start not in text:
+        return ""
+    body = text.split(start, 1)[1]
+    if end and end in body:
+        body = body.split(end, 1)[0]
+    return body
+
+
+def test_section_meaning_keeps_only_fitting_sentences():
+    """여행 조언·취미 조언·공통 마무리가 다른 섹션으로 넘어가지 않는다."""
+    travel_plan = "일정을 계속 늘리면 다녀와도 남지 않아요. 한 번 움직인 뒤에는 쉬는 시간이 필요해요."
+    hobby_skill = "매일 연습해서 그림 실력이 늘고 자신감이 붙어요."
+    hobby_rest = "그림을 그리며 마음이 쉬어지고 감정을 표현하게 돼요."
+    travel_meet = "일정 끝에 만난 사람 덕분에 골목이 새롭게 보여요."
+
+    mixed = _travel()
+    mixed["travel_luck"] = f"{travel_meet} {hobby_skill}"
+    mixed_hobby = _hobby()
+    mixed_hobby["benefits"] = f"{hobby_rest} {travel_plan} 작품을 마치며 표현이 분명해져요."
+    mixed_hobby["active_activities"] = "HACT"
+    data = assemble(mixed, mixed_hobby, move_high=True, play_high=False, company="either", timing_months=["4월"])
+    reward = data["section_6_final_reward"]
+    travel_part = _between(reward, "여행에서 얻는 수확", "취미에서 얻는 수확")
+    hobby_part = _between(reward, "취미에서 얻는 수확", "")
+    assert "골목" in travel_part
+    assert "실력" not in travel_part
+    assert "쉬어지고" in hobby_part
+    assert "표현이 분명" in hobby_part
+    assert "일정을 계속 늘리면" not in hobby_part
+    assert "일정을 계속 늘리면" in data["section_2_travel_style"]
+    assert "HACT" not in reward
+    assert travel_plan not in data["section_4_matched_activity"]
+    assert hobby_skill not in data["section_2_travel_style"]
+
+    empty = _travel()
+    empty["travel_luck"] = hobby_skill
+    empty["travel_style"] = "TSTYLE"
+    empty_hobby = _hobby()
+    empty_hobby["benefits"] = travel_plan
+    empty_hobby["active_activities"] = "붓으로 색을 쌓는 시간이 맞아요."
+    bare = assemble(empty, empty_hobby, move_high=False, play_high=True, company="solo", timing_months=["3월"])
+    bare_reward = bare["section_6_final_reward"]
+    assert "실력" not in _between(bare_reward, "여행에서 얻는 수확", "취미에서 얻는 수확")
+    assert "일정을 계속 늘리면" not in _between(bare_reward, "취미에서 얻는 수확", "")
+    assert "붓으로" not in _between(bare_reward, "여행에서 얻는 수확", "취미에서 얻는 수확")
+    assert "TSTYLE" not in _between(bare_reward, "취미에서 얻는 수확", "")
+
+
+def test_real_years_do_not_put_travel_plans_in_hobby_harvest():
+    from domains.yearly.service import generate_travel_hobby
+    from domains.yearly.travel_hobby import _sentences, fits_section
+
+    for year in (2026, 2027, 2028):
+        for day in (6, 15):
+            data, fallback = generate_travel_hobby(1990, 2 if day == 6 else 5, day, 14, 0, "female", target_year=year)
+            assert fallback is False
+            reward = data["section_6_final_reward"]
+            for sentence in _sentences(_between(reward, "취미에서 얻는 수확", "")):
+                assert fits_section("hobby_gain", sentence, "hobby_gain"), (year, day, sentence)
+                assert "일정을 계속 늘리면" not in sentence
+                assert "한 번 움직인 뒤" not in sentence
+                assert "이동만 늘" not in sentence
+            for sentence in _sentences(_between(reward, "여행에서 얻는 수확", "취미에서 얻는 수확")):
+                assert fits_section("travel_gain", sentence, "travel_gain"), (year, day, sentence)
+                assert not _skill_leak(sentence)
+
+
+def _skill_leak(sentence: str) -> bool:
+    from domains.yearly.travel_hobby import fits_section
+    return not fits_section("travel_gain", sentence, "travel_gain")
 
 
 def test_no_runtime_llm_on_the_module():
