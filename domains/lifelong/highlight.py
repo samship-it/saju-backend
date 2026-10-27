@@ -23,7 +23,7 @@ yongsin·gisin·heesin·elem_power, daewoon_step_facts)을 조합해 작은 고�
    family: 배우자성 유무(spouse_star, 4주 전체 실측) + 신강약 → 가치관/가족관계
 3) critical_taboo: 도메인별 1:1 고정 경고(사용자 확정 — money=고위험투자/차용,
    career=수동적 통제환경, social=문서/보증관계, family=지나친 감정간섭). 근거가
-   core_nature.weaknesses(성향 기반)와 완전히 달라 안 겹친다.
+   core_nature.weaknesses(삶의 흐름에서 경계할 점)와 완전히 달라 안 겹친다.
 4) action_plan: 용신 오행(yongsin[0]) 기준 도메인별 즉시 실천 행동.
 """
 from typing import Any, Dict, List, Optional, Tuple

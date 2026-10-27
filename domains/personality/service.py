@@ -23,6 +23,7 @@ from domains.lifelong.landscape import build_landscape
 from shared.public import person_summary
 from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
+from domains.personality.behavior_voice import deepen_character
 from domains.personality.content_db import lookup
 
 # 일간 오행이 상징하는 기본 기질 — SUBJECT_IMAGE(형상)와는 다른 축으로, "움직이는 방향"을
@@ -110,7 +111,7 @@ def analyze_character(year, month, day, hour=None, minute=0, gender="female", is
     saju = _saju(year, month, day, hour, minute, gender, is_lunar)
     entry = lookup(saju.get("day_ganji") or "", "character")
     is_fallback = entry is None
-    raw = _character_fallback() if is_fallback else entry
+    raw = deepen_character(_character_fallback() if is_fallback else entry)
     bridge = _character_bridge(saju.get("day_master_elem") or "", _verdict_key(saju.get("strength") or {}))
     return finish_reading(_shape(saju, "나의 성격", _character_fallback(), raw, bridge), is_fallback)
 

@@ -12,8 +12,9 @@ lifelong_domains / lifelong_stage 참고).
 
 세 개의 정적 테이블(domains/lifelong/content_db.py 참고):
 1) base_db: life_theme(인생을 관통하는 반복 과제) — 일주(60)당 1건.
-   personality(타고난 성향)는 domains/personality/data/personality_db.json 의
-   character.base_nature 를 그대로 재사용(다시 만들지 않음 — layer 분리 검증 완료).
+   personality(타고난 성향)와 weaknesses 는 성격운세 문장을 복사하지 않는다.
+   domains/lifelong/life_voice.py 가 원문에 근거가 있는 특성만 골라, 그 특성이
+   실제 대운 나이와 삶의 과제에 어떻게 이어지는지로 다시 쓴다.
 2) domains_db: 삶의 4대 영역(재물/직업/가족/사회) — (일주, 현재 대운의 지배
    십신군, 대운 순번) = 60×5×8 = 2,400건. 재물↔재성/직업↔관성/가족↔인성/사회↔비겁
    고정 앵커로 서로 겹치지 않게 한다. wealth/career/social 은 각 4필드(DOMAIN_FIELDS
@@ -38,6 +39,7 @@ from domains.lifelong.content_db import lookup_base, lookup_domains, lookup_stag
 from domains.lifelong.highlight import build_highlight
 from domains.lifelong.landscape import build_landscape, build_tip
 from domains.lifelong.life_periods import build_early_life, build_late_life, build_middle_life
+from domains.lifelong.life_voice import build_core_voice
 from domains.lifelong.spouse_outlook import build_spouse_outlook
 from domains.personality.content_db import lookup as lookup_personality
 from shared.prose_quality import finish_reading
@@ -254,15 +256,13 @@ def analyze_lifelong_fortune(
 
     is_fallback = False
 
-    # section2(core_nature): life_theme(신규) + personality/weaknesses(personality_db 재사용)
-    # + tip(개운법, landscape 에서 이동). [강점/성향 -> 단점/주의점 -> 개운법] 순으로 구성한다.
+    # section2(core_nature): life_theme + 삶의 흐름으로 다시 쓴 성향/주의점
+    # + tip(개운법, landscape 에서 이동). 성격운세 문장은 복사하지 않는다.
     base = lookup_base(ilju)
     life_theme = (base or {}).get("life_theme") or _FALLBACK_LIFE_THEME
     if base is None:
         is_fallback = True
     character = lookup_personality(ilju, "character")
-    personality = (character or {}).get("base_nature") or _FALLBACK_PERSONALITY
-    weaknesses = (character or {}).get("weaknesses") or _FALLBACK_WEAKNESS
     if character is None:
         is_fallback = True
 
@@ -287,6 +287,12 @@ def analyze_lifelong_fortune(
             # 카드 클릭 시 "대운 보러가기"로 그 모듈을 연다(평생운세 화면엔 장문 텍스트 없음).
             "ganji": f["ganji"],
         })
+
+    personality, weaknesses = build_core_voice(character, life_stages, facts)
+    if character is None:
+        # DB 가 없을 때의 기존 문장은 빼지 않고, 삶의 흐름 뒤에 둔다.
+        personality = f"{personality}\n\n{_FALLBACK_PERSONALITY}"
+        weaknesses = f"{weaknesses}\n\n{_FALLBACK_WEAKNESS}"
 
     # section4~7: 삶의 4대 영역(재물/직업/가족/사회, 현재 대운 기준)
     current_fact = next((f for f in facts if f["step"] == current_step), facts[0])

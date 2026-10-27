@@ -94,6 +94,7 @@ PRODUCTS = (
         code=(
             "domains/lifelong/landscape.py",
             "domains/lifelong/life_periods.py",
+            "domains/lifelong/life_voice.py",
             "domains/lifelong/highlight.py",
             "domains/lifelong/spouse_outlook.py",
         ),
@@ -115,6 +116,10 @@ PRODUCTS = (
         "any",
         ("domains/personality/data/personality_db.json",),
         ("domains/personality/service.py",),
+        code=(
+            "domains/personality/behavior_voice.py",
+            "domains/personality/trait_signals.py",
+        ),
     ),
     _p(
         "personality_aptitude", "나의 적성", "PERSONAL",

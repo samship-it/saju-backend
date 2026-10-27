@@ -4,8 +4,8 @@
 모듈 docstring 및 대운 순번 축 설계 논의 참고):
 
 - base_db: 일주(60) 당 1건 — life_theme(인생을 관통하는 반복 과제) 하나만.
-  personality(타고난 성향)는 domains/personality/data/personality_db.json 을
-  그대로 재사용하므로 여기서 다시 만들지 않는다.
+  타고난 성향 문장은 성격 DB 를 복사하지 않고, service 가 life_voice 로
+  삶의 흐름 관점에서 조립한다.
 - domains_db: (일주, 현재 대운의 지배 십신군, 대운 순번) 조합당 1건 — 삶의 4대 영역
   (재물/직업/가족/사회). 60×5×8 = 2,400건. 재물↔재성/직업↔관성/가족↔인성/사회↔비겁
   고정 앵커로 서로 겹치지 않게 한다.
