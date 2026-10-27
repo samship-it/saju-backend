@@ -11,6 +11,7 @@ DB 축을 새로 늘리지 않고, 이미 계산돼 있는 trigger_bucket(woon_m
 from typing import Dict, Any, Optional, Tuple
 
 from core.constants import score_to_emoji, score_to_band
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.daily.content_db import lookup
 from domains.daily.social_template import build_social_summary
@@ -187,4 +188,4 @@ def generate_daily_fortune(
     job_text = resolve_job_levelup(job_status, modifier["trigger_bucket"])
     shaped["summary"]["job_levelup"] = paragraphize(job_text or shaped["summary"]["work_study"])
 
-    return shaped, is_fallback
+    return finish_reading(shaped, is_fallback)

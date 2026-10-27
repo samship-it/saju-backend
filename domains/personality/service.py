@@ -21,6 +21,7 @@ from typing import Dict, Any, Tuple
 from core.saju_base import calculate_saju
 from domains.lifelong.landscape import build_landscape
 from shared.public import person_summary
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.personality.content_db import lookup
 
@@ -111,7 +112,7 @@ def analyze_character(year, month, day, hour=None, minute=0, gender="female", is
     is_fallback = entry is None
     raw = _character_fallback() if is_fallback else entry
     bridge = _character_bridge(saju.get("day_master_elem") or "", _verdict_key(saju.get("strength") or {}))
-    return _shape(saju, "나의 성격", _character_fallback(), raw, bridge), is_fallback
+    return finish_reading(_shape(saju, "나의 성격", _character_fallback(), raw, bridge), is_fallback)
 
 
 def analyze_aptitude(year, month, day, hour=None, minute=0, gender="female", is_lunar=False) -> Tuple[dict, bool]:
@@ -120,4 +121,4 @@ def analyze_aptitude(year, month, day, hour=None, minute=0, gender="female", is_
     is_fallback = entry is None
     raw = _aptitude_fallback() if is_fallback else entry
     bridge = _aptitude_bridge(saju.get("day_master_elem") or "", _verdict_key(saju.get("strength") or {}))
-    return _shape(saju, "나의 적성", _aptitude_fallback(), raw, bridge), is_fallback
+    return finish_reading(_shape(saju, "나의 적성", _aptitude_fallback(), raw, bridge), is_fallback)

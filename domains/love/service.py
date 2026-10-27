@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from core.saju_base import calculate_saju
 from domains.love.engine import build_ideal_partner
+from shared.prose_quality import finish_reading
 from domains.love.profiles import birth_of, deduct_bokkong, ideal_partner_cost
 
 logger = logging.getLogger(__name__)
@@ -91,4 +92,4 @@ def analyze_ideal_partner(user_id: str):
 
     data["remaining_bokkong"] = remaining
     data["is_fallback"] = is_fallback
-    return data, is_fallback
+    return finish_reading(data, is_fallback)

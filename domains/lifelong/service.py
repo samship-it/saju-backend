@@ -40,6 +40,7 @@ from domains.lifelong.landscape import build_landscape, build_tip
 from domains.lifelong.life_periods import build_early_life, build_late_life, build_middle_life
 from domains.lifelong.spouse_outlook import build_spouse_outlook
 from domains.personality.content_db import lookup as lookup_personality
+from shared.prose_quality import finish_reading
 from shared.public import person_summary
 
 CONTENT_TYPE = "lifelong_fortune"
@@ -332,13 +333,14 @@ def analyze_lifelong_fortune(
         ),
     }
 
-    return {
+    payload = {
         "content_type": CONTENT_TYPE,
         "birth_time_known": saju.get("birth_time_known"),
         "day_master": saju.get("day_master"),
         "saju_info": person_summary(saju),
         "data": data,
-    }, is_fallback
+    }
+    return finish_reading(payload, is_fallback)
 
 
 # analyze_lifelong_stage_detail() 는 제거했다 — 대운 카드 '자세히 보기'(전략/방해요소/

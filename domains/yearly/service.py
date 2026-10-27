@@ -18,6 +18,7 @@ from shared.persona_map import persona_prompt
 from shared.saju_prompt import engine_block, SCORING_RULES
 from shared.fortune_cache import get_or_create
 from shared.public import person_summary
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.yearly import content_db as _yearly_db
 from domains.yearly.travel_hobby import assemble as _assemble_travel_hobby
@@ -551,7 +552,7 @@ def generate_travel_hobby(
         int(year), int(month), int(day), hour_key, int(minute or 0),
         gender or "female", bool(is_lunar), ty,
     )
-    return json.loads(raw), is_fallback
+    return finish_reading(json.loads(raw), is_fallback)
 
 
 def generate_yearly(
@@ -572,12 +573,12 @@ def generate_yearly(
 
     if category == "study":
         # 정적 DB(일주×세운×생애단계) 조회 — 런타임 Gemini 호출 없음.
-        return _yearly_study_static(ty, saju, monthly, best, caution)
+        return finish_reading(*_yearly_study_static(ty, saju, monthly, best, caution))
     if category in _STATIC_CATEGORIES:
         # 정적 DB(일주×세운) 조회 — 런타임 Gemini 호출 없음.
-        return _yearly_static(category, ty, saju, monthly, best, caution)
+        return finish_reading(*_yearly_static(category, ty, saju, monthly, best, caution))
     if category in _YEARLY_V2_CATEGORIES:
-        return _yearly_v2_static(category, ty, saju, monthly, best, caution)
+        return finish_reading(*_yearly_v2_static(category, ty, saju, monthly, best, caution))
 
     def _gen():
         extra_schema = ""
@@ -660,4 +661,4 @@ def generate_yearly(
         "birth": {"y": year, "m": month, "d": day, "h": hour, "min": minute, "g": gender, "lunar": is_lunar},
     }
     data, is_fb, _ = get_or_create(f"yearly_{category}", payload, _gen)
-    return data, is_fb
+    return finish_reading(data, is_fb)

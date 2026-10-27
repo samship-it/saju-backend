@@ -48,8 +48,28 @@ def is_valid_headline(text: str) -> bool:
     return headline_invalid_reason(text) == ""
 
 
+_READER_GREETING = re.compile(
+    r"^(?:안녕하세요|반갑습니다|우와|와우)\s*[,!]?\s*(?:여러분\s*[!！]?\s*)?"
+)
+_NICKNAME = re.compile(
+    r"^[^.!?\n]{0,40}(?:님|여러분입니다|여러분)\s*[,!！.]?\s*"
+)
+
+
+def strip_reader_greeting(text: str) -> str:
+    """본문 앞에 붙은 '안녕하세요, 호랑이님!' 같은 호칭 인사만 뺀다."""
+    cleaned = _READER_GREETING.sub("", (text or "").strip(), count=1).strip()
+    if cleaned.startswith("오늘"):
+        return cleaned
+    nick = _NICKNAME.match(cleaned)
+    if nick and cleaned[nick.end():].lstrip().startswith("오늘"):
+        return cleaned[nick.end():].strip()
+    return cleaned
+
+
 def paragraphize(text: str, sentences_per_paragraph: int = 3) -> str:
-    t = (text or "").strip()
+    from shared.prose_quality import polish_text
+    t = polish_text(text or "").strip()
     if not t or "\n" in t:
         return t
     sentences = [s.strip() for s in _SENTENCE.findall(t) if s.strip()]

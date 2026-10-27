@@ -795,7 +795,8 @@ def assemble(
     if _opposes_move(headline, move_high):
         headline = _OPENING[axis].split(".")[0].strip() + "."
 
-    return {
+    from shared.prose_quality import polish_tree
+    return polish_tree({
         "symbol": {
             "keywords": keywords,
             "object": str(t["concept_object"] if lead_travel else h["concept_object"]),
@@ -807,7 +808,7 @@ def assemble(
         "section_4_matched_activity": _join(activity),
         "section_5_solo_vs_together": _join(company_parts),
         "section_6_final_reward": _join(reward),
-    }
+    })
 
 
 def _join(parts: List[str]) -> str:

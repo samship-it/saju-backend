@@ -16,6 +16,7 @@ from domains.market.indicators import get_daily_market_direction
 from domains.wealth.engine import (
     build_report, classify_day_relation, classify_wealth_type, morning_stance,
 )
+from shared.prose_quality import finish_reading
 from shared.public import person_summary
 
 logger = logging.getLogger(__name__)
@@ -63,11 +64,12 @@ def analyze_daily_finance(
         "market": {"indices": snapshot.get("indices"), "is_live": bool(snapshot.get("is_live"))},
         **report,
     }
-    return {
+    payload = {
         "content_type": CONTENT_TYPE,
         "target_date": t_date,
         "birth_time_known": saju.get("birth_time_known"),
         "day_master": saju.get("day_master"),
         "saju_info": person_summary(saju),
         "data": data,
-    }, False
+    }
+    return finish_reading(payload, False)

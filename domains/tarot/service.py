@@ -11,6 +11,7 @@ from domains.tarot.deck import BASE_CARDS, CARD_BY_ID, image_url
 from domains.tarot.content import get_card_reading, get_love_reading, load_card_content
 from shared.ai_client import call_gemini_json
 from shared.fortune_cache import get_or_create
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 
 FINANCE_TYPES = {"오늘의 재테크 타로", "재테크 타로", "finance"}
@@ -97,7 +98,7 @@ def generate_tarot_reading(
             "today_message": paragraphize(lr.get("today_message", "")),
             "content_loaded": bool(lr),
         }
-        return result, False
+        return finish_reading(result, False)
 
     reading = get_card_reading(cid, rev, finance)
     content_loaded = bool(load_card_content())
@@ -155,9 +156,9 @@ def generate_tarot_reading(
         }
         if finance:
             result["finance_summary"] = reading.get("summary")
-        return result, is_fb
+        return finish_reading(result, is_fb)
 
     # 같은 (유형·카드·방향·질문)이면 동일 결과 유지
     payload = {"type": reading_type, "card_id": cid, "reversed": rev, "q": (question or "").strip()}
     data, is_fallback, _from_cache = get_or_create("tarot", payload, _gen)
-    return data, is_fallback
+    return finish_reading(data, is_fallback)

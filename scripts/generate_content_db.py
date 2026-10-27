@@ -421,23 +421,22 @@ def strip_enumeration(s: Any) -> Any:
     return out
 
 
-# 모델이 가끔 만드는 글자 깨짐 오타. (검수에서 발견되는 대로 추가)
-_TYPO_FIXUPS = {
-    "천섀기": "천천히",
-    "여미까": "여기니까",
-    "제테크": "재테크",
-}
 # '타고난 흐름' 설명에 부적합한 시점 단어 제거(relationship 등에서 strip_time_words=True 로 사용).
 _TIME_WORD_LEAD = re.compile(r"(?:^|(?<=[.!?…]\s)|(?<=[\s,]))(?:오늘|요즘)[,\s]+")
+
+
+def _surface_blocked(entry: Any) -> bool:
+    """저장 전에 공통 검사로 문장이 끝나지 않은 칸을 거른다. 오타와 인사는 polish 가 고친다."""
+    from shared.prose_quality import hard_surface_reason, walk_strings
+    return any(hard_surface_reason(text) for text in walk_strings(entry))
 
 
 def apply_text_fixups(s: Any, strip_time_words: bool = False) -> Any:
     """오타 교정(+선택적으로 시점 단어 제거). strip_enumeration 과 함께 쓴다."""
     if not isinstance(s, str):
         return s
-    for bad, good in _TYPO_FIXUPS.items():
-        if bad in s:
-            s = s.replace(bad, good)
+    from shared.prose_quality import polish_text
+    s = polish_text(s)
     if strip_time_words:
         s = s.replace("오늘이라도", "지금이라도").replace("오늘 당장", "당장")
         s = _TIME_WORD_LEAD.sub("", s)
@@ -1187,7 +1186,7 @@ def _run_batched(args, todo, db, out_path, keys, *, prompt_fn, valid_fn, coerce_
                 if not isinstance(entry, dict):
                     miss.append(it); continue
                 entry = coerce_fn(entry)
-                if not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
+                if _surface_blocked(entry) or not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
                     bad.append(it)
                     if debug_fn:
                         debug_fn(key, entry)
@@ -1383,7 +1382,7 @@ def _run_batched_concurrent(args, todo, db, out_path, keys, *, prompt_fn, valid_
                 if not isinstance(entry, dict):
                     miss.append(it); continue
                 entry = coerce_fn(entry)
-                if not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
+                if _surface_blocked(entry) or not (valid_fn(entry, it) if valid_wants_item else valid_fn(entry)):
                     bad.append(it); continue
                 with db_lock:
                     store_fn(db, key, entry, model_name)

@@ -92,6 +92,7 @@ from domains.daewoon.twenty_year import build_twenty_year_story, core_continues,
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
 from domains.lifelong.service import _fallback_stage_detail, _ilju
+from shared.prose_quality import finish_reading
 from shared.public import person_summary
 
 CONTENT_TYPE = "daewoon_period"
@@ -503,10 +504,11 @@ def analyze_daewoon_period(
         "domain_pipeline": domain_pipeline,
     }
 
-    return {
+    payload = {
         "content_type": CONTENT_TYPE,
         "birth_time_known": saju.get("birth_time_known"),
         "day_master": saju.get("day_master"),
         "saju_info": person_summary(saju),
         "data": data,
-    }, is_fallback
+    }
+    return finish_reading(payload, is_fallback)

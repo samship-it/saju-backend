@@ -10,6 +10,7 @@ from typing import Dict, Any, Tuple
 
 from core.saju_base import calculate_saju
 from core.constants import compat_band
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from shared.public import person_summary
 from domains.compatibility.engine import calculate_compatibility_interactions
@@ -59,7 +60,7 @@ def analyze_compatibility_report(
     raw = _fallback() if is_fallback else entry
     report = {k: paragraphize(str(raw.get(k, ""))) for k in _FIELDS}
 
-    return {
+    result = {
         "content_type": "궁합",
         "relation_type": relation_type,
         "combo_key": content_db.make_key(g1, g2),
@@ -80,4 +81,5 @@ def analyze_compatibility_report(
             "counts": interactions["counts"],
         },
         "report": report,
-    }, is_fallback
+    }
+    return finish_reading(result, is_fallback)

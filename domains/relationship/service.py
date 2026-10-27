@@ -16,6 +16,7 @@ from core.saju_base import calculate_saju
 from core.constants import CHUNG
 from core.timeframe import next_3_months, marriage_10year_window
 from shared.public import person_summary
+from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.relationship import content_db
 
@@ -118,7 +119,7 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
             ]
         else:
             out["strategy_3months"] = _love_fallback(kind, months, True)["strategy_3months"]
-    return out, is_fallback
+    return finish_reading(out, is_fallback)
 
 
 def analyze_reunion(self_info, partner_info=None, target_date=None):
@@ -309,7 +310,7 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
             v = data.get(f) if isinstance(data, dict) else None
             out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
                       else _MARRIAGE_SOLO_FALLBACK[f])
-    return out, is_fallback
+    return finish_reading(out, is_fallback)
 
 
 def _couple_best_year(w1, w2) -> int:
