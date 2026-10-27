@@ -176,6 +176,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_overall_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_wealth", "재물운", "YEARLY",
@@ -184,6 +185,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_wealth_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_love", "연애운", "YEARLY",
@@ -192,6 +194,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_love_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_business", "사업운", "YEARLY",
@@ -200,6 +203,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_business_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_career_change", "직장·이직운", "YEARLY",
@@ -208,6 +212,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_career_change_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_study", "학업운", "YEARLY",
@@ -216,6 +221,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_study_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_health", "건강운", "YEARLY",
@@ -224,6 +230,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_health_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_travel", "여행운", "YEARLY",
@@ -232,6 +239,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_travel_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "yearly_hobby", "취미운", "YEARLY",
@@ -240,6 +248,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_hobby_db.json",),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
     ),
     _p(
         "travel_hobby", "여행·취미", "YEARLY",
@@ -251,6 +260,7 @@ PRODUCTS = (
         "any",
         ("domains/yearly/data/yearly_travel_db.json", "domains/yearly/data/yearly_hobby_db.json"),
         ("domains/yearly/service.py",),
+        code=("domains/yearly/one_line_voice.py",),
         topic_policy="travel_sections",
     ),
 )

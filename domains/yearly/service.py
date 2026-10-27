@@ -21,6 +21,7 @@ from shared.public import person_summary
 from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.yearly import content_db as _yearly_db
+from domains.yearly.one_line_voice import vary_repeated_phrase as _vary_one_line
 from domains.yearly.travel_hobby import assemble as _assemble_travel_hobby
 from domains.yearly.travel_hobby import read_axes as _read_travel_hobby_axes
 
@@ -38,7 +39,8 @@ CATEGORIES = {
 
 _SYSTEM = (
     "당신은 2030 세대를 위한 사주 앱 화자입니다. 제공된 사주/운 데이터만 근거로 한 해를 하나의 스토리처럼 풀어냅니다. "
-    "사주 용어 노출 금지. 유효한 JSON 만 출력합니다."
+    "사주 용어 노출 금지. 운세는 한 사람에게 읽어 준다. "
+    "'여러분', '여러분은', '여러분의'처럼 여러 명을 부르지 않는다. 유효한 JSON 만 출력합니다."
 )
 
 
@@ -93,8 +95,8 @@ def _best_caution(monthly: List[Dict[str, Any]]):
     return best, caution
 
 
-# 월별 구체 서사 — (지배 십신 그룹, 기회/주의 밴드) 조합별 고정 서술. 원국 전체 의존 없이도
-# 정확한 이유(그 달에 어떤 기운이 강해서 기회/주의인지)를 매달 설명할 수 있다.
+# 월별 구체 서사 — (지배 십신 그룹, 기회/주의 밴드) 조합별 고정 서술.
+# 점수로 구분된 달에만 붙인다.
 _MONTH_TAG_NARRATIVE = {
     ("재성", "best"): "돈과 관련된 기회가 자연스럽게 따라붙는 달이에요. 협상·거래나 새로운 수입원 제안이 들어오면 적극적으로 검토해볼 만해요.",
     ("재성", "caution"): "지출 관리에 특히 신경 써야 하는 달이에요. 충동적인 소비나 성급한 투자 결정은 잠시 미뤄두는 편이 안전해요.",
@@ -107,30 +109,49 @@ _MONTH_TAG_NARRATIVE = {
     ("비겁", "best"): "주변 사람들과의 협력이 힘이 되는 달이에요. 혼자보다 함께할 때 더 큰 성과가 따라와요.",
     ("비겁", "caution"): "경쟁이나 의견 충돌이 생기기 쉬운 달이에요. 굳이 맞서기보다 한발 물러서는 여유가 필요해요.",
 }
-_MONTH_NEUTRAL_NARRATIVE = "큰 기복 없이 무난하게 흘러가는 달이에요. 평소 페이스를 유지하면서 다음 기회를 준비하기 좋은 시기예요."
+
+
+def _separated_month_indexes(monthly: List[Dict[str, Any]]) -> Dict[int, str]:
+    """기존 상위 3·하위 3 안에서, 그 바깥 달과 점수가 실제로 다른 달만 고른다.
+
+    순위 자리는 유지한다. 같은 점수인데 정렬 순서만으로 기회나 주의가 된 달은 빼며,
+    가운데 달은 점수가 비슷하다는 이유로 따로 설명하지 않는다.
+    """
+    ranked = sorted(monthly, key=lambda r: r["strength"], reverse=True)
+    best_rows = ranked[:3]
+    caution_rows = list(reversed(ranked[-3:]))
+    best_ids = {r["month_index"] for r in best_rows}
+    caution_ids = {r["month_index"] for r in caution_rows}
+    outside_best = [r["strength"] for r in monthly if r["month_index"] not in best_ids]
+    outside_caution = [r["strength"] for r in monthly if r["month_index"] not in caution_ids]
+    best_ceiling = max(outside_best) if outside_best else None
+    caution_floor = min(outside_caution) if outside_caution else None
+    chosen: Dict[int, str] = {}
+    for r in best_rows:
+        if best_ceiling is not None and r["strength"] > best_ceiling:
+            chosen[r["month_index"]] = "best"
+    for r in caution_rows:
+        if r["month_index"] in chosen:
+            continue
+        if caution_floor is not None and r["strength"] < caution_floor:
+            chosen[r["month_index"]] = "caution"
+    return chosen
 
 
 def _monthly_flow(monthly: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """12개월 각각에 '왜 기회/주의인지' 구체 서사를 붙인다.
+    """점수로 구분되는 달에만, 그 달을 지배하는 십신 그룹의 기존 설명을 붙인다.
 
-    베스트/주의 달 자체는 원국 전체(용신 등)에 의존해 사람마다 다르므로 엔진이
-    실시간으로 순위를 매기고(top3/bottom3), 그 달에 왜 그런지는 그 달을 지배하는
-    십신 그룹(엔진이 이미 계산한 tag)에 맞는 고정 서사를 붙인다 — 특정 (일주,세운)
-    조합에 텍스트를 미리 박아두는 방식이 아니라서 원국이 달라도 항상 정합적이다.
+    12개월을 채우지 않는다. 구분되지 않는 달에는 같은 문장을 만들지 않는다.
     """
-    ranked = sorted(monthly, key=lambda r: r["strength"], reverse=True)
-    best_idx = {r["month_index"] for r in ranked[:3]}
-    caution_idx = {r["month_index"] for r in ranked[-3:]}
+    chosen = _separated_month_indexes(monthly)
     out = []
     for r in monthly:
-        if r["month_index"] in best_idx:
-            band = "best"
-        elif r["month_index"] in caution_idx:
-            band = "caution"
-        else:
-            band = "neutral"
-        narrative = _MONTH_TAG_NARRATIVE.get((r.get("tag", ""), band), _MONTH_NEUTRAL_NARRATIVE) \
-            if band != "neutral" else _MONTH_NEUTRAL_NARRATIVE
+        band = chosen.get(r["month_index"])
+        if not band:
+            continue
+        narrative = _MONTH_TAG_NARRATIVE.get((r.get("tag", ""), band))
+        if not narrative:
+            continue
         out.append({
             "month": r["solar_month_approx"],
             "strength": r["strength"],
@@ -258,7 +279,7 @@ def _yearly_static(category: str, ty: int, saju: dict, monthly, best, caution):
         "day_master": saju.get("day_master"),
         "birth_time_known": saju.get("birth_time_known"),
         "saju_info": person_summary(saju),
-        "one_line": str(src.get("one_line", "")),
+        "one_line": _vary_one_line(category, g1, se, str(src.get("one_line", ""))),
         "keywords": kws,
         "overall_flow": paragraphize(flow),
         "first_half": paragraphize(fh),
@@ -391,7 +412,7 @@ def _yearly_v2_static(category: str, ty: int, saju: dict, monthly, best, caution
         "day_master": saju.get("day_master"),
         "birth_time_known": saju.get("birth_time_known"),
         "saju_info": person_summary(saju),
-        "one_line": str(src.get("one_line", "")),
+        "one_line": _vary_one_line(category, g1, se, str(src.get("one_line", ""))),
         "keywords": kw,
         "concept_object": str(src.get("concept_object", "")),
         "monthly": monthly,
@@ -476,7 +497,7 @@ def _yearly_study_static(ty: int, saju: dict, monthly, best, caution):
         "saju_info": person_summary(saju),
         "life_stage": saju.get("life_stage"),
         "age": saju.get("age"),
-        "one_line": str(src.get("one_line", "")),
+        "one_line": _vary_one_line("study", g1, se, str(src.get("one_line", "")), study_stage=stage),
         "keywords": kw,
         "concept_object": str(src.get("concept_object", "")),
         "monthly": monthly,
@@ -510,6 +531,12 @@ def _build_travel_hobby(year, month, day, hour, minute, gender, is_lunar, ty):
         required=("one_line", "overall_flow", "active_activities", "solo_vs_group", "benefits"),
     )
     axes = _read_travel_hobby_axes(saju, se)
+    if isinstance(travel, dict):
+        travel = dict(travel)
+        travel["one_line"] = _vary_one_line("travel", g1, se, str(travel.get("one_line") or ""))
+    if isinstance(hobby, dict):
+        hobby = dict(hobby)
+        hobby["one_line"] = _vary_one_line("hobby", g1, se, str(hobby.get("one_line") or ""))
     sections = _assemble_travel_hobby(
         travel, hobby,
         move_high=axes["move_high"],
