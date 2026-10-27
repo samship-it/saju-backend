@@ -94,7 +94,6 @@ PRODUCTS = (
         code=(
             "domains/lifelong/landscape.py",
             "domains/lifelong/life_periods.py",
-            "domains/lifelong/life_voice.py",
             "domains/lifelong/highlight.py",
             "domains/lifelong/spouse_outlook.py",
         ),

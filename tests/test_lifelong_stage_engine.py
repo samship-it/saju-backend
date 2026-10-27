@@ -328,10 +328,7 @@ def test_analyze_lifelong_fortune_returns_all_8_stages_with_current_flag(monkeyp
 
     data, is_fallback = analyze_lifelong_fortune(1990, 5, 15, 10, 0, "male", False)
     assert is_fallback is False
-    # 성격 원문을 평생 사주에 그대로 싣지 않는다. 나이별 삶의 흐름으로 다시 쓴다.
-    assert data["data"]["core_nature"]["personality"] != "테스트 성격"
-    assert "테스트 성격" not in data["data"]["core_nature"]["personality"]
-    assert "세부터" in data["data"]["core_nature"]["personality"]
+    assert data["data"]["core_nature"]["personality"] == "테스트 성격"
     assert data["data"]["core_nature"]["life_theme"] == "테스트 주제"
 
     stages = data["data"]["life_stages"]
