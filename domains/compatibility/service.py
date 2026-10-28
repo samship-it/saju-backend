@@ -14,7 +14,7 @@ from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from shared.public import person_summary
 from domains.compatibility.engine import calculate_compatibility_interactions
-from domains.compatibility import content_db
+from domains.compatibility import content_db, disposition
 
 _FIELDS = content_db.FIELDS
 
@@ -51,14 +51,26 @@ def analyze_compatibility_report(
     )
     interactions = calculate_compatibility_interactions(s1, s2)
     total = interactions["total_score"]
-    band = compat_band(total)
+    overall = interactions["sub_scores"]["overall"]
+    # 연인·배우자 상단은 기존 total(전체 30·애정 25·소통 20·갈등 15·경제 10).
+    # 그 외 상단은 충합 기반 overall. 점수식은 바꾸지 않는다.
+    romantic = disposition.is_romantic(relation_type)
 
     g1 = s1.get("day_ganji") or ""
     g2 = s2.get("day_ganji") or ""
-    entry = content_db.lookup(g1, g2)
-    is_fallback = entry is None
-    raw = _fallback() if is_fallback else entry
-    report = {k: paragraphize(str(raw.get(k, ""))) for k in _FIELDS}
+    if romantic:
+        band = compat_band(total)
+        entry = content_db.lookup(g1, g2)
+        is_fallback = entry is None
+        raw = _fallback() if is_fallback else entry
+        report = {k: paragraphize(str(raw.get(k, ""))) for k in _FIELDS}
+        report["economy"] = paragraphize(content_db.polish_economy(str(raw.get("economy", ""))))
+    else:
+        band = disposition.headline(overall, relation_type)
+        is_fallback = False
+        report = {
+            k: paragraphize(text) for k, text in disposition.build_report(interactions, relation_type).items()
+        }
 
     result = {
         "content_type": "궁합",
@@ -79,6 +91,7 @@ def analyze_compatibility_report(
             "day_master_relation": interactions["day_master_relation"],
             "day_ji_relation": interactions["day_ji_relation"],
             "counts": interactions["counts"],
+            "overall_basis": interactions["overall_basis"],
         },
         "report": report,
     }

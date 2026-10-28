@@ -1,8 +1,11 @@
 """두 사람 원국의 관계 연산 → 세부 궁합 점수(전체/애정/소통/갈등/경제) + 종합 점수.
 
 문장은 만들지 않는다. 점수와 관계 요소만 산출한다.
+
+상단 전체 점수만 관계 요소를 '글자 쌍 1건'으로 센다. 애정·소통·갈등·경제는
+기존 기둥 조합 횟수를 그대로 쓴다.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 from itertools import product
 
 from core.constants import (
@@ -26,6 +29,53 @@ def _pillars(saju: Dict[str, Any]) -> Dict[str, str]:
 
 def _clamp(v: float) -> int:
     return max(0, min(100, int(round(v))))
+
+
+def _unique_relations(xs: List[str], ys: List[str], table) -> int:
+    """기둥을 모두 짝지어 같은 글자 쌍이 여러 번 나와도 관계 표의 쌍은 1건이다.
+
+    합·충 표는 지지/천간 글자의 관계이지, 기둥 칸 수만큼 거듭되는 관계가 아니다.
+    """
+    found = set()
+    for x, y in product(xs, ys):
+        key = frozenset((x, y))
+        if len(key) == 2 and key in table:
+            found.add(key)
+    return len(found)
+
+
+def _cross_samhap(jis_a: List[str], jis_b: List[str]) -> int:
+    """삼합은 왕지를 포함한 반합이 두 사람에게 나뉘어 있을 때 국마다 1건이다.
+
+    SAMHAP 튜플은 (생지, 왕지, 고지)다. 생지와 고지만 있는 겹침은 반합이 아니므로
+    전체 점수에 넣지 않는다. 한 국 안의 반합이 두 개여도 그 국은 1건이다.
+    """
+    set_a, set_b = set(jis_a), set(jis_b)
+    n = 0
+    for group in SAMHAP:
+        wang = group[1]
+        for side in (group[0], group[2]):
+            if (wang in set_a and side in set_b) or (wang in set_b and side in set_a):
+                n += 1
+                break
+    return n
+
+
+def _absence_complement(fa: Dict[str, int], fb: Dict[str, int]) -> int:
+    """없는 오행(개수 0)을 상대가 2개 이상 가진 경우만 보완 1건으로 센다.
+
+    가장 적은 오행을 항상 부족으로 넣으면, 다섯 오행이 모두 있어도 보완이 생긴다.
+    """
+    if not fa or not fb:
+        return 0
+
+    def absent(f: Dict[str, int]) -> Set[str]:
+        return {e for e, c in f.items() if c == 0}
+
+    def strong(f: Dict[str, int]) -> Set[str]:
+        return {e for e, c in f.items() if c >= 2}
+
+    return len(absent(fa) & strong(fb)) + len(absent(fb) & strong(fa))
 
 
 def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[str, Any]) -> Dict[str, Any]:
@@ -125,10 +175,29 @@ def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[st
     dohwa = saju_a.get("sinsal", {}).get("has_dohwa") or saju_b.get("sinsal", {}).get("has_dohwa")
 
     # ---- 세부 점수 ----
+    # 애정·소통·갈등·경제는 아래 기둥 조합 횟수를 유지한다.
     harmony = gan_hap + ji_yukhap + ji_samhap + complement
-    discord = gan_chung + ji_chung + ji_hyeong + ji_pa + ji_hae
 
-    overall = 62 + 8 * harmony - 7 * discord + (8 if dm_relation in ("상생", "비화(같은 기운)") else 0) \
+    # 전체 점수(overall)는 충합 기반 성향 점수다. 연애 대표 점수가 아니다.
+    # 같은 글자 쌍은 기둥이 달라도 1건이다. 년주와 일주를 따로 가중하지 않는다.
+    # 삼합은 왕지 반합만, 국마다 1건. 생지·고지만 겹치면 넣지 않고, 완전 삼합도 가산하지 않는다.
+    # 오행 보완은 개수 0을 상대가 2개 이상 채울 때만. 가장 적은 오행은 여기 넣지 않는다.
+    # 가산·감산 폭(건당 +8/−7, 기본 62, 일간 보정)은 그대로다.
+    # 육합이면서 파인 쌍(寅亥, 巳申)은 합과 파를 모두 1건씩 반영한다. 어느 쪽도 지우지 않는다.
+    # 알려진 한계: 기둥 역할을 구분하지 않고, 반합 조건은 육합의 중복 제거와 다르다.
+    # 건당 +8이면 서로 다른 합이 몇 건만 있어도 100에 닿을 수 있다.
+    u_gan_hap = _unique_relations(gans_a, gans_b, _CHEONGAN_HAP)
+    u_gan_chung = _unique_relations(gans_a, gans_b, _CHEONGAN_CHUNG)
+    u_yukhap = _unique_relations(jis_a, jis_b, YUKHAP)
+    u_chung = _unique_relations(jis_a, jis_b, CHUNG)
+    u_hyeong = _unique_relations(jis_a, jis_b, SANGHYEONG)
+    u_pa = _unique_relations(jis_a, jis_b, PA)
+    u_hae = _unique_relations(jis_a, jis_b, HAE)
+    u_samhap = _cross_samhap(jis_a, jis_b)
+    u_complement = _absence_complement(fa, fb)
+    overall_harmony = u_gan_hap + u_yukhap + u_samhap + u_complement
+    overall_discord = u_gan_chung + u_chung + u_hyeong + u_pa + u_hae
+    overall = 62 + 8 * overall_harmony - 7 * overall_discord + (8 if dm_relation in ("상생", "비화(같은 기운)") else 0) \
         + (6 if dm_hap else 0) - (8 if dm_chung else 0)
 
     love = 60 + (14 if day_ji_relation in ("육합", "삼합") else 0) \
@@ -191,6 +260,12 @@ def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[st
             "지지파": ji_pa, "지지해": ji_hae, "지지삼합": ji_samhap,
         },
         "오행보완": complement,
+        "overall_basis": {
+            "천간합": u_gan_hap, "천간충": u_gan_chung,
+            "지지육합": u_yukhap, "지지충": u_chung, "지지형": u_hyeong,
+            "지지파": u_pa, "지지해": u_hae, "지지삼합": u_samhap,
+            "오행보완": u_complement,
+        },
         "배우자성_교차": {"b_is_spouse_for_a": b_is_spouse_for_a, "a_is_spouse_for_b": a_is_spouse_for_b},
         "도화": bool(dohwa),
         "sub_scores": sub,

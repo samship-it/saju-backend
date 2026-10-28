@@ -275,11 +275,12 @@ def test_compatibility_structure_and_band():
     sc = body["scores"]
     for k in ("total", "overall", "love", "communication", "conflict", "economy"):
         assert isinstance(sc[k], int) and 0 <= sc[k] <= 100
-    # 8단계 한줄평 테이블 검증
+    # 연인 상단·한줄평은 기존 가중 종합(total)을 따른다.
     from core.constants import compat_band
     expected = compat_band(sc["total"])
     assert body["relation_type_label"] == expected["relation_type"]
     assert body["one_liner"] == expected["one_liner"]
+    assert body["score_band"] == expected["band"]
     assert set(body["report"].keys()) == {
         "overall", "love", "communication", "conflict", "conflict_resolution", "economy", "relationship_advice"}
     _no_forbidden(body)
