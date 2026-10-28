@@ -15,6 +15,7 @@ from shared.text_format import paragraphize
 from shared.public import person_summary
 from domains.compatibility.engine import calculate_compatibility_interactions
 from domains.compatibility import content_db, disposition
+from domains.compatibility.relation_voice import adapt_report
 
 _FIELDS = content_db.FIELDS
 
@@ -58,19 +59,17 @@ def analyze_compatibility_report(
 
     g1 = s1.get("day_ganji") or ""
     g2 = s2.get("day_ganji") or ""
+    entry = content_db.lookup(g1, g2)
+    is_fallback = entry is None
+    raw = _fallback() if is_fallback else entry
+    raw = dict(raw)
+    raw["economy"] = content_db.polish_economy(str(raw.get("economy", "")))
     if romantic:
         band = compat_band(total)
-        entry = content_db.lookup(g1, g2)
-        is_fallback = entry is None
-        raw = _fallback() if is_fallback else entry
-        report = {k: paragraphize(str(raw.get(k, ""))) for k in _FIELDS}
-        report["economy"] = paragraphize(content_db.polish_economy(str(raw.get("economy", ""))))
     else:
         band = disposition.headline(overall, relation_type)
-        is_fallback = False
-        report = {
-            k: paragraphize(text) for k, text in disposition.build_report(interactions, relation_type).items()
-        }
+    voiced = adapt_report(raw, relation_type if romantic else disposition.normalize_relation(relation_type))
+    report = {k: paragraphize(str(voiced.get(k, ""))) for k in _FIELDS}
 
     result = {
         "content_type": "궁합",
