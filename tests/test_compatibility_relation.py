@@ -164,3 +164,27 @@ def test_voice_keeps_embedded_syllables_and_strips_romance():
     assert "스킨십" not in text
     assert "데이트" not in text
     assert "연애" not in text
+
+
+def test_section_leads_drop_title_echo_and_keep_the_point():
+    from domains.compatibility.relation_voice import trim_section_lead
+
+    romantic = _analyze("romantic")
+    assert romantic["scores"]["economy"] == 71
+    assert not romantic["report"]["conflict"].startswith("갈등")
+    assert not romantic["report"]["economy"].startswith("경제")
+    assert "꼼꼼" in romantic["report"]["economy"]
+    kept = trim_section_lead(
+        "economy",
+        "돈을 관리하고 소비하는 스타일에 있어서 두 분은 신중해요.",
+    )
+    assert kept.startswith("돈을 관리하고 소비")
+    assert trim_section_lead(
+        "conflict",
+        "갈등이 생길 때는 서로의 의견 차이로 인해 감정이 상할 수 있어요.",
+    ) == "서로의 의견 차이로 인해 감정이 상할 수 있어요."
+    assert trim_section_lead(
+        "communication",
+        "대화를 나눌 때 나는 먼저 듣습니다.",
+    ).startswith("대화를 나눌 때")
+
