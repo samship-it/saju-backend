@@ -188,3 +188,32 @@ def test_section_leads_drop_title_echo_and_keep_the_point():
         "대화를 나눌 때 나는 먼저 듣습니다.",
     ).startswith("대화를 나눌 때")
 
+
+def test_nonromantic_scenes_follow_the_relation_without_score_change():
+    from domains.compatibility.relation_voice import adapt_text
+
+    src = (
+        "상대가 주도권을 잡고 리드하려 할 때 넓은 마음으로 받아주면 "
+        "상대는 금방 마음을 풀고 내게 뜨겁게 안겨옵니다."
+    )
+    assert "안겨옵니다" in adapt_text(src, "romantic")
+    friend = adapt_text(src, "friend")
+    assert "주도권" in friend
+    assert "우정" in friend
+    assert "안겨" not in friend
+    business = adapt_text(src, "business")
+    assert "역할" in business and "협업" in business
+    assert "거리" in adapt_text(src, "acquaintance")
+    assert "선을" not in adapt_text("서로를 품어주는 따뜻한 인연입니다.", "acquaintance")
+    assert "사이예요" in adapt_text("완벽한 커플이에요.", "friend")
+    assert "사이가에요" not in adapt_text("완벽한 커플이에요.", "friend")
+    kept = adapt_text("든든함을 안겨 줍니다. 나는 우직하게 참아내요.", "friend")
+    assert "든든함을 안겨" in kept
+    assert "참아내" in kept
+    body = _analyze("friend")
+    assert body["scores"]["total"] == 72
+    assert body["scores"]["economy"] == 71
+    blob = "\n".join(body["report"].values())
+    for word in ("안식처", "짝꿍", "손잡고", "연애", "사랑"):
+        assert word not in blob
+
