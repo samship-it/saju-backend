@@ -119,6 +119,16 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
             ]
         else:
             out["strategy_3months"] = _love_fallback(kind, months, True)["strategy_3months"]
+    if kind == "reunion":
+        # 저장된 종합운은 그대로 두고, 화면용 한줄평·구획만 일간·일지로 조립한다.
+        from domains.relationship.reunion_brief import build_reunion_brief
+        brief = build_reunion_brief(
+            g1, g2 if partner_exists else None, [m["label"] for m in months],
+        )
+        out["headline"] = brief["headline"]
+        out["reunion_frame"] = brief["frame"]
+        out["reunion_sections"] = brief["sections"]
+        out["reunion_strategy"] = brief["strategy"]
     return finish_reading(out, is_fallback)
 
 
