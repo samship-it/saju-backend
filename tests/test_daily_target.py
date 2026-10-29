@@ -321,3 +321,32 @@ def test_p95_under_20ms_after_warmup(partner):
     samples.sort()
     p95 = samples[int(len(samples) * 0.95) - 1]
     assert p95 < 0.02, p95
+
+
+def test_partner_list_count_matches_saved_rows_and_ignores_stale_cache():
+    from domains.daily.partners import _remember_list, partners_of
+
+    owner = "partner-list-count-owner"
+    ids = [f"count-{index}" for index in range(1, 6)]
+    try:
+        assert partners_of(owner) == []
+        listed = client.get("/api/v1/daily/partners", headers=API_KEY, params={"user_id": owner})
+        assert listed.status_code == 200
+        assert listed.json()["data"] == []
+        for count, partner_id in enumerate(ids, start=1):
+            upsert_partner(
+                owner, partner_id, nickname=f"person-{count}",
+                year=1990, month=1, day=count, hour=9, minute=0, gender="female",
+            )
+            assert len(partners_of(owner)) == count
+            again = client.get("/api/v1/daily/partners", headers=API_KEY, params={"user_id": owner})
+            assert again.status_code == 200, again.text
+            assert len(again.json()["data"]) == count
+        assert _remember_list(owner, -1, [{"partner_id": "only-one"}]) is False
+        assert len(partners_of(owner)) == 5
+        assert [row["id"] for row in client.get(
+            "/api/v1/daily/partners", headers=API_KEY, params={"user_id": owner},
+        ).json()["data"]] == ids
+    finally:
+        for partner_id in ids:
+            delete_partner(owner, partner_id)
