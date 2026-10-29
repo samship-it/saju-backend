@@ -1,4 +1,6 @@
 """재회운 한줄평은 일간·일지 신호의 판단 초점이다. 점수 등급이 아니다."""
+import re
+
 from fastapi.testclient import TestClient
 
 import main
@@ -50,21 +52,43 @@ def test_solo_brief_stays_on_my_habit_and_has_no_score():
     assert "예측하지 않아요" in text
 
 
+def _sentence_count(text: str) -> int:
+    return len([part for part in re.split(r"[.!?]", text) if part.strip()])
+
+
 def test_couple_focus_follows_day_branch_not_a_luck_grade():
     bond = build_reunion_brief("甲子", "乙丑", _LABELS)
     clash = build_reunion_brief("甲子", "甲午", _LABELS)
     mixed = build_reunion_brief("甲寅", "乙亥", _LABELS)
     none = build_reunion_brief("甲子", "丙寅", _LABELS)
-    assert "붙기" in bond["headline"]
+    gap = build_reunion_brief("壬子", "甲寅", _LABELS)
+    assert _sentence_count(bond["headline"]) == 1
+    assert "붙" in bond["headline"]
     assert "부딪" not in bond["headline"]
     assert "부딪" in clash["headline"] or "주제" in clash["headline"]
     assert "가까워지는 힘" in mixed["headline"] and "깨지는 힘" in mixed["headline"]
-    assert "고정 신호는 없어요" in none["headline"]
+    assert "고정 신호" not in none["headline"]
+    assert "막힌 말" in none["headline"]
+    assert "서두르" not in _blob(none)
+    assert "늦추" not in _blob(gap)
+    assert "고정 신호" not in gap["headline"]
+    assert "막힌 말" in gap["headline"]
+    why, overall = none["sections"][0]["text"], none["sections"][1]["text"]
+    assert "강점은 확인되지 않아요" in why
+    assert "밖으로 꺼내는" in why
+    assert "밖으로 꺼내는" not in overall
+    charm = none["sections"][-1]["text"]
+    assert "표현할 때" in charm
+    assert "주의할 점" in charm
+    assert "마음을 정하세요" not in charm
     assert bond["headline"] != clash["headline"]
     titles = [section["title"] for section in bond["sections"]]
     assert titles[0] == "우리는 왜"
     assert titles[2] == "갈등이 생기는 원인과 반복될 수 있는 패턴"
     assert "재회가 성사되는 기한이 아니에요" in bond["strategy"]["intro"]
+    assert "붙는 관계" in bond["strategy"]["intro"]
+    assert "고정 장면" in none["strategy"]["intro"]
+    assert "이별 원인이었는지는 사주가 몰라요" in clash["sections"][2]["text"]
 
 
 def test_solo_and_couple_charm_are_not_the_same_sentence():
@@ -74,8 +98,8 @@ def test_solo_and_couple_charm_are_not_the_same_sentence():
     couple_charm = couple["sections"][-1]["text"]
     assert solo_charm != couple_charm
     assert solo["headline"] != couple["headline"]
-    assert "그리워하는지는" in couple_charm
-    assert "그리워해요" not in couple_charm
+    assert "표현할 때" in couple_charm
+    assert "그리워" not in couple_charm
 
 
 def test_every_day_pillar_brief_is_speakable_and_unscored():
@@ -83,11 +107,13 @@ def test_every_day_pillar_brief_is_speakable_and_unscored():
     for self_ganji in pillars:
         solo = build_reunion_brief(self_ganji, None, _LABELS)
         assert is_valid_headline(solo["headline"]), solo["headline"]
+        assert _sentence_count(solo["headline"]) == 1
         _assert_clean(solo)
     for self_ganji in pillars:
         for partner_ganji in pillars:
             brief = build_reunion_brief(self_ganji, partner_ganji, _LABELS)
             assert is_valid_headline(brief["headline"]), brief["headline"]
+            assert _sentence_count(brief["headline"]) == 1, brief["headline"]
             _assert_clean(brief)
 
 
