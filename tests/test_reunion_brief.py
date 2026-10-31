@@ -66,7 +66,8 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "붙" in bond["headline"]
     assert "부딪" not in bond["headline"]
     assert "부딪" in clash["headline"] or "주제" in clash["headline"]
-    assert "가까워지는 힘" in mixed["headline"] and "깨지는 힘" in mixed["headline"]
+    assert "가까워" in mixed["headline"] and "틀어" in mixed["headline"]
+    assert "아물" not in mixed["headline"]
     assert "고정 신호" not in none["headline"]
     assert "막힌 말" in none["headline"]
     assert "서두르" not in _blob(none)
@@ -74,8 +75,9 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "고정 신호" not in gap["headline"]
     assert "막힌 말" in gap["headline"]
     why, overall = none["sections"][0]["text"], none["sections"][1]["text"]
-    assert "강점은 확인되지 않아요" in why
-    assert "밖으로 꺼내는" in why
+    assert "풀어 주는" in why
+    assert "다툼의 장면" not in none["sections"][2]["text"]
+    assert "유리한 날짜" not in none["sections"][3]["text"]
     assert "밖으로 꺼내는" not in overall
     charm = none["sections"][-1]["text"]
     assert "표현할 때" in charm
@@ -89,6 +91,39 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "붙는 관계" in bond["strategy"]["intro"]
     assert "고정 장면" in none["strategy"]["intro"]
     assert "이별 원인이었는지는 사주가 몰라요" in clash["sections"][2]["text"]
+
+
+def test_new_sections_are_long_and_change_with_the_pair():
+    bond = build_reunion_brief("甲子", "乙丑", _LABELS)
+    clash = build_reunion_brief("乙酉", "己卯", _LABELS)
+    solo_gap = build_reunion_brief("乙酉", None, _LABELS)
+    solo_other = build_reunion_brief("甲子", None, _LABELS)
+    for title in ("우리는 왜", "갈등이 생기는 원인과 반복될 수 있는 패턴", "재회를 고려할 때 유리한 점과 걸림돌"):
+        text = next(section["text"] for section in clash["sections"] if section["title"] == title)
+        assert _sentence_count(text) >= 4, title
+    assert bond["sections"][0]["text"] != clash["sections"][0]["text"]
+    attitude = solo_gap["sections"][0]["text"]
+    contact = solo_gap["sections"][1]["text"]
+    assert _sentence_count(attitude) >= 4
+    assert _sentence_count(contact) >= 4
+    assert attitude != solo_other["sections"][0]["text"]
+    assert "보낼 수 있어요" in contact
+    assert "속도를 굽히" not in solo_gap["headline"]
+    assert "붙들" not in solo_gap["headline"]
+    assert "식탁" not in clash["sections"][0]["text"]
+    assert "식탁" not in clash["sections"][2]["text"]
+    same = build_reunion_brief("甲午", "乙未", _LABELS)
+    assert bond["sections"][0]["text"] == same["sections"][0]["text"]
+    assert bond["headline"] == same["headline"]
+    other_role = build_reunion_brief("甲子", "己丑", _LABELS)
+    assert bond["sections"][0]["text"] != other_role["sections"][0]["text"]
+    assert bond["headline"] != other_role["headline"]
+    peer_clash = build_reunion_brief("甲子", "甲午", _LABELS)
+    wealth_clash = build_reunion_brief("乙酉", "己卯", _LABELS)
+    assert peer_clash["headline"] != wealth_clash["headline"]
+    assert "양보" in peer_clash["headline"]
+    assert "시간" in wealth_clash["headline"] or "비용" in wealth_clash["headline"]
+    assert "답을 내가 미리" not in solo_gap["sections"][0]["text"]
 
 
 def test_solo_and_couple_charm_are_not_the_same_sentence():
