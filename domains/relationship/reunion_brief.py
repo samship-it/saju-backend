@@ -1018,7 +1018,7 @@ def build_reunion_brief(self_ganji: str, partner_ganji: Optional[str], month_lab
         "headline": _headline_couple(flags, role),
         "frame": {
             "title": "두 사람의 관계 분석",
-            "subtitle": "확인되는 강점과, 재회를 판단할 기준을 나눴어요. 재회가 되는 날로 읽지 마세요.",
+            "subtitle": "",
         },
         "sections": [
             {"title": "우리는 왜", "text": _why(flags, role)},
