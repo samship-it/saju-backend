@@ -129,6 +129,13 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
         out["reunion_frame"] = brief["frame"]
         out["reunion_sections"] = brief["sections"]
         out["reunion_strategy"] = brief["strategy"]
+    if kind == "crush":
+        # 저장된 종합운·매력·3개월은 그대로 두고, 화면용 한줄평과 신규 구획만 붙인다.
+        from domains.relationship.crush_brief import build_crush_brief
+        brief = build_crush_brief(g1, g2 if partner_exists else None)
+        out["headline"] = brief["headline"]
+        out["crush_frame"] = brief["frame"]
+        out["crush_sections"] = brief["sections"]
     return finish_reading(out, is_fallback)
 
 

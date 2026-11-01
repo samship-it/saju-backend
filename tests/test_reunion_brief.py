@@ -191,4 +191,8 @@ def test_reunion_api_adds_headline_without_replacing_stored_overall():
         json={"person": {"year": 1992, "month": 7, "day": 8, "hour": 14, "minute": 0, "gender": "female"}},
     ).json()
     assert "reunion_sections" not in crush
-    assert "headline" not in crush
+    assert "reunion_frame" not in crush
+    assert "reunion_strategy" not in crush
+    assert crush["headline"]
+    assert crush["crush_sections"]
+    assert "우리는 왜" not in [section["title"] for section in crush["crush_sections"]]
