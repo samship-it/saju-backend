@@ -80,11 +80,11 @@ def test_relation_voice_changes_only_awkward_words():
     business = _analyze("business")
     coworker = _analyze("coworker")
     acquaintance = _analyze("acquaintance")
-    assert "친구 사이에서는" in friend["one_liner"]
-    assert "가족 사이에서는" in family["one_liner"]
-    assert "사업에서는" in business["one_liner"]
-    assert "직장에서는" in coworker["one_liner"]
-    assert "지인 사이에서는" in acquaintance["one_liner"]
+    assert friend["one_liner"] == "이런 친구, 평생 옆에 둬야지! 🤝"
+    assert family["one_liner"] == "역시 가족은 가족이네! 🏡"
+    assert business["one_liner"] == "이 조합이면 판을 키울 수 있겠는데? 🚀"
+    assert coworker["one_liner"] == "같이 일하면 시너지가 제대로 나겠어! 💪"
+    assert acquaintance["one_liner"] == "처음부터 왠지 통하는 사람! ✨"
     for body in (friend, family, business, coworker, acquaintance):
         blob = "\n".join(body["report"].values())
         for bad in ("관계을", "집를", "일를", "기준를", "가족로", "지인로", "비용와"):
@@ -216,4 +216,115 @@ def test_nonromantic_scenes_follow_the_relation_without_score_change():
     blob = "\n".join(body["report"].values())
     for word in ("안식처", "짝꿍", "손잡고", "연애", "사랑"):
         assert word not in blob
+
+
+# 연인·배우자 한줄평. 60~69만 바뀌었고 등급명과 나머지 문장은 그대로다.
+_ROMANTIC_LINES = (
+    (90, 100, "💍 천생연분", "이 정도면 결혼각 💍"),
+    (80, 89, "🏠 반려생활", "우린 장기전에 강해요."),
+    (70, 79, "🧩 찰떡짝꿍", "생각보다 우리, 잘 맞는데?"),
+    (60, 69, "💕 짝꿍연습중", "조금만 맞추면 더 좋아질 거야."),
+    (50, 59, "💌 더 가까이", "좀 더 다가와줄래?"),
+    (40, 49, "🌱 노력형 사랑", "사랑은 주는 거니까."),
+    (30, 39, "↔️ 다른 사람", "우리, 좀 다르네."),
+    (0, 29, "─ 평행선", "좋아하는 마음만으로는 조금 어려워요."),
+)
+_RELATION_LINES = {
+    "friend": (
+        "이런 친구, 평생 옆에 둬야지! 🤝",
+        "말하지 않아도 통하는 사이.",
+        "우리 은근히 잘 맞는 조합인데?",
+        "조금씩 알아가면 더 좋겠어.",
+        "다름을 인정하면 괜찮아질 사이.",
+        "친해지려면 서로 노력이 필요해.",
+        "우리는 꽤 다른 타입이네.",
+        "친하다는 이유만으로 다 맞을 순 없지.",
+    ),
+    "family": (
+        "역시 가족은 가족이네! 🏡",
+        "서로 달라도 결국 든든한 내 편.",
+        "우리 가족, 생각보다 합이 좋은데?",
+        "조금만 더 이해하면 편해질 사이.",
+        "가족이어도 서로의 방식은 존중해야 해.",
+        "가까운 만큼 서로 배려가 필요해.",
+        "가족이지만 생각은 꽤 다르네.",
+        "가족이라는 이유로 모든 걸 맞출 필요는 없어.",
+    ),
+    "business": (
+        "이 조합이면 판을 키울 수 있겠는데? 🚀",
+        "서로의 강점이 확실한 팀.",
+        "역할만 잘 나누면 꽤 괜찮은 조합.",
+        "합의와 조율이 성과를 좌우하겠어.",
+        "시작 전에 역할과 책임부터 맞춰보자.",
+        "일하는 방식부터 조율해야겠어.",
+        "목표가 같아도 접근법은 다르네.",
+        "의욕만으로 함께 사업하기는 어려워.",
+    ),
+    "coworker": (
+        "같이 일하면 시너지가 제대로 나겠어! 💪",
+        "서로의 빈틈을 채워주는 좋은 조합.",
+        "호흡만 맞추면 일하기 편하겠는데?",
+        "소통 방식을 맞추면 더 수월해질 사이.",
+        "업무 기준부터 맞춰보는 게 좋겠어.",
+        "서로의 업무 스타일을 이해해야겠어.",
+        "일하는 방식이 꽤 다르네.",
+        "친해지는 것보다 업무 경계를 명확히 하는 게 먼저야.",
+    ),
+    "acquaintance": (
+        "처음부터 왠지 통하는 사람! ✨",
+        "알아갈수록 괜찮은 인연이네.",
+        "생각보다 대화가 잘 통하는 사이.",
+        "천천히 알아가면 좋을 것 같아.",
+        "아직은 서로 알아가는 중.",
+        "조금 더 거리를 두고 알아가 보자.",
+        "서로의 결이 꽤 다른 편이네.",
+        "모든 사람과 가까워질 필요는 없으니까.",
+    ),
+}
+
+
+def test_one_liners_use_eight_bands_and_keep_scores():
+    from domains.compatibility.disposition import one_liner
+
+    romantic_lines = {line for _lo, _hi, _grade, line in _ROMANTIC_LINES}
+    other_lines = {line for lines in _RELATION_LINES.values() for line in lines}
+    assert romantic_lines.isdisjoint(other_lines)
+
+    for lo, hi, grade, line in _ROMANTIC_LINES:
+        for score in (lo, hi):
+            band = compat_band(score)
+            assert band["one_liner"] == line
+            assert band["relation_type"] == grade
+            assert band["band"] == f"{lo}-{hi}"
+        if lo > 0:
+            assert compat_band(lo - 1)["one_liner"] != line
+        if hi < 100:
+            assert compat_band(hi + 1)["one_liner"] != line
+    assert compat_band(60)["one_liner"] == "조금만 맞추면 더 좋아질 거야."
+    assert compat_band(59)["one_liner"] == "좀 더 다가와줄래?"
+    assert compat_band(70)["one_liner"] == "생각보다 우리, 잘 맞는데?"
+
+    for relation, lines in _RELATION_LINES.items():
+        assert len(lines) == 8
+        for (lo, hi, _grade, romantic_line), line in zip(_ROMANTIC_LINES, lines):
+            for score in (lo, hi):
+                assert one_liner(score, relation) == line
+            assert line != romantic_line
+            if lo > 0:
+                assert one_liner(lo - 1, relation) != line
+            if hi < 100:
+                assert one_liner(hi + 1, relation) != line
+        assert len({one_liner(90, relation) for relation in _RELATION_LINES}) == 5
+
+    romantic = _analyze("romantic")
+    spouse = _analyze("spouse")
+    assert romantic["scores"]["total"] == spouse["scores"]["total"] == 72
+    assert romantic["one_liner"] == spouse["one_liner"] == "생각보다 우리, 잘 맞는데?"
+    assert romantic["relation_type_label"] == spouse["relation_type_label"] == "🧩 찰떡짝꿍"
+    friend = _analyze("friend")
+    assert friend["scores"] == romantic["scores"]
+    assert friend["scores"]["overall"] == 96
+    assert friend["one_liner"] == "이런 친구, 평생 옆에 둬야지! 🤝"
+    assert friend["relation_type_label"] == "성향 궁합"
+    assert friend["score_band"] == "90-100"
 

@@ -67,18 +67,87 @@ def _band(score: int) -> str:
     return "0-29"
 
 
-def one_liner(score: int, relation_type: str) -> str:
-    place = _PLACE.get(normalize_relation(relation_type), "이 관계에서는")
-    s = max(0, min(100, int(score)))
-    if s >= 80:
+# COMPAT_BANDS와 같은 순서(90-100 … 0-29). 구간 경계는 그 표를 그대로 쓴다.
+_ONE_LINERS = {
+    "friend": (
+        "이런 친구, 평생 옆에 둬야지! 🤝",
+        "말하지 않아도 통하는 사이.",
+        "우리 은근히 잘 맞는 조합인데?",
+        "조금씩 알아가면 더 좋겠어.",
+        "다름을 인정하면 괜찮아질 사이.",
+        "친해지려면 서로 노력이 필요해.",
+        "우리는 꽤 다른 타입이네.",
+        "친하다는 이유만으로 다 맞을 순 없지.",
+    ),
+    "family": (
+        "역시 가족은 가족이네! 🏡",
+        "서로 달라도 결국 든든한 내 편.",
+        "우리 가족, 생각보다 합이 좋은데?",
+        "조금만 더 이해하면 편해질 사이.",
+        "가족이어도 서로의 방식은 존중해야 해.",
+        "가까운 만큼 서로 배려가 필요해.",
+        "가족이지만 생각은 꽤 다르네.",
+        "가족이라는 이유로 모든 걸 맞출 필요는 없어.",
+    ),
+    "business": (
+        "이 조합이면 판을 키울 수 있겠는데? 🚀",
+        "서로의 강점이 확실한 팀.",
+        "역할만 잘 나누면 꽤 괜찮은 조합.",
+        "합의와 조율이 성과를 좌우하겠어.",
+        "시작 전에 역할과 책임부터 맞춰보자.",
+        "일하는 방식부터 조율해야겠어.",
+        "목표가 같아도 접근법은 다르네.",
+        "의욕만으로 함께 사업하기는 어려워.",
+    ),
+    "coworker": (
+        "같이 일하면 시너지가 제대로 나겠어! 💪",
+        "서로의 빈틈을 채워주는 좋은 조합.",
+        "호흡만 맞추면 일하기 편하겠는데?",
+        "소통 방식을 맞추면 더 수월해질 사이.",
+        "업무 기준부터 맞춰보는 게 좋겠어.",
+        "서로의 업무 스타일을 이해해야겠어.",
+        "일하는 방식이 꽤 다르네.",
+        "친해지는 것보다 업무 경계를 명확히 하는 게 먼저야.",
+    ),
+    "acquaintance": (
+        "처음부터 왠지 통하는 사람! ✨",
+        "알아갈수록 괜찮은 인연이네.",
+        "생각보다 대화가 잘 통하는 사이.",
+        "천천히 알아가면 좋을 것 같아.",
+        "아직은 서로 알아가는 중.",
+        "조금 더 거리를 두고 알아가 보자.",
+        "서로의 결이 꽤 다른 편이네.",
+        "모든 사람과 가까워질 필요는 없으니까.",
+    ),
+}
+
+if any(len(lines) != len(COMPAT_BANDS) for lines in _ONE_LINERS.values()):
+    raise RuntimeError("compatibility one-liner count does not match COMPAT_BANDS")
+
+
+def _general_one_liner(score: int) -> str:
+    """화면의 일곱 관계가 아닌 코드만 쓰는 기존 네 구간."""
+    if score >= 80:
         tail = "성향이 잘 맞물립니다."
-    elif s >= 60:
+    elif score >= 60:
         tail = "차이를 조율하며 갈 수 있습니다."
-    elif s >= 40:
+    elif score >= 40:
         tail = "다른 방식이 먼저 드러납니다."
     else:
         tail = "성향 차이가 크게 드러납니다."
-    return f"{place} {tail}"
+    return f"이 관계에서는 {tail}"
+
+
+def one_liner(score: int, relation_type: str) -> str:
+    key = normalize_relation(relation_type)
+    s = max(0, min(100, int(score)))
+    lines = _ONE_LINERS.get(key)
+    if not lines:
+        return _general_one_liner(s)
+    for (lo, hi, *_rest), text in zip(COMPAT_BANDS, lines):
+        if lo <= s <= hi:
+            return text
+    return lines[-1]
 
 
 def _temperament(interactions: Dict[str, Any], place: str) -> str:
