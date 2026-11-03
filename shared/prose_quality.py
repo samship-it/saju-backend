@@ -1,9 +1,11 @@
 """복콩 문장 품질 검사.
 
-조회 경로에서는 뜻을 지우거나 LLM을 부르지 않는다.
+조회 경로에서는 뜻을 지우거나 운세 문장을 새로 쓰지 않는다.
 고칠 수 있는 것은 닫힌 오타표, 연속 공백, 문장 앞의 호칭 인사뿐이다.
+맞춤법 검수는 그 다음 단계이고, 환경변수로 켜기 전에는 동작하지 않는다.
 섹션 충돌·문체·중복은 판정만 하고, 카테고리 조립기가 이미 가진 규칙으로만 걸러낸다.
 """
+import logging
 import re
 from typing import Any, Iterator, List
 
@@ -48,10 +50,13 @@ def polish_text(text: str) -> str:
     for bad, good in TYPO_FIXUPS.items():
         if bad in out:
             out = out.replace(bad, good)
-    from shared.text_format import strip_reader_greeting
+    from shared.text_format import strip_reader_greeting, to_one_reader
     greeted = strip_reader_greeting(out)
     if greeted != out:
         out = greeted
+    addressed = to_one_reader(out)
+    if addressed != out:
+        out = addressed
     spaced = _SPACE_BEFORE_PUNCT.sub(r"\1", out)
     if spaced != out:
         out = spaced
@@ -72,9 +77,17 @@ def polish_tree(value: Any, key: str = "") -> Any:
 
 
 def finish_reading(data: Any, is_fallback: bool = False):
-    """운세 응답 딕셔너리를 내보내기 전에 공통 표면 검사를 적용한다."""
+    """운세 응답 딕셔너리를 내보내기 전에 공통 표면 검사를 적용한다.
+
+    검수는 기본으로 꺼져 있다. 켜져도 실패하면 여기까지 만든 문장을 그대로 낸다.
+    """
     if isinstance(data, dict):
         data = polish_tree(data)
+        try:
+            from shared.proofread.apply import proofread_reading
+            data = proofread_reading(data)
+        except Exception:
+            logging.getLogger("proofread").warning("[proofread] 검수 단계를 건너뜁니다.", exc_info=True)
     return data, is_fallback
 
 
