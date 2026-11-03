@@ -87,8 +87,10 @@ from domains.daewoon.axis import (
     to_past,
 )
 from domains.daewoon.landscape import build_decade_landscape
-from domains.daewoon.pipeline import analyze_daewoon_stage, build_domain_pipeline
+from domains.daewoon.natal_relation import decade_relation, relation_sentence, scrub_smooth
+from domains.daewoon.prose_db import overlay_saved_prose
 from domains.daewoon.twenty_year import build_twenty_year_story, core_continues, joined_story
+from domains.daewoon.pipeline import analyze_daewoon_stage, build_domain_pipeline
 from domains.lifelong.content_db import lookup_stage_detail
 from domains.lifelong.life_periods import _step_covering_age
 from domains.lifelong.service import _fallback_stage_detail, _ilju
@@ -364,6 +366,8 @@ def analyze_daewoon_period(
     # analyze_strength()로 이미 계산해 saju_data["strength"]에 담아둔다.
     strength = saju.get("strength") or {}
     polarity = resolve_decade_polarity(fact["ganji"][0], strength)
+    # 격국과 오행 합계 1위가 같을 때만 관계가 있다. 다르면 어느 쪽도 성향으로 쓰지 않는다.
+    relation = decade_relation(saju, fact.get("sipsin_group") or "")
 
     # 7단계 파이프라인. prev_fact가 같은 십성 그룹이면 기본 정의 대신 환경·겉과 속 문장을 앞에 둔다.
     domain_pipeline = build_domain_pipeline(saju, fact, effective_age, gender, prev_fact=prev_fact)
@@ -414,6 +418,11 @@ def analyze_daewoon_period(
     # 대운의 마지막 나이가 현재 나이보다 작으면 이미 지난 10년이다.
     is_past_decade = (start_age + 9) < age
     twenty_story = _twenty_year_story(saju, facts, fact, daewoon_num, age, gender)
+    if twenty_story and relation:
+        back_end = (twenty_story.get("back_age_range") or [0, 0])[1]
+        twenty_story["overview"] = relation_sentence(
+            relation, "20년", polarity, past=back_end < age,
+        )
     if child_copy and effective_age < 18 and "allowance_economy" in domain_analysis:
         domain_analysis.pop("allowance_economy", None)
     domain_analysis = overlay_domain_analysis(
@@ -472,12 +481,45 @@ def analyze_daewoon_period(
             if isinstance(entry.get("sentence"), str):
                 entry["sentence"] = to_past(entry["sentence"])
 
+    if relation:
+        lead = relation_sentence(relation, "10년", polarity, past=is_past_decade)
+        context = domain_pipeline.get("global_context") or ""
+        if relation in ("규제", "맞섬"):
+            context = scrub_smooth(context)
+            domain_analysis = scrub_smooth(domain_analysis)
+            domain_pipeline["narrative"] = scrub_smooth(domain_pipeline.get("narrative") or "")
+            for scored in domain_pipeline.get("domain_scores") or []:
+                if isinstance(scored.get("sentence"), str):
+                    scored["sentence"] = scrub_smooth(scored["sentence"])
+            decade_tasks = [task for task in decade_tasks if "순탄" not in task and "순하게" not in task]
+            action_guide = scrub_smooth(action_guide)
+            if decade_theme is not None:
+                decade_theme = scrub_smooth(decade_theme)
+            if twenty_story:
+                for key in ("overview", "front", "back", "action_guide"):
+                    if isinstance(twenty_story.get(key), str):
+                        twenty_story[key] = scrub_smooth(twenty_story[key])
+        domain_pipeline["global_context"] = f"{lead} {context}".strip()
+
+    domain_analysis, decade_tasks, action_guide = overlay_saved_prose(
+        saju, facts, fact, daewoon_num, age,
+        domain_pipeline, domain_analysis, twenty_story, decade_tasks, action_guide,
+    )
+    if twenty_story and decade_theme is not None:
+        decade_theme = {
+            "pair_sipsin": decade_theme.get("pair_sipsin", ""),
+            "sentence": joined_story(twenty_story),
+        }
+
     data = {
         "daewoon_header": f"{_ganji_label(fact['ganji'])} 대운",
         "landscape_scene": landscape["scene"],
         "saju_relation": landscape["saju_relation"],
         "summary": _compose_summary(entry.get("event_narrative", ""), domain_pipeline),
-        "keywords": list(KEYWORDS.get(sipsin, KEYWORDS["비견"])),
+        "keywords": [
+            word for word in KEYWORDS.get(sipsin, KEYWORDS["비견"])
+            if not (relation in ("규제", "맞섬") and ("순탄" in word or "순하게" in word))
+        ],
         "domain_analysis": domain_analysis,
         "decade_theme": decade_theme,
         "timeline_phases": _build_timeline_phases(facts, daewoon_num, year, step, current_step),
