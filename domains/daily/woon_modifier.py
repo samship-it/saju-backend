@@ -22,7 +22,7 @@ daily_headline_pool 로 생성)에서 target_date 기준으로 결정적 로테�
 import datetime
 from typing import Any, Dict, List, Optional
 
-from core.constants import GAN_ELEM, JI_ELEM, BAEKHO, YANGIN
+from core.constants import FIVE_ELEMENT_RELATIONS, GAN_ELEM, JI_ELEM, BAEKHO, SHENG, YANGIN
 from core.daewoon import branch_relation
 from core.sipsin import calculate_sipsin, sipsin_group
 from core.twelve_sinsal import sinsal_check
@@ -43,6 +43,63 @@ SIPSIN_POLARITY: Dict[str, float] = {
 _YONGSIN_POLARITY = 1.0
 _HEESIN_POLARITY = 0.6
 _GISIN_POLARITY = -1.0
+
+
+# 시주를 빼면 글자가 8개에서 6개로 줄고, support_ratio가 중화 구간(가장 약한 오행을
+# 용신으로 두는 기본 판정)으로 들어가 점수 델타 부호가 통째로 바뀐다. 특정 시진을
+# 기본 가중치로 넣지 않고, 6/8 비중 × 0.5에서 벗어난 정도만 극성에 남긴다.
+_UNKNOWN_CHAR_SHARE = 6 / 8
+_UNKNOWN_FULL_LEAN = 0.20
+
+
+def _unknown_polarity_scale(support_ratio: float) -> float:
+    lean = min(1.0, abs(support_ratio - 0.5) / _UNKNOWN_FULL_LEAN)
+    return _UNKNOWN_CHAR_SHARE * lean
+
+
+def _elems_for_groups(day_master_elem: str, groups: tuple) -> List[str]:
+    found: List[str] = []
+    for group in groups:
+        for elem in ("목", "화", "토", "금", "수"):
+            if FIVE_ELEMENT_RELATIONS.get((day_master_elem, elem)) == group:
+                found.append(elem)
+                break
+    return found
+
+
+def _strength_for_score(saju_data: Dict[str, Any]) -> Dict[str, Any]:
+    """점수 극성에 쓸 강약. 태어난 시간을 모르면 시주 기본값을 넣지 않는다.
+
+    년·월·일 여섯 글자 비율이 0.5 위면 신강, 아래면 신약 방향으로 억부를 유지하고
+    (중화의 '가장 약한 오행' 기본 용신으로 갈아타지 않음), 그 거리만 polarity_scale로
+    남겨 델타가 한 구간 이상 튀지 않게 한다. 반환본은 응답 strength를 덮어쓰지 않는다.
+    """
+    strength = dict(saju_data.get("strength") or {})
+    if saju_data.get("birth_time_known", True):
+        strength["polarity_scale"] = 1.0
+        return strength
+
+    ratio = float(strength.get("support_ratio") or 0.5)
+    strength["polarity_scale"] = _unknown_polarity_scale(ratio)
+    if strength.get("verdict") != "중화":
+        return strength
+
+    day_elem = strength.get("day_master_elem") or "목"
+    strong = ratio >= 0.5
+    yong_groups = ("관성", "식상", "재성") if strong else ("인성", "비겁")
+    gi_groups = ("인성", "비겁") if strong else ("재성", "관성", "식상")
+    yongsin = _elems_for_groups(day_elem, yong_groups)
+    gisin = _elems_for_groups(day_elem, gi_groups)
+    heesin: List[str] = []
+    for ye in yongsin:
+        for elem in ("목", "화", "토", "금", "수"):
+            if SHENG.get(elem) == ye and elem not in heesin and elem not in gisin and elem not in yongsin:
+                heesin.append(elem)
+    strength["yongsin"] = yongsin[:2]
+    strength["heesin"] = heesin[:2]
+    strength["gisin"] = gisin[:2]
+    strength["verdict"] = "신강" if strong else "신약"
+    return strength
 
 
 def _resolve_polarity(sipsin: str, elem: str, group: str, strength: Dict[str, Any]) -> float:
@@ -144,7 +201,7 @@ def _domain_delta(layers: Dict[str, Dict[str, Any]], domain_groups: set) -> int:
         if f["group_ji"] in domain_groups:
             total += w["ji"] * f["polarity_ji"]
             rel_key = _relation_key(f["relation"])
-            total += w["relation"] * BRANCH_RELATION_SCORE.get(rel_key, 0.0)
+            total += w["relation"] * BRANCH_RELATION_SCORE.get(rel_key, 0.0) * float(f.get("score_scale", 1.0))
     return max(-40, min(40, round(total)))
 
 
@@ -181,16 +238,18 @@ def _layer_facts(day_master: str, day_branch: str, ganji: str, strength: Dict[st
     group_gan = sipsin_group(sipsin_gan)
     group_ji = sipsin_group(sipsin_ji)
     relation = branch_relation(day_branch, ji)
+    scale = float(strength.get("polarity_scale", 1.0))
     return {
         "ganji": ganji,
         "sipsin_gan": sipsin_gan,
         "sipsin_ji": sipsin_ji,
         "group_gan": group_gan,
         "group_ji": group_ji,
-        "polarity_gan": _resolve_polarity(sipsin_gan, GAN_ELEM.get(gan, ""), group_gan, strength),
-        "polarity_ji": _resolve_polarity(sipsin_ji, JI_ELEM.get(ji, ""), group_ji, strength),
+        "polarity_gan": _resolve_polarity(sipsin_gan, GAN_ELEM.get(gan, ""), group_gan, strength) * scale,
+        "polarity_ji": _resolve_polarity(sipsin_ji, JI_ELEM.get(ji, ""), group_ji, strength) * scale,
         "relation": relation,
         "relation_bucket": _relation_bucket(relation),
+        "score_scale": scale,
     }
 
 
@@ -200,7 +259,7 @@ def _layer_score(layer: str, facts: Dict[str, Any]) -> float:
     return (
         w["gan"] * facts["polarity_gan"]
         + w["ji"] * facts["polarity_ji"]
-        + w["relation"] * BRANCH_RELATION_SCORE.get(rel_key, 0.0)
+        + w["relation"] * BRANCH_RELATION_SCORE.get(rel_key, 0.0) * float(facts.get("score_scale", 1.0))
     )
 
 
@@ -504,7 +563,7 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
     day_ordinal = _day_ordinal(saju_data)
     day_master = saju_data.get("day_master") or ""
     day_branch = saju_data.get("day_branch") or ""
-    strength = saju_data.get("strength") or {}
+    strength = _strength_for_score(saju_data)
 
     daewoon_ganji = (saju_data.get("current_daewoon") or {}).get("ganji", "")
     seewoon_list = saju_data.get("seewoon_10years") or []
@@ -525,6 +584,11 @@ def compute_woon_modifier(saju_data: Dict[str, Any]) -> Dict[str, Any]:
         total += score
 
     sinsal = _check_sinsal(day_branch, layers, ilwoon_ganji, day_master)
+    if not saju_data.get("birth_time_known", True):
+        scale = float(strength.get("polarity_scale", 1.0))
+        sinsal["penalty"] *= scale
+        for hit in sinsal["hits"]:
+            hit["penalty"] = round(hit["penalty"] * scale, 1)
     total += sinsal["penalty"]
 
     score_delta = max(-40, min(40, round(total)))

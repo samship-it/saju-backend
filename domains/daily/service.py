@@ -12,8 +12,8 @@ from typing import Dict, Any, Optional, Tuple
 
 from core.constants import score_to_emoji, score_to_band
 from shared.prose_quality import finish_reading
-from shared.text_format import paragraphize
-from domains.daily.content_db import lookup
+from shared.text_format import paragraphize, strip_reader_greeting
+from domains.daily.content_db import closest_text, lookup
 from domains.daily.social_template import build_social_summary
 from domains.daily.status_variants import JOB_STATUSES, LOVE_STATUSES, resolve_job_levelup, resolve_married_love
 from domains.daily.woon_modifier import compute_woon_modifier
@@ -87,11 +87,11 @@ def _shape(ai: dict, saju_data: Dict[str, Any], modifier: Dict[str, Any]) -> dic
         # delta를 전부 종합해 만든 문장을 100% 사용한다(HEADLINE_TABLE, AI 미관여).
         "headline": modifier["headline"],
         "summary": {
-            "overall": paragraphize(str(summ.get("overall", ""))),
-            "money": paragraphize(str(summ.get("money", ""))),
-            "love_single": paragraphize(str(summ.get("love_single", ""))),
-            "love_couple": paragraphize(str(summ.get("love_couple", ""))),
-            "work_study": paragraphize(str(summ.get("work_study", ""))),
+            "overall": paragraphize(strip_reader_greeting(str(summ.get("overall", "")))),
+            "money": paragraphize(strip_reader_greeting(str(summ.get("money", "")))),
+            "love_single": paragraphize(strip_reader_greeting(str(summ.get("love_single", "")))),
+            "love_couple": paragraphize(strip_reader_greeting(str(summ.get("love_couple", "")))),
+            "work_study": paragraphize(strip_reader_greeting(str(summ.get("work_study", "")))),
             # Social Network(사회운) - daily_db.json 정적 DB에는 없는 필드. woon_modifier가
             # 계산한 trigger_group/trigger_bucket으로 generate_daily_fortune()에서 채운다.
             # headline과는 서로 다른 문구 세트(HEADLINE_TABLE vs SOCIAL_TEMPLATES)를 쓰므로
@@ -113,6 +113,32 @@ _SCORE_DELTA_KEY = {
     "love_score": "love_delta",
     "work_study_score": "work_study_delta",
 }
+
+
+def _overlay_score_band_text(
+    entry: Dict[str, Any], day_ganji: str, base_score: int, score: int
+) -> Dict[str, Any]:
+    """최종 점수 구간이 오늘 일진 칸의 기본 점수 구간과 다르면, 같은 일주의 가까운 칸 본문으로 바꾼다.
+
+    숫자(overall/money/love/work)는 오늘 일진 칸 + 델타 결과를 유지한다.
+    DB에 칸이 있으면 is_fallback은 그대로다.
+    """
+    if score_to_band(base_score) == score_to_band(score):
+        return entry
+    alt = closest_text(day_ganji, score)
+    if not alt:
+        return entry
+    out = dict(entry)
+    summary = alt.get("summary")
+    if isinstance(summary, dict):
+        out["summary"] = dict(summary)
+    keywords = alt.get("keywords")
+    if isinstance(keywords, list):
+        out["keywords"] = list(keywords)
+    action = alt.get("recommended_action")
+    if isinstance(action, str):
+        out["recommended_action"] = action
+    return out
 
 
 def _apply_woon_modifier(entry: Dict[str, Any], modifier: Dict[str, Any]) -> Dict[str, Any]:
@@ -163,8 +189,17 @@ def generate_daily_fortune(
     if not entry:
         entry, is_fallback = _fallback(saju_data), True
 
+    try:
+        base_overall = int(round(float(entry.get("overall_score", 60))))
+    except (TypeError, ValueError):
+        base_overall = 60
+
     modifier = compute_woon_modifier(saju_data)
     adjusted = _apply_woon_modifier(entry, modifier)
+    if not is_fallback:
+        adjusted = _overlay_score_band_text(
+            adjusted, day_ganji, base_overall, int(adjusted.get("overall_score", base_overall))
+        )
 
     shaped = _shape(adjusted, saju_data, modifier)
     shaped["summary"]["social"] = paragraphize(
