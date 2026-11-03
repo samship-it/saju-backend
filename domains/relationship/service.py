@@ -19,6 +19,7 @@ from shared.public import person_summary
 from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.relationship import content_db
+from domains.relationship.marriage_depth import build_marriage_depth
 
 _LABEL = {"reunion": "재회운", "crush": "짝사랑운"}
 
@@ -327,6 +328,8 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
             v = data.get(f) if isinstance(data, dict) else None
             out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
                       else _MARRIAGE_SOLO_FALLBACK[f])
+        for key, text in build_marriage_depth(s1, w1["years"]).items():
+            out[key] = paragraphize(text)
     return finish_reading(out, is_fallback)
 
 
