@@ -56,6 +56,50 @@ _NICKNAME = re.compile(
 )
 
 
+def to_one_reader(text: str) -> str:
+    """개인 운세에 남은 '여러분' 호칭을 그 문장의 주어에 맞게 바꾼다."""
+    if not text or "여러분" not in text:
+        return text
+    parts = []
+    last = 0
+    for match in re.finditer(r"[^.!?…\n]*?[.!?…\n]|[^.!?…\n]+$", text):
+        parts.append(text[last:match.start()])
+        parts.append(_one_reader_sentence(match.group(0)))
+        last = match.end()
+    parts.append(text[last:])
+    return "".join(parts)
+
+
+def _one_reader_sentence(sentence: str) -> str:
+    if "여러분" not in sentence:
+        return sentence
+    couple = ("두 사람" in sentence) or ("두 분" in sentence) or ("두분" in sentence)
+    you = "두 사람" if couple else "당신"
+    forms = (
+        ("솔로 여러분에게는", "당신에게는"),
+        ("솔로 여러분, ", ""),
+        ("솔로 여러분,", ""),
+        ("여러분들", you),
+        ("여러분 특유의", f"{you} 특유의"),
+        ("여러분만의", f"{you}만의"),
+        ("여러분 안에는", f"{you} 안에는"),
+        ("여러분 곁에", f"{you} 곁에"),
+        ("통해 여러분은 ", "통해 "),
+        ("통해 여러분은", "통해 "),
+        ("여러분의", f"{you}의"),
+        ("여러분은", f"{you}은"),
+        ("여러분을", f"{you}을"),
+        ("여러분에게는", f"{you}에게는"),
+        ("여러분에게", f"{you}에게"),
+        ("여러분", you),
+    )
+    out = sentence
+    for old, new in forms:
+        if old in out:
+            out = out.replace(old, new)
+    return out
+
+
 def strip_reader_greeting(text: str) -> str:
     """본문 앞에 붙은 '안녕하세요, 호랑이님!' 같은 호칭 인사만 뺀다."""
     cleaned = _READER_GREETING.sub("", (text or "").strip(), count=1).strip()
