@@ -1,6 +1,8 @@
 """나의 성격 / 나의 적성(domains/personality) — landscape·bridge 신규 필드 검증."""
 from domains.personality.service import (
+    _ELEM_TRAIT,
     _VERDICT_TRAIT,
+    _aptitude_bridge,
     _character_bridge,
     _verdict_key,
     analyze_aptitude,
@@ -18,9 +20,19 @@ def test_verdict_key_falls_back_to_neutral_for_unknown_values():
 
 def test_character_bridge_mentions_the_elem_and_verdict_trait():
     bridge = _character_bridge("금", "신강")
-    assert "금" in bridge
+    assert _ELEM_TRAIT["금"] in bridge
     assert _VERDICT_TRAIT["신강"] in bridge
-    assert "성격" in bridge
+    assert "판단" in bridge
+    assert "일간" not in bridge
+    assert "원국" not in bridge
+
+
+def test_aptitude_bridge_uses_work_language_not_the_character_bridge():
+    character = _character_bridge("금", "신강")
+    aptitude = _aptitude_bridge("금", "신강")
+    assert "직무" in aptitude
+    assert aptitude != character
+    assert "일간" not in aptitude
 
 
 def test_analyze_character_includes_landscape_and_bridge():

@@ -54,9 +54,9 @@ def _character_bridge(day_master_elem: str, verdict: str) -> str:
     elem_trait = _ELEM_TRAIT.get(day_master_elem, _DEFAULT_ELEM_TRAIT)
     verdict_trait = _VERDICT_TRAIT[verdict]
     return (
-        f"일간이 {day_master_elem} 기운인 이 사람은 {elem_trait} 힘을 타고났고, "
-        f"원국 전체로 보면 {verdict_trait} 유형입니다. 이 두 가지가 만나 아래의 성격으로 "
-        "드러납니다."
+        f"생각을 굴리고 사람을 대할 때는 {elem_trait} 쪽이 먼저 나옵니다. "
+        f"움직일 때는 {verdict_trait} 편입니다. "
+        "아래 성격은 그 두 가지가 판단, 관계, 강점과 보완점에서 어떻게 나타나는지입니다."
     )
 
 
@@ -64,9 +64,9 @@ def _aptitude_bridge(day_master_elem: str, verdict: str) -> str:
     elem_trait = _ELEM_TRAIT.get(day_master_elem, _DEFAULT_ELEM_TRAIT)
     verdict_trait = _VERDICT_TRAIT[verdict]
     return (
-        f"일간이 {day_master_elem} 기운인 이 사람은 {elem_trait} 힘을 타고났고, "
-        f"원국 전체로 보면 {verdict_trait} 유형입니다. 이 두 가지가 만나 아래의 적성으로 "
-        "이어집니다."
+        f"일을 고르고 역할을 맡을 때는 {elem_trait} 방식이 먼저 나옵니다. "
+        f"조직 안에서는 {verdict_trait} 편입니다. "
+        "아래 적성은 그 방식이 직무, 산업, 업무 환경으로 어떻게 이어지는지입니다."
     )
 
 

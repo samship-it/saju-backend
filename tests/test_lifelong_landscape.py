@@ -55,11 +55,12 @@ def test_reason_cites_month_season_and_env_elem():
     }
     reason = build_reason(saju, env_elem="화", yongsin=["금", "수"])
     assert reason is not None
-    assert "壬" in reason and "수" in reason
     assert "여름" in reason  # 巳월 = 여름
-    assert "미" in reason  # 시지(未) 한글 표기
-    assert "화" in reason  # env_elem
-    assert "금·수" in reason  # yongsin 결합 표기
+    assert "드러내며 달아오르는 힘" in reason  # env 화
+    assert "자리를 잡고 형태를 만드는 힘" in reason  # 시지 未 = 토
+    assert "가리고 매듭짓는 힘" in reason and "스며들어 식혀 주는 힘" in reason
+    assert "일간" not in reason and "원국" not in reason
+    assert "壬" not in reason
 
 
 def test_reason_skips_hour_sentence_when_birth_time_unknown():

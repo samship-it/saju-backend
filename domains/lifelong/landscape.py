@@ -83,10 +83,26 @@ SEASON_DESC: Dict[str, str] = {
     "겨울": "차갑게 응축된 겨울",
 }
 
-_BRANCH_KO = {
-    "子": "자", "丑": "축", "寅": "인", "卯": "묘", "辰": "진", "巳": "사",
-    "午": "오", "未": "미", "申": "신", "酉": "유", "戌": "술", "亥": "해",
+# 사용자 문장용. 오행 이름 대신, 그 오행이 삶에서 하는 일을 말한다.
+_ELEM_LIFE = {
+    "목": "뻗어 자라려는 힘",
+    "화": "드러내며 달아오르는 힘",
+    "토": "자리를 잡고 형태를 만드는 힘",
+    "금": "가리고 매듭짓는 힘",
+    "수": "스며들어 식혀 주는 힘",
 }
+
+
+def _life_force(elem: str) -> str:
+    return _ELEM_LIFE.get(elem, "삶의 결을 이루는 힘")
+
+
+def _join_forces(names: List[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]}과 {names[1]}"
+    return ", ".join(names[:-1]) + f"과 {names[-1]}"
 
 
 def build_reason(saju: Dict[str, Any], env_elem: str, yongsin: List[str]) -> Optional[str]:
@@ -110,25 +126,28 @@ def build_reason(saju: Dict[str, Any], env_elem: str, yongsin: List[str]) -> Opt
         return None
     season_desc = SEASON_DESC[season]
 
-    sentences = [f"일간 {day_master}({day_elem})는 {season_desc}인 {month_branch}월에 태어나 그 계절의 기운을 강하게 받았습니다."]
+    sentences = [
+        f"태어난 계절은 {season_desc}이라, 그 계절의 온도가 삶의 기본 결로 남아 있습니다."
+    ]
 
     if birth_time_known and len(time_ganji) >= 2:
         hour_branch = time_ganji[1]
         hour_elem = JI_ELEM.get(hour_branch, "")
         if hour_elem:
             sentences.append(
-                f"{_BRANCH_KO.get(hour_branch, hour_branch)}시(時)생으로 {hour_elem} 기운까지 더해지며 "
-                "원국의 흐름이 한층 뚜렷해졌습니다."
+                f"태어난 시각에는 {_life_force(hour_elem)}이 더해져, 삶의 흐름이 더 또렷해집니다."
             )
 
     if env_elem:
-        if yongsin:
+        main = _life_force(env_elem)
+        needed = [_life_force(e) for e in yongsin if e]
+        if needed:
             sentences.append(
-                f"그 결과 원국 전체에서 {env_elem} 기운이 가장 강하게 자리잡아, "
-                f"이를 다스릴 {'·'.join(yongsin)} 기운이 중요한 열쇠가 됩니다."
+                f"삶의 긴 흐름에서는 {main}이 가장 크게 자리하고, "
+                f"그 힘을 오래 쓰려면 {_join_forces(needed)}이 방향을 잡아 줍니다."
             )
         else:
-            sentences.append(f"그 결과 원국 전체에서 {env_elem} 기운이 가장 강하게 자리잡았습니다.")
+            sentences.append(f"삶의 긴 흐름에서는 {main}이 가장 크게 자리합니다.")
 
     return " ".join(sentences)
 
