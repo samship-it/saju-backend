@@ -1,4 +1,4 @@
-"""검수 모듈. 기본 스위치가 꺼져 있으면 기존 문장을 바꾸지 않는다."""
+"""검수 모듈. 맞춤법과 LLM 은 스위치가 켜져 있을 때만 문장을 고친다."""
 import os
 import time
 from pathlib import Path
@@ -57,9 +57,24 @@ def test_switches_default_off_and_payment_ledger_is_absent():
     assert os.environ["PROOFREAD_ENABLED"] == ""
     assert os.environ["PROOFREAD_LLM_ENABLED"] == ""
     assert SERVER_HAS_PAYMENT_LEDGER is False
-    out, _ = finish_reading({"content_type": "결혼운", "overall": "좋았됬습니다."})
-    assert out["overall"] == "좋았됬습니다."
+    original = "좋았됬습니다. 여러분은 오늘 그대로입니다."
+    out, _ = finish_reading({"content_type": "결혼운", "overall": original, "overall_score": 86})
+    assert out["overall"] == "좋았됬습니다. 당신은 오늘 그대로입니다."
+    assert "여러분" not in out["overall"]
+    assert "됬" in out["overall"]
+    assert out["overall_score"] == 86
     assert out["content_type"] == "결혼운"
+
+
+def test_spellcheck_changes_text_only_when_proofread_is_on(monkeypatch):
+    original = "올해 여러분은 좋았됬습니다."
+    off, _ = finish_reading({"content_type": "결혼운", "overall": original})
+    assert off["overall"] == "올해 당신은 좋았됬습니다."
+    _turn_on(monkeypatch, llm=False)
+    on, _ = finish_reading({"content_type": "결혼운", "overall": original})
+    assert on["overall"] == "올해 당신은 좋았됐습니다."
+    assert "여러분" not in on["overall"]
+    assert "됬" not in on["overall"]
 
 
 def test_spellcheck_runs_for_free_and_paid_without_llm(monkeypatch):
@@ -134,14 +149,36 @@ def test_llm_cannot_change_score_hanja_or_saju_terms():
 
 def test_api_failure_returns_spellchecked_original(monkeypatch):
     _turn_on(monkeypatch, llm=True)
+    original = "2033년은 86점입니다. 여러분은 정말 좋았됬습니다. 甲은 그대로입니다."
 
     def boom(text, model, output_tokens):
         raise RuntimeError("down")
 
-    data = proofread_reading(dict(_PAID), complete=boom)
-    assert "됐" in data["overall"]
+    monkeypatch.setattr(
+        "shared.proofread.apply.proofread_reading",
+        lambda data, complete=None, checker=None: proofread_reading(data, complete=boom),
+    )
+    data, _ = finish_reading(
+        {"content_type": "결혼운", "overall": original, "overall_score": 86},
+    )
+    assert data["overall"] == "2033년은 86점입니다. 당신은 정말 좋았됐습니다. 甲은 그대로입니다."
     assert data["overall_score"] == 86
     assert budget.spent() == 0
+
+
+def test_proofread_crash_keeps_the_sentence_before_proofread(monkeypatch):
+    _turn_on(monkeypatch, llm=True)
+    original = "여러분은 좋았됬습니다."
+
+    def crash(data, complete=None, checker=None):
+        raise RuntimeError("proofread down")
+
+    monkeypatch.setattr("shared.proofread.apply.proofread_reading", crash)
+    out, is_fallback = finish_reading({"content_type": "결혼운", "overall": original, "overall_score": 86})
+    assert out["overall"] == "당신은 좋았됬습니다."
+    assert "여러분" not in out["overall"]
+    assert out["overall_score"] == 86
+    assert is_fallback is False
 
 
 def test_timeout_returns_original_without_waiting_out(monkeypatch):

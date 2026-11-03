@@ -1,8 +1,8 @@
 """개인 운세 문장에 여러 사람을 부르는 호칭이 남지 않는지 확인한다."""
 from pathlib import Path
 
+from shared.prose_quality import finish_reading, polish_text
 from shared.text_format import to_one_reader
-from shared.prose_quality import polish_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +26,14 @@ def test_one_reader_keeps_the_prediction():
     assert "여러분" not in couple
 
 
-def test_served_text_drops_the_crowd_address():
-    served = polish_text("솔로 여러분, 오늘은 당신의 매력이 먼저 보여요.")
-    assert "여러분" not in served
-    assert served.startswith("오늘은")
+def test_served_text_drops_the_crowd_address_even_when_proofread_is_off(monkeypatch):
+    source = "올해 여러분은 매력이 먼저 보여요."
+    assert polish_text(source) == "올해 당신은 매력이 먼저 보여요."
+    monkeypatch.setenv("PROOFREAD_ENABLED", "")
+    monkeypatch.setenv("PROOFREAD_LLM_ENABLED", "")
+    kept, _ = finish_reading({"content_type": "결혼운", "overall": source})
+    assert kept["overall"] == "올해 당신은 매력이 먼저 보여요."
+    assert "여러분" not in kept["overall"]
 
 
 def test_stored_fortune_text_has_no_crowd_address():
