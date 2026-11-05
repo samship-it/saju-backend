@@ -4,7 +4,7 @@
 조회 중 맞춤법만 보는 단계에서는 문장을 지우거나 다시 쓰지 않는다.
 
 다른 명사를 가운데서 빼면 '의견'이 '견'처럼 깨진다.
-그래서 올해와 아래 다섯 묶음만 고치고, 빼면 문장이 무너지면 그 문장을 통째로 뺀다.
+그래서 올해와 같은 뜻 묶음만 고치고, 빼면 문장이 무너지면 그 문장을 통째로 뺀다.
 어색한 동의어는 넣지 않는다.
 """
 from __future__ import annotations
@@ -17,11 +17,14 @@ MAX_USES = 2
 # 같은 뜻으로 반복되면 한 묶음으로 센다.
 FAMILIES: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("올해", ("올해",)),
-    ("변화", ("변화", "변동", "급변", "변동성")),
-    ("안정", ("안정", "안정감", "평온")),
-    ("마음", ("마음", "진심", "감정")),
+    ("변화", ("변화", "변동", "급변")),
+    ("안정", ("안정", "평온", "균형")),
+    ("마음", ("마음", "감정", "진심")),
     ("수입", ("수입", "소득", "수익")),
     ("기회", ("기회", "가능성", "계기")),
+    ("성취", ("성취", "결실", "성과")),
+    ("다정", ("따뜻", "다정", "포근")),
+    ("주변", ("주변", "사람들", "인간관계")),
 )
 _FAMILY_LABELS = frozenset(label for label, _ in FAMILIES)
 
@@ -33,7 +36,7 @@ _PARTICLE = (
     "예요", "에요",
 )
 _ATTR = (
-    "적으로", "적인", "스럽게", "스러운", "스런", "하고", "하며",
+    "적으로", "적인", "스럽게", "스러운", "스런", "하고", "하며", "하게",
     "적", "감", "성", "형", "원", "한", "된", "히", "해",
 )
 
@@ -48,9 +51,11 @@ _LEAD = re.compile(r"^(?:그리고|또한|또|그래서|그러나|다만|그런�
 REPETITION_RULE = """[반복 제한 — 최우선]
 - 한 편의 제목, 소제목, 본문을 통틀어 같은 단어는 두 번까지만 씁니다. 주제를 강조하는 단어도 같습니다.
 - '올해'는 두 번까지만 씁니다. 소제목마다 '올해'를 붙이지 않습니다. 뜻이 통하면 '연애 전체 흐름', '나의 수입 스타일', '투자·재테크 운'처럼 짧게 씁니다.
-- 비슷한 뜻도 한 묶음으로 두 번까지입니다. 변화·변동·급변·변동성 / 안정·안정감·평온 / 마음·진심·감정 / 수입·소득·수익 / 기회·가능성·계기.
+- 비슷한 뜻도 한 묶음으로 두 번까지입니다. 변화·변동·급변 / 안정·평온·균형 / 마음·감정·진심 / 수입·소득·수익 / 기회·가능성·계기 / 성취·결실·성과 / 따뜻한·다정한·포근한 / 주변·사람들·인간관계.
 - 어색한 동의어로 바꾸지 않습니다. 문장을 다시 짜거나, 같은 말이 또 필요 없이 나오는 문장은 빼세요.
-- '이번 년도', '금년'도 쓰지 않습니다."""
+- '이번 년도', '금년'도 쓰지 않습니다.
+- 노력하면 반드시 성공한다, 투자하면 손실을 피한다처럼 결과를 보장하지 않습니다.
+- 월별 설명은 서로 다른 상황이어야 합니다. 기회의 달은 적극적인 행동, 주의의 달은 조심할 일과 대응만 말합니다."""
 
 _SKIP_KEYS = frozenset({
     "concept_object", "keywords", "content_type", "category", "verdict",
@@ -88,6 +93,22 @@ def _is_tail(rest: str) -> bool:
                 changed = True
                 break
     return s == ""
+
+
+def _family_hits(text: str) -> List[Tuple[str, int, int]]:
+    """같은 뜻 묶음의 위치. '주변 사람들'처럼 이어진 말은 한 번으로 센다."""
+    hits: List[Tuple[str, int, int]] = []
+    for match in _TOKEN.finditer(text or ""):
+        if _protected(text, match.start(), match.end()):
+            continue
+        label = family_of(match.group())
+        if not label:
+            continue
+        if hits and hits[-1][0] == label and not text[hits[-1][2]:match.start()].strip():
+            hits[-1] = (label, hits[-1][1], match.end())
+            continue
+        hits.append((label, match.start(), match.end()))
+    return hits
 
 
 def family_of(token: str) -> Optional[str]:
@@ -141,12 +162,8 @@ def limit_prose(parts: Sequence[str]) -> List[str]:
                 if len(kept) >= 1:
                     continue
                 reduced = _tidy(sentence) or sentence.strip()
-            for match in _TOKEN.finditer(reduced):
-                if _protected(reduced, match.start(), match.end()):
-                    continue
-                label = family_of(match.group())
-                if label:
-                    counts[label] = counts.get(label, 0) + 1
+            for label, _start, _end in _family_hits(reduced):
+                counts[label] = counts.get(label, 0) + 1
             kept.append(reduced)
         if not kept and (part or "").strip():
             kept = [_tidy(part) or part.strip()]
@@ -176,20 +193,14 @@ def _strip_excess(sentence: str, counts: Dict[str, int]) -> Tuple[str, bool]:
     """초과한 올해·묶음 낱말을 뺀다. 올해는 같은 문장의 다른 반복과 상관없이 뺀다."""
     seen: Dict[str, int] = {}
     marks: List[Tuple[str, int, int]] = []
-    for match in _TOKEN.finditer(sentence):
-        if _protected(sentence, match.start(), match.end()):
-            continue
-        label = family_of(match.group())
-        if not label:
-            continue
+    for label, start, end in _family_hits(sentence):
         used = counts.get(label, 0) + seen.get(label, 0)
         if used >= MAX_USES:
-            end = match.end()
             if label == "올해":
-                prefix = _YEAR_PREFIX.match(match.group())
-                if prefix and prefix.end() < len(match.group()):
-                    end = match.start() + prefix.end()
-            marks.append((label, match.start(), end))
+                prefix = _YEAR_PREFIX.match(sentence[start:end])
+                if prefix and prefix.end() < end - start:
+                    end = start + prefix.end()
+            marks.append((label, start, end))
         else:
             seen[label] = seen.get(label, 0) + 1
     delete: List[Tuple[int, int]] = []
@@ -248,15 +259,10 @@ def _protected(sentence: str, start: int, end: int) -> bool:
 
 def _excess_span(sentence: str, counts: Dict[str, int]) -> Optional[Tuple[str, int, int]]:
     seen: Dict[str, int] = {}
-    for match in _TOKEN.finditer(sentence):
-        if _protected(sentence, match.start(), match.end()):
-            continue
-        label = family_of(match.group())
-        if not label:
-            continue
+    for label, start, end in _family_hits(sentence):
         used = counts.get(label, 0) + seen.get(label, 0)
         if used >= MAX_USES:
-            return label, match.start(), match.end()
+            return label, start, end
         seen[label] = seen.get(label, 0) + 1
     return None
 
@@ -267,10 +273,7 @@ def over_limit(parts: Iterable[str], labels: Optional[Iterable[str]] = None) -> 
     counts: Dict[str, int] = {}
     for part in parts:
         text = part or ""
-        for match in _TOKEN.finditer(text):
-            if _protected(text, match.start(), match.end()):
-                continue
-            label = family_of(match.group())
+        for label, _start, _end in _family_hits(text):
             if label in wanted:
                 counts[label] = counts.get(label, 0) + 1
     return {label: n for label, n in counts.items() if n > MAX_USES}

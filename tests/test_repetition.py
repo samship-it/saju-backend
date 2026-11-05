@@ -69,3 +69,13 @@ def test_entry_leaves_scores_keywords_and_object():
     assert entry["stay_vs_move"]["verdict"] == "유지 권장"
     prose = entry["one_line"] + entry["overall_flow"]
     assert prose.count("올해") <= 2
+
+
+def test_a_phrase_of_the_same_cluster_counts_once():
+    from shared.repetition import over_limit
+
+    text = "주변 사람들과의 인간관계는 따뜻하고 다정한 말로 풀려요. 성과는 따로 말해요."
+    assert over_limit([text, "사람들 이야기가 다시 나와요.", "인간관계가 또 나와요."])["주변"] == 3
+    once = over_limit([text])
+    assert "주변" not in once
+    assert "다정" not in once

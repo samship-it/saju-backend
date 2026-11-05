@@ -3,7 +3,7 @@ import datetime
 
 from core.saju_base import calculate_saju
 from domains.yearly.service import (
-    _MONTH_TAG_NARRATIVE,
+    _MONTH_TAG_NARRATIVES,
     _best_caution,
     _monthly_flow,
     _monthly_strength,
@@ -34,10 +34,13 @@ def test_only_months_separated_from_the_rest_are_described():
     flow = _monthly_flow(monthly)
     assert [item["month"] for item in flow] == [1, 2, 10, 11, 12]
     assert [item["band"] for item in flow] == ["best", "best", "caution", "caution", "caution"]
-    assert flow[0]["narrative"] == _MONTH_TAG_NARRATIVE[("인성", "best")]
-    assert flow[-1]["narrative"] == _MONTH_TAG_NARRATIVE[("관성", "caution")]
+    assert flow[0]["narrative"] == _MONTH_TAG_NARRATIVES[("인성", "best")][0]
+    assert flow[1]["narrative"] == _MONTH_TAG_NARRATIVES[("인성", "best")][1]
+    assert flow[0]["narrative"] != flow[1]["narrative"]
+    assert flow[-1]["narrative"] == _MONTH_TAG_NARRATIVES[("관성", "caution")][2]
     assert all("기복" not in item["narrative"] for item in flow)
     assert len(flow) < 12
+    assert len({item["narrative"] for item in flow}) == len(flow)
 
 
 def test_real_chart_keeps_the_score_and_skips_undescribed_months():
@@ -52,5 +55,20 @@ def test_real_chart_keeps_the_score_and_skips_undescribed_months():
     assert len(flow) <= 6
     assert all(item["band"] in ("best", "caution") for item in flow)
     assert all("기복" not in item["narrative"] for item in flow)
+    assert len({item["narrative"] for item in flow}) == len(flow)
+    by_band = {
+        "best": {line for (tag, band), lines in _MONTH_TAG_NARRATIVES.items() if band == "best" for line in lines},
+        "caution": {line for (tag, band), lines in _MONTH_TAG_NARRATIVES.items() if band == "caution" for line in lines},
+    }
+    for item in flow:
+        assert item["narrative"] in by_band[item["band"]]
     best, caution = _best_caution(monthly)
     assert len(best) == 3 and len(caution) == 3
+
+
+def test_month_lines_are_not_copied_across_the_catalog():
+    lines = [line for options in _MONTH_TAG_NARRATIVES.values() for line in options]
+    assert len(lines) == len(set(lines))
+    assert all(len(options) >= 3 for options in _MONTH_TAG_NARRATIVES.values())
+    banned = ("반드시 성공", "손실을 피할", "반드시 이룬", "무조건")
+    assert all(word not in line for line in lines for word in banned)
