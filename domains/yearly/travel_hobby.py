@@ -796,18 +796,29 @@ def assemble(
         headline = _OPENING[axis].split(".")[0].strip() + "."
 
     from shared.prose_quality import polish_tree
+    from shared.repetition import limit_prose
+    sections = limit_prose([
+        headline,
+        _join(parts),
+        _join(style),
+        _join(spot),
+        _join(activity),
+        _join(company_parts),
+        _join(reward),
+    ])
+    headline, flow, style_text, spot_text, activity_text, company_text, reward_text = sections
     return polish_tree({
         "symbol": {
             "keywords": keywords,
             "object": str(t["concept_object"] if lead_travel else h["concept_object"]),
             "headline": headline,
         },
-        "section_1_overall_flow": _join(parts),
-        "section_2_travel_style": _join(style),
-        "section_3_recommended_spot": _join(spot),
-        "section_4_matched_activity": _join(activity),
-        "section_5_solo_vs_together": _join(company_parts),
-        "section_6_final_reward": _join(reward),
+        "section_1_overall_flow": flow,
+        "section_2_travel_style": style_text,
+        "section_3_recommended_spot": spot_text,
+        "section_4_matched_activity": activity_text,
+        "section_5_solo_vs_together": company_text,
+        "section_6_final_reward": reward_text,
     })
 
 

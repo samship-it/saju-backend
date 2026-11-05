@@ -172,7 +172,7 @@ PRODUCTS = (
     _p(
         "yearly_overall", "총운", "YEARLY",
         ("/api/v1/yearly/overall",),
-        ("올해 전체 흐름", "상반기 흐름", "하반기 흐름", "올해 꼭 기억할 조언"),
+        ("전체 흐름", "상반기 흐름", "하반기 흐름", "꼭 기억할 조언"),
         "any",
         ("domains/yearly/data/yearly_overall_db.json",),
         ("domains/yearly/service.py",),
@@ -181,7 +181,7 @@ PRODUCTS = (
     _p(
         "yearly_wealth", "재물운", "YEARLY",
         ("/api/v1/yearly/wealth",),
-        ("올해 재물 전체 흐름", "올해 나의 수입 스타일", "소비 패턴·절약 포인트", "올해 투자·재테크 운"),
+        ("재물 전체 흐름", "나의 수입 스타일", "소비 패턴·절약 포인트", "투자·재테크 운"),
         "any",
         ("domains/yearly/data/yearly_wealth_db.json",),
         ("domains/yearly/service.py",),
@@ -190,7 +190,7 @@ PRODUCTS = (
     _p(
         "yearly_love", "연애운", "YEARLY",
         ("/api/v1/yearly/love",),
-        ("올해 연애 전체 흐름", "새로운 인연이 오는 방식", "관계가 깊어지는 방식", "올해 연애에서 조심할 점"),
+        ("연애 전체 흐름", "새로운 인연이 오는 방식", "관계가 깊어지는 방식", "연애에서 조심할 점"),
         "any",
         ("domains/yearly/data/yearly_love_db.json",),
         ("domains/yearly/service.py",),
@@ -199,7 +199,7 @@ PRODUCTS = (
     _p(
         "yearly_business", "사업운", "YEARLY",
         ("/api/v1/yearly/business",),
-        ("올해 사업 전체 흐름", "올해 나의 사업가 기질", "올해 사업 방향성", "확장하기 좋은 시기", "사업 파트너·협업운"),
+        ("사업 전체 흐름", "나의 사업가 기질", "사업 방향성", "확장하기 좋은 시기", "사업 파트너·협업운"),
         "any",
         ("domains/yearly/data/yearly_business_db.json",),
         ("domains/yearly/service.py",),
@@ -208,7 +208,7 @@ PRODUCTS = (
     _p(
         "yearly_career_change", "직장·이직운", "YEARLY",
         ("/api/v1/yearly/career_change",),
-        ("올해 직장운 전체 흐름", "올해 이직 평가", "이직 기회가 오는 방식", "나에게 맞는 직장 환경", "이직·승진 타이밍 흐름"),
+        ("직장운 전체 흐름", "이직 평가", "이직 기회가 오는 방식", "나에게 맞는 직장 환경", "이직·승진 타이밍 흐름"),
         "any",
         ("domains/yearly/data/yearly_career_change_db.json",),
         ("domains/yearly/service.py",),
@@ -217,7 +217,7 @@ PRODUCTS = (
     _p(
         "yearly_study", "학업운", "YEARLY",
         ("/api/v1/yearly/study",),
-        ("올해 학업·배움 전체 흐름", "나에게 맞는 학습 방식", "집중력과 성취운", "도전하면 좋은 분야"),
+        ("학업·배움 전체 흐름", "나에게 맞는 학습 방식", "집중력과 성취운", "도전하면 좋은 분야"),
         "any",
         ("domains/yearly/data/yearly_study_db.json",),
         ("domains/yearly/service.py",),
@@ -226,7 +226,7 @@ PRODUCTS = (
     _p(
         "yearly_health", "건강운", "YEARLY",
         ("/api/v1/yearly/health",),
-        ("올해 컨디션 전체 흐름", "올해 신경 쓸 관리 포인트", "나에게 맞는 회복법"),
+        ("컨디션 전체 흐름", "신경 쓸 관리 포인트", "나에게 맞는 회복법"),
         "any",
         ("domains/yearly/data/yearly_health_db.json",),
         ("domains/yearly/service.py",),
@@ -235,7 +235,7 @@ PRODUCTS = (
     _p(
         "yearly_travel", "여행운", "YEARLY",
         ("/api/v1/yearly/travel",),
-        ("올해 이동·여행 전체 흐름", "나에게 맞는 여행 스타일", "여행 중 들어오는 행운", "추천 장소·여행 시기"),
+        ("이동·여행 전체 흐름", "나에게 맞는 여행 스타일", "여행 중 들어오는 행운", "추천 장소·여행 시기"),
         "any",
         ("domains/yearly/data/yearly_travel_db.json",),
         ("domains/yearly/service.py",),
@@ -244,7 +244,7 @@ PRODUCTS = (
     _p(
         "yearly_hobby", "취미운", "YEARLY",
         ("/api/v1/yearly/hobby",),
-        ("올해 취미·여가 전체 흐름", "올해 잘 맞는 활동", "혼자 vs 함께, 올해 맞는 쪽", "취미로 올해 얻게 되는 것"),
+        ("취미·여가 전체 흐름", "잘 맞는 활동", "혼자 vs 함께", "취미로 얻게 되는 것"),
         "any",
         ("domains/yearly/data/yearly_hobby_db.json",),
         ("domains/yearly/service.py",),
@@ -254,8 +254,8 @@ PRODUCTS = (
         "travel_hobby", "여행·취미", "YEARLY",
         ("/api/v1/yearly/travel-hobby",),
         (
-            "올해의 여가운", "여행 스타일", "다녀오기 좋은 시기", "잘 맞는 취미",
-            "올해 내 취미는 혼자 vs 함께", "올해 얻게 될 수확",
+            "여가운", "여행 스타일", "다녀오기 좋은 시기", "잘 맞는 취미",
+            "취미는 혼자 vs 함께", "얻게 될 수확",
         ),
         "any",
         ("domains/yearly/data/yearly_travel_db.json", "domains/yearly/data/yearly_hobby_db.json"),
