@@ -3261,8 +3261,14 @@ _YEARLY_V2: Dict[str, Dict[str, Any]] = {
         "text_fields": [
             ("overall_flow", "올해 컨디션·생활 관리 전체 흐름 — 활력이 도는 때와 처지는 때, 상반기·하반기 결이 어떻게 다른지까지 구체적인 장면과 함께 촘촘하게 (10~14문장)"),
             ("care_points", "올해 특히 신경 쓸 관리 포인트 — 생활 습관·리듬 위주로(특정 질병 단정 금지), 구체적인 실천 방법까지 (7~10문장)"),
-            ("recovery_method", "지치거나 무리했을 때 나에게 맞는 회복법 — 휴식 / 운동 / 사람 / 자연 중 어느 쪽인지와 구체적인 방법, 상황별 시나리오 포함 (7~10문장)"),
+            ("recovery_method", "지치거나 무리했을 때 나에게 맞는 회복법 — 휴식 / 운동 / 사람 / 자연 중 어느 쪽인지와 구체적인 방법, 상황별 시나리오 포함 (7~10문장). 따뜻한 차, 건강한 식사, 편안한 대화로 회복을 말하고 술·맥주는 회복법으로 추천하지 않습니다."),
         ],
+        "prose_note": (
+            "아침 식사나 특정 식사가 대사량·기초대사·신진대사를 유지하거나 높인다고 쓰지 않습니다. "
+            "식사는 규칙적인 식사, 균형 잡힌 영양, 식사 리듬으로만 말합니다. "
+            "맥주·술·와인·소주를 스트레스 해소나 건강 회복 방법으로 추천하지 않습니다. "
+            "회복은 따뜻한 차, 건강한 식사, 편안한 대화로 말합니다. 과음이나 음주를 조심하라는 주의는 괜찮습니다."
+        ),
         "min_lens": {"overall_flow": 220, "care_points": 150, "recovery_method": 150},
     },
     "travel": {
@@ -3505,6 +3511,7 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
         )
 
     depth_note = spec.get("depth_note", "")
+    prose_note = spec.get("prose_note", "")
 
     return f"""아래 {len(items)}개의 (나의 성향, 올해 기운) 조합 각각에 대해 '올해 {ko}'를 씁니다.
 각 조합은 완전히 독립입니다. 한 조합 내용을 다른 조합에 복사하지 말고 성향·기운 조합에 맞춰 개별적으로, 서로 다르게 씁니다.
@@ -3520,6 +3527,7 @@ def _yearly_v2_prompt(category: str, items: List[Tuple[str]]) -> str:
 {rating_lines}
 {compare_lines}
 {("\n[분량·깊이 규칙 — 최우선]\n- " + depth_note) if depth_note else ""}
+{("\n[건강운 표현 규칙 — 최우선]\n- " + prose_note) if prose_note else ""}
 
 [말투·형식 규칙 — 최우선]
 - 모든 문장을 친근한 존댓말로만 끝냅니다: '~해요 / ~예요 / ~입니다 / ~보세요 / ~됩니다' 등. '~한다/~된다/~있다/~거야/~겠지' 같은 반말·문어체 종결 금지. keywords·concept_object 만 명사.
@@ -3556,10 +3564,18 @@ def _yearly_v2_coerce(category: str, entry: Any) -> Any:
         if isinstance(v, str):
             for bad, good in _YEARLY_FIXUPS:
                 v = v.replace(bad, good)
-            entry[name] = _strip_hanja(_rel_clean(v))
+            v = _strip_hanja(_rel_clean(v))
+            if category == "health":
+                from domains.yearly.health_prose import rewrite_health_text
+                v = rewrite_health_text(v)
+            entry[name] = v
     # one_line
     if isinstance(entry.get("one_line"), str):
-        entry["one_line"] = _strip_hanja(_rel_clean(entry["one_line"]))
+        one_line = _strip_hanja(_rel_clean(entry["one_line"]))
+        if category == "health":
+            from domains.yearly.health_prose import rewrite_health_text
+            one_line = rewrite_health_text(one_line)
+        entry["one_line"] = one_line
     # keywords → 정확히 1개
     kw = entry.get("keywords")
     if isinstance(kw, str):
