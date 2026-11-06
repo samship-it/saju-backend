@@ -9,7 +9,7 @@ from functools import lru_cache
 from core.saju_base import calculate_saju
 from domains.love.engine import build_ideal_partner
 from shared.prose_quality import finish_reading
-from domains.love.profiles import birth_of, deduct_bokkong, ideal_partner_cost
+from domains.love.profiles import birth_of, bokkong_payment_enabled, deduct_bokkong, ideal_partner_cost
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,11 @@ def analyze_ideal_partner(user_id: str):
         profile["gender"] or "female", bool(profile["is_lunar"]),
     )
     data, is_fallback = _unpack(cached)
+
+    if not bokkong_payment_enabled():
+        data["remaining_bokkong"] = int(profile.get("bokkong") or 0)
+        data["is_fallback"] = is_fallback
+        return finish_reading(data, is_fallback)
 
     status, remaining = deduct_bokkong(user_id, cost)
     if status == "missing":

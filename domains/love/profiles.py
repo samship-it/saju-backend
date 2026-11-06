@@ -53,6 +53,11 @@ except Exception as _e:  # pragma: no cover
     print(f"[love.profiles] 테이블 생성 실패: {_e}")
 
 
+def bokkong_payment_enabled() -> bool:
+    """결제 연동 전에 복콩 잔액으로 인연 가이드를 막지 않는다."""
+    return os.environ.get("BOKKONG_PAYMENT_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def ideal_partner_cost() -> int:
     raw = os.environ.get("IDEAL_PARTNER_COST", "30")
     try:

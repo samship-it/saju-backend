@@ -159,7 +159,23 @@ def test_missing_user_and_profile_are_403():
     _cleanup("ideal-nobody")
 
 
-def test_insufficient_bokkong_is_402_and_does_not_deduct():
+def test_payment_off_opens_with_zero_bokkong(monkeypatch):
+    monkeypatch.delenv("BOKKONG_PAYMENT_ENABLED", raising=False)
+    user_id = "ideal-free"
+    try:
+        upsert_profile(user_id, year=1990, month=5, day=15, hour=14, minute=30, gender="female", bokkong=0)
+        res = client.post("/api/v1/love/ideal-partner", headers={"X-User-Id": user_id})
+        assert res.status_code == 200
+        assert res.json()["data"]["remaining_bokkong"] == 0
+        again = client.post("/api/v1/love/ideal-partner", headers={"X-User-Id": user_id})
+        assert again.status_code == 200
+        assert again.json()["data"]["remaining_bokkong"] == 0
+    finally:
+        _cleanup(user_id)
+
+
+def test_insufficient_bokkong_is_402_and_does_not_deduct(monkeypatch):
+    monkeypatch.setenv("BOKKONG_PAYMENT_ENABLED", "1")
     user_id = "ideal-poor"
     try:
         upsert_profile(user_id, year=1990, month=5, day=15, hour=14, minute=30, gender="female", bokkong=10)
@@ -172,7 +188,8 @@ def test_insufficient_bokkong_is_402_and_does_not_deduct():
         _cleanup(user_id)
 
 
-def test_success_deducts_and_repeats_the_same_reading():
+def test_success_deducts_and_repeats_the_same_reading(monkeypatch):
+    monkeypatch.setenv("BOKKONG_PAYMENT_ENABLED", "1")
     user_id = "ideal-ok"
     _reading_cache.cache_clear()
     try:
