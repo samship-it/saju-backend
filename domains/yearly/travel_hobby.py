@@ -651,7 +651,7 @@ def assemble(
     company: str,
     timing_months: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """여섯 섹션. travel/hobby 원문 필드는 서로 다른 칸에만 들어간다."""
+    """여행·취미 섹션. 혼자와 함께를 비교하는 칸은 만들지 않고, 그 문장을 다른 칸으로 옮기지도 않는다."""
     t = _body(travel, _FALLBACK_TRAVEL)
     h = _body(hobby, _FALLBACK_HOBBY)
     if company not in _COMPANY:
@@ -741,17 +741,6 @@ def assemble(
     if not activity:
         activity = ["새로운 것을 여러 개 벌리기보다, 이미 손이 가는 것 하나에 머무는 편이 맞아요."]
 
-    def _company_ok(sentence: str) -> bool:
-        # 여행 동행은 스타일 섹션에 있다. 여기에는 취미를 혼자 둘지 함께할지만 남긴다.
-        if _has(sentence, ("동행은", "숙소는", "캐리어")):
-            return False
-        if _has(sentence, _NARROW_SPORT) or _has(sentence, _RECORD) or _has(sentence, _FATE) or _has(sentence, _INTENSE):
-            return False
-        return not _has(sentence, _EXCLUSIVE) and fits_section("company", sentence, "hobby_company")
-
-    company_body = _arrange_company(_take(str(h.get("solo_vs_group") or ""), used, pred=_company_ok))
-    company_parts = company_body or [_COMPANY[company]]
-
     reward: List[str] = []
     travel_gain = _take(
         str(t["travel_luck"]), used,
@@ -803,10 +792,9 @@ def assemble(
         _join(style),
         _join(spot),
         _join(activity),
-        _join(company_parts),
         _join(reward),
     ])
-    headline, flow, style_text, spot_text, activity_text, company_text, reward_text = sections
+    headline, flow, style_text, spot_text, activity_text, reward_text = sections
     return polish_tree({
         "symbol": {
             "keywords": keywords,
@@ -817,7 +805,7 @@ def assemble(
         "section_2_travel_style": style_text,
         "section_3_recommended_spot": spot_text,
         "section_4_matched_activity": activity_text,
-        "section_5_solo_vs_together": company_text,
+        "section_5_solo_vs_together": "",
         "section_6_final_reward": reward_text,
     })
 

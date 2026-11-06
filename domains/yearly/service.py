@@ -384,7 +384,7 @@ _YEARLY_V2_TEXT_FIELDS = {
     "career_change": ("overall_flow", "job_change_eval", "opportunity_style", "ideal_environment", "timing_flow"),
     "health": ("overall_flow", "care_points", "recovery_method"),
     "travel": ("overall_flow", "travel_style", "travel_luck", "recommended_spots"),
-    "hobby": ("overall_flow", "active_activities", "solo_vs_group", "benefits"),
+    "hobby": ("overall_flow", "active_activities", "benefits"),
     "wealth": ("overall_flow", "income_style", "spending_pattern", "investment_luck"),
     "love": ("overall_flow", "meeting_style", "relationship_depth", "caution_point"),
 }
@@ -574,7 +574,7 @@ def _build_travel_hobby(year, month, day, hour, minute, gender, is_lunar, ty):
     )
     hobby = _yearly_db.lookup(
         "hobby", g1, se,
-        required=("one_line", "overall_flow", "active_activities", "solo_vs_group", "benefits"),
+        required=("one_line", "overall_flow", "active_activities", "benefits"),
     )
     axes = _read_travel_hobby_axes(saju, se)
     if isinstance(travel, dict):

@@ -1,4 +1,4 @@
-"""여행·취미 통합: 여섯 섹션 분배, 혼자/함께 모순 제거, 정적 조회."""
+"""여행·취미 통합: 섹션 분배. 혼자/함께 비교 칸은 비운다."""
 import inspect
 import time
 
@@ -86,7 +86,7 @@ def test_fields_do_not_reuse_the_same_source_paragraph():
     assert "TLUCK" in stayed["section_6_final_reward"]
 
 
-def test_hobby_company_keeps_alone_and_together_without_travel():
+def test_hobby_company_section_is_removed_and_not_reused():
     data = assemble(
         _travel(),
         _hobby(
@@ -97,10 +97,11 @@ def test_hobby_company_keeps_alone_and_together_without_travel():
         ),
         move_high=True, play_high=False, company="solo", timing_months=["3월"],
     )
-    text = data["section_5_solo_vs_together"]
-    assert "동행" not in text
-    assert text.index("혼자 정리") < text.index("동호회") < text.index("상황에")
-    assert "여행" not in text
+    assert data["section_5_solo_vs_together"] == ""
+    shown = " ".join(str(data[key]) for key in FIELDS if key not in ("symbol", "section_5_solo_vs_together"))
+    assert "혼자 정리" not in shown
+    assert "동호회" not in shown
+    assert "상황에 맞춰" not in shown
 
 
 def test_axes_separate_movement_and_company():
@@ -172,8 +173,8 @@ def test_sections_keep_one_direction():
     assert "크로스핏" not in calm["section_4_matched_activity"]
     assert "클라이밍" not in calm["section_4_matched_activity"]
     assert "하나에" in calm["section_4_matched_activity"]
-    assert "함께 클라이밍" in calm["section_5_solo_vs_together"]
-    assert "혼자만" not in calm["section_5_solo_vs_together"]
+    assert calm["section_5_solo_vs_together"] == ""
+    assert "함께 클라이밍" not in " ".join(str(calm[key]) for key in FIELDS if key != "symbol")
     reward = calm["section_6_final_reward"]
     assert "운명" not in reward and "주목" not in reward and "근력" not in reward
     assert "깊이" in calm["section_4_matched_activity"]
@@ -240,8 +241,9 @@ def test_distinct_stored_sentences_stay_and_paraphrases_drop():
     hobby_text = data["section_4_matched_activity"]
     assert hobby_text.count("수채화") == 1
     assert "필름" in hobby_text
-    company = data["section_5_solo_vs_together"]
-    assert "전시" in company and "혼자 정리" in company
+    assert data["section_5_solo_vs_together"] == ""
+    shown = " ".join(str(data[key]) for key in FIELDS if key != "symbol")
+    assert "전시" not in shown and "혼자 정리" not in shown
 
 
 def test_style_label_leads_and_harvest_splits_travel_from_hobby():
@@ -399,7 +401,7 @@ def test_no_runtime_llm_on_the_module():
     assert "call_gemini" not in source
 
 
-def test_endpoint_returns_six_sections_from_static_db():
+def test_endpoint_returns_sections_without_the_company_comparison():
     res = client.post(
         "/api/v1/yearly/travel-hobby",
         json={"year": 1990, "month": 5, "day": 15, "hour": 14, "minute": 30, "gender": "female", "target_year": 2026},
@@ -410,7 +412,10 @@ def test_endpoint_returns_six_sections_from_static_db():
     assert body["is_fallback"] is False
     assert body["category"] == "travel_hobby"
     assert body["target_year"] == 2026
+    assert body["section_5_solo_vs_together"] == ""
     for key in FIELDS:
+        if key == "section_5_solo_vs_together":
+            continue
         assert body[key]
     assert all(word.startswith("#") for word in body["symbol"]["keywords"])
     kept = client.post(

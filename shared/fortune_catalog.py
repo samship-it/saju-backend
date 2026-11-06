@@ -244,7 +244,7 @@ PRODUCTS = (
     _p(
         "yearly_hobby", "취미운", "YEARLY",
         ("/api/v1/yearly/hobby",),
-        ("취미·여가 전체 흐름", "잘 맞는 활동", "혼자 vs 함께", "취미로 얻게 되는 것"),
+        ("취미·여가 전체 흐름", "잘 맞는 활동", "취미로 얻게 되는 것"),
         "any",
         ("domains/yearly/data/yearly_hobby_db.json",),
         ("domains/yearly/service.py",),
@@ -254,8 +254,8 @@ PRODUCTS = (
         "travel_hobby", "여행·취미", "YEARLY",
         ("/api/v1/yearly/travel-hobby",),
         (
-            "여가운", "여행 스타일", "다녀오기 좋은 시기", "잘 맞는 취미",
-            "취미는 혼자 vs 함께", "얻게 될 수확",
+            "올해의 여가운", "여행 스타일", "다녀오기 좋은 시기", "잘 맞는 취미",
+            "올해 얻게 될 수확",
         ),
         "any",
         ("domains/yearly/data/yearly_travel_db.json", "domains/yearly/data/yearly_hobby_db.json"),

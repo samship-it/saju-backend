@@ -392,7 +392,8 @@ def test_yearly_travel_hobby_v2_schema():
     h = client.post("/api/v1/yearly/hobby", json={**BIRTH_A, "target_year": 2026}).json()
     assert h["concept_object"] in ("카메라", "기타", "그림", "운동용품")
     assert len(h["keywords"]) == 1
-    assert h["active_activities"] and h["solo_vs_group"] and h["benefits"]
+    assert h["active_activities"] and h["benefits"]
+    assert not h.get("solo_vs_group")
 
 
 def test_yearly_categories_endpoint():
