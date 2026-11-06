@@ -12,7 +12,7 @@ from config import API_SECRET_KEY, today_kst
 from core.saju_base import calculate_saju
 from domains.daily.content_db import make_key
 from domains.daily.ilju_image import ilju_animal_icon, target_name
-from domains.daily.partners import partner_of, partners_of, upsert_partner
+from domains.daily.partners import PartnerLimitError, delete_partner, partner_of, partners_of, upsert_partner
 from domains.daily.service import generate_daily_fortune
 from domains.daily.status_variants import fortune_statuses
 from domains.love.profiles import birth_of
@@ -144,6 +144,7 @@ def _subject(req: DailyFortuneRequest):
             "is_lunar": row["is_lunar"],
             "love_status": row.get("love_status"),
             "job_status": row.get("job_status"),
+            "birth_version": int(row.get("birth_version") or 1),
         }
     if req.year is None or req.month is None or req.day is None:
         return False
@@ -158,6 +159,7 @@ def _subject(req: DailyFortuneRequest):
         "minute": req.minute or 0,
         "gender": req.gender or "female",
         "is_lunar": bool(req.is_lunar),
+        "birth_version": None,
     }
 
 
@@ -171,13 +173,22 @@ def _birth_ilju_icon(year: int, month: int, day: int, hour_key: int, minute: int
 
 
 def _partner_card(row: dict) -> dict:
-    """인연 목록 한 칸. 사주는 일주 아이콘을 정하는 데만 쓴다."""
+    """인연 목록 한 칸. 화면이 이 출생으로 같은 사람을 다시 그린다."""
+    hour = None if row["hour"] is None else int(row["hour"])
     return {
         "id": row["partner_id"],
         "nickname": row["nickname"],
+        "gender": row["gender"] or "female",
+        "year": int(row["year"]),
+        "month": int(row["month"]),
+        "day": int(row["day"]),
+        "hour": hour,
+        "minute": int(row["minute"] or 0),
+        "is_lunar": bool(row["is_lunar"]),
+        "time_unknown": hour is None,
         "ilju_animal_icon": _birth_ilju_icon(
             int(row["year"]), int(row["month"]), int(row["day"]),
-            -1 if row["hour"] is None else int(row["hour"]),
+            -1 if hour is None else hour,
             int(row["minute"] or 0),
             row["gender"] or "female",
             bool(row["is_lunar"]),
@@ -204,15 +215,41 @@ def sync_partner(req: PartnerSyncRequest, x_api_key: str = Header(...)):
     """오늘의 운세가 조회할 인연의 생년월일시·성별·닉네임을 저장한다."""
     if x_api_key != API_SECRET_KEY:
         _reject_key()
-    saved = upsert_partner(
-        req.user_id.strip(), req.partner_id.strip(),
-        nickname=req.nickname.strip(),
-        year=req.year, month=req.month, day=req.day,
-        hour=_resolved_hour(req.hour, req.time_unknown), minute=req.minute,
-        gender=req.gender, is_lunar=req.is_lunar,
-        love_status=req.love_status, job_status=req.job_status,
-    )
+    try:
+        saved = upsert_partner(
+            req.user_id.strip(), req.partner_id.strip(),
+            nickname=req.nickname.strip(),
+            year=req.year, month=req.month, day=req.day,
+            hour=_resolved_hour(req.hour, req.time_unknown), minute=req.minute,
+            gender=req.gender, is_lunar=req.is_lunar,
+            love_status=req.love_status, job_status=req.job_status,
+        )
+    except PartnerLimitError:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "code": "PARTNER_LIMIT",
+                "message": "인연은 최대 5명까지 등록할 수 있습니다.",
+            },
+        )
     return {"status": "success", "data": saved}
+
+
+@router.delete("/partners", summary="인연 한 명 삭제")
+def remove_partner(user_id: str, partner_id: str, x_api_key: str = Header(...)):
+    """이 주인의 해당 인연만 지운다. 다른 인연과 다른 주인은 그대로 둔다."""
+    if x_api_key != API_SECRET_KEY:
+        _reject_key()
+    owner = (user_id or "").strip()
+    target = (partner_id or "").strip()
+    if not owner or not target:
+        return JSONResponse(
+            status_code=422,
+            content={"status": "error", "code": "USER_REQUIRED", "message": "사용자 정보가 필요합니다."},
+        )
+    delete_partner(owner, target)
+    return {"status": "success", "partner_id": target}
 
 
 @router.post("/fortune", summary="오늘의 운세 (DAILY_FORTUNE)")
@@ -260,6 +297,7 @@ def get_daily_fortune_endpoint(req: DailyFortuneRequest, x_api_key: str = Header
             "target_person_id": subject["target_person_id"],
             "nickname": subject["nickname"],
             "target_name": target_name(subject["nickname"]),
+            "birth_version": subject.get("birth_version"),
             **reading,
         }
 

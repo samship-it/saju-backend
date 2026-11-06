@@ -150,9 +150,18 @@ def test_partner_list_returns_id_nickname_and_icon(partner):
     assert listed.status_code == 200, listed.text
     rows = listed.json()["data"]
     assert len(rows) == 1
-    assert set(rows[0]) == {"id", "nickname", "ilju_animal_icon"}
+    assert set(rows[0]) == {
+        "id", "nickname", "gender", "year", "month", "day", "hour", "minute",
+        "is_lunar", "time_unknown", "ilju_animal_icon",
+    }
     assert rows[0]["id"] == PARTNER
     assert rows[0]["nickname"] == "민지"
+    assert rows[0]["year"] == TARGET["year"]
+    assert rows[0]["month"] == TARGET["month"]
+    assert rows[0]["day"] == TARGET["day"]
+    assert rows[0]["hour"] == TARGET["hour"]
+    assert rows[0]["gender"] == TARGET["gender"]
+    assert rows[0]["time_unknown"] is False
     icon = ilju_profile_image(_fortune(TARGET)[0]["day_ganji"])
     assert rows[0]["ilju_animal_icon"] == icon
     assert rows[0]["ilju_animal_icon"]

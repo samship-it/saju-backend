@@ -65,6 +65,7 @@ def lifelong_analysis_endpoint(req: LifelongFortuneRequest, x_api_key: Optional[
             "target_name": subject["target_name"],
             "love_status": subject["love_status"],
             "job_status": subject["job_status"],
+            "birth_version": subject.get("birth_version"),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"평생운세 분석 실패: {str(e)}")

@@ -115,6 +115,7 @@ def _envelope(data: dict, is_fallback: bool, subject: dict, love_status, job_sta
         "target_name": target_name(subject["nickname"]),
         "love_status": love_status,
         "job_status": job_status,
+        "birth_version": subject.get("birth_version"),
     }
 
 

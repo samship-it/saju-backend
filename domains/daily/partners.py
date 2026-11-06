@@ -11,6 +11,12 @@ _partner_cache = {}
 _list_cache = {}
 _list_version = {}
 
+MAX_PARTNERS = 5
+
+
+class PartnerLimitError(Exception):
+    """이 주인에게 이미 5명이 있어 새 인연은 넣지 않는다."""
+
 
 class UserPartner(Base):
     __tablename__ = "user_partner"
@@ -27,6 +33,7 @@ class UserPartner(Base):
     is_lunar = Column(Boolean, nullable=False, default=False)
     love_status = Column(String(32), nullable=True)
     job_status = Column(String(32), nullable=True)
+    birth_version = Column(Integer, nullable=False, default=1)
 
 
 def _ensure_status_columns() -> None:
@@ -41,6 +48,10 @@ def _ensure_status_columns() -> None:
             conn.execute(text("ALTER TABLE user_partner ADD COLUMN love_status VARCHAR(32)"))
         if "job_status" not in cols:
             conn.execute(text("ALTER TABLE user_partner ADD COLUMN job_status VARCHAR(32)"))
+        if "birth_version" not in cols:
+            conn.execute(text(
+                "ALTER TABLE user_partner ADD COLUMN birth_version INTEGER NOT NULL DEFAULT 1"
+            ))
 
 
 try:
@@ -64,6 +75,7 @@ def _row_dict(row: UserPartner) -> dict:
         "is_lunar": bool(row.is_lunar),
         "love_status": row.love_status,
         "job_status": row.job_status,
+        "birth_version": int(row.birth_version or 1),
     }
 
 
@@ -123,6 +135,9 @@ def partner_of(owner_user_id: str, partner_id: str):
         found = _row_dict(row) if row else None
     finally:
         session.close()
+    if found is None:
+        _partner_cache.pop(key, None)
+        return None
     _partner_cache[key] = found
     return found
 
@@ -143,17 +158,41 @@ def upsert_partner(
             )
             .one_or_none()
         )
+        next_hour = None if hour is None else int(hour)
+        next_birth = (
+            int(year), int(month), int(day), next_hour, int(minute or 0),
+            gender or "female", bool(is_lunar),
+        )
         if row is None:
-            row = UserPartner(owner_user_id=owner_user_id, partner_id=partner_id)
+            held = (
+                session.query(UserPartner)
+                .filter(UserPartner.owner_user_id == owner_user_id)
+                .count()
+            )
+            if held >= MAX_PARTNERS:
+                raise PartnerLimitError(owner_user_id)
+            row = UserPartner(
+                owner_user_id=owner_user_id,
+                partner_id=partner_id,
+                birth_version=1,
+            )
             session.add(row)
+        else:
+            current_birth = (
+                int(row.year), int(row.month), int(row.day),
+                None if row.hour is None else int(row.hour),
+                int(row.minute or 0), row.gender or "female", bool(row.is_lunar),
+            )
+            if current_birth != next_birth:
+                row.birth_version = int(row.birth_version or 1) + 1
         row.nickname = nickname
-        row.year = int(year)
-        row.month = int(month)
-        row.day = int(day)
-        row.hour = None if hour is None else int(hour)
-        row.minute = int(minute or 0)
-        row.gender = gender or "female"
-        row.is_lunar = bool(is_lunar)
+        row.year = next_birth[0]
+        row.month = next_birth[1]
+        row.day = next_birth[2]
+        row.hour = next_birth[3]
+        row.minute = next_birth[4]
+        row.gender = next_birth[5]
+        row.is_lunar = next_birth[6]
         if love_status:
             row.love_status = love_status
         if job_status:
