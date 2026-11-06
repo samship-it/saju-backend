@@ -207,6 +207,27 @@ def upsert_partner(
         session.close()
 
 
+# 2026-11-03 브라우저 저장본에서 읽은 5명. 서버 디스크가 비워져도 같은 ID로만 다시 넣는다.
+RECORDED_OWNER = "app-user"
+RECORDED_PARTNERS = (
+    {"partner_id": "mv7u72k1-r3uu0y", "nickname": "고바우", "year": 1980, "month": 2, "day": 21, "hour": 12, "minute": 0, "gender": "female", "is_lunar": False},
+    {"partner_id": "mv815kyv-ehz7y3", "nickname": "고바우", "year": 1980, "month": 2, "day": 21, "hour": None, "minute": 0, "gender": "female", "is_lunar": False},
+    {"partner_id": "mv81afye-55mqkh", "nickname": "고바우2", "year": 1980, "month": 2, "day": 21, "hour": 12, "minute": 0, "gender": "female", "is_lunar": False},
+    {"partner_id": "mv81h8a0-z404bg", "nickname": "유유", "year": 1990, "month": 1, "day": 1, "hour": None, "minute": 0, "gender": "female", "is_lunar": False},
+    {"partner_id": "mvxoeewu-c1b083", "nickname": "DY", "year": 1986, "month": 4, "day": 3, "hour": 10, "minute": 0, "gender": "female", "is_lunar": False},
+)
+
+
+def ensure_recorded_partners() -> None:
+    """없는 ID만 채운다. 이미 있는 행의 이름·생일은 바꾸지 않고, 다른 인연은 지우지 않는다."""
+    for spec in RECORDED_PARTNERS:
+        if partner_of(RECORDED_OWNER, spec["partner_id"]) is not None:
+            continue
+        if len(partners_of(RECORDED_OWNER)) >= MAX_PARTNERS:
+            return
+        upsert_partner(RECORDED_OWNER, spec["partner_id"], **{k: spec[k] for k in spec if k != "partner_id"})
+
+
 def delete_partner(owner_user_id: str, partner_id: str) -> None:
     session = SessionLocal()
     try:
@@ -219,3 +240,9 @@ def delete_partner(owner_user_id: str, partner_id: str) -> None:
         session.close()
     _partner_cache.pop(_key(owner_user_id, partner_id), None)
     _invalidate_list(owner_user_id)
+
+
+try:
+    ensure_recorded_partners()
+except Exception as _e:  # pragma: no cover
+    print(f"[daily.partners] 기록된 인연 복구 실패: {_e}")
