@@ -21,6 +21,7 @@ from shared.public import person_summary
 from shared.prose_quality import finish_reading
 from shared.text_format import paragraphize
 from domains.yearly import content_db as _yearly_db
+from domains.yearly.key_points import build_key_points
 from domains.yearly.one_line_voice import vary_repeated_phrase as _vary_one_line
 from domains.yearly.travel_hobby import assemble as _assemble_travel_hobby
 from domains.yearly.travel_hobby import read_axes as _read_travel_hobby_axes
@@ -342,7 +343,19 @@ def _yearly_static(category: str, ty: int, saju: dict, monthly, best, caution):
             v = src.get(f)
             out[f] = (paragraphize(str(v)) if isinstance(v, str) and v.strip()
                       else _OVERALL_FALLBACK[f])
-        out["monthly_flow"] = _monthly_flow(monthly)
+        # 월별 사건 서술은 고객 응답에 넣지 않는다. 점수와 기회의 달·주의의 달은 유지한다.
+        out["monthly_flow"] = []
+        out["key_points"] = build_key_points(
+            one_line=out["one_line"],
+            keywords=kws,
+            overall_flow=flow,
+            seed=f"{g1}_{se}",
+            avoid=(
+                flow, fh, sh, adv,
+                out["opportunity_month"], out["caution_month"],
+                out["cheat_key"], out["trap_warning"],
+            ),
+        )
     return out, is_fb
 
 
