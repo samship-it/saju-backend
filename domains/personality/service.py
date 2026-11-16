@@ -50,12 +50,28 @@ def _verdict_key(strength: Dict[str, Any]) -> str:
     return v if v in _VERDICT_TRAIT else "중화"
 
 
+# 성격 도입부. 적성 브리지는 기존 수식어를 그대로 쓴다.
+_ELEM_ACT: Dict[str, str] = {
+    "목": "앞으로 키울 일과 접을 일을 먼저 가른 뒤 결정합니다",
+    "화": "느낀 점을 숨기지 않고 바로 말로 꺼내 결정합니다",
+    "토": "한번 정한 기준을 쉽게 바꾸지 않고 그 기준으로 결정합니다",
+    "금": "맞는지 아닌지를 먼저 가른 뒤에 결정합니다",
+    "수": "상황과 상대의 반응을 보고 말과 일정을 바꿔 결정합니다",
+}
+_DEFAULT_ELEM_ACT = "내가 납득한 기준을 먼저 정한 뒤에 결정합니다"
+_VERDICT_ACT: Dict[str, str] = {
+    "신강": "남이 정해주기 전에 내가 일정과 역할을 먼저 정하고 움직입니다",
+    "신약": "주변 사람의 반응을 확인한 뒤에 일정과 역할을 정하고 움직입니다",
+    "중화": "내 기준과 상대의 사정을 같이 보고 일정과 역할을 정하고 움직입니다",
+}
+
+
 def _character_bridge(day_master_elem: str, verdict: str) -> str:
-    elem_trait = _ELEM_TRAIT.get(day_master_elem, _DEFAULT_ELEM_TRAIT)
-    verdict_trait = _VERDICT_TRAIT[verdict]
+    elem_act = _ELEM_ACT.get(day_master_elem, _DEFAULT_ELEM_ACT)
+    verdict_act = _VERDICT_ACT[verdict]
     return (
-        f"생각을 굴리고 사람을 대할 때는 {elem_trait} 쪽이 먼저 나옵니다. "
-        f"움직일 때는 {verdict_trait} 편입니다. "
+        f"판단이 필요할 때는 {elem_act}. "
+        f"사람을 대하고 움직일 때는 {verdict_act}. "
         "아래 성격은 그 두 가지가 판단, 관계, 강점과 보완점에서 어떻게 나타나는지입니다."
     )
 

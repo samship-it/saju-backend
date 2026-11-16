@@ -177,6 +177,9 @@ SINSAL_HEADLINE_SUFFIX: Dict[str, str] = {
     "백호": "백호살(白虎殺)까지 겹치니 안전·건강에 더 유의하세요.",
     "양인": "양인살(陽刃殺)까지 겹치니 감정 조절에 신경 쓰세요.",
 }
+# 앞 문장이 이미 손실·말실수·어긋남을 말하면 "까지 겹치니"가 맞다.
+# 이득·평화·말이 잘 풀린다는 문장 뒤에는 앞일을 나쁜 일에 포개지 않도록 "다만"으로 잇는다.
+_SINSAL_ALREADY_CAUTION = ("유의", "조심", "주의", "지출", "손실", "말실수", "어긋", "구설", "마찰", "다툼", "충동")
 
 # ── 6. 영역별 십신군 소속 — core/domain_derived.py의 domains 딕셔너리와 동일(단일
 # 소스 유지 위해 반드시 동기화). money/love/work_study 각 점수는 이제 score_delta를
@@ -436,7 +439,7 @@ HEADLINE_TABLE: Dict[str, Dict[str, str]] = {
         "harmony": "남들과 다른 촉이 발휘되는 날이니 낯선 아이디어나 배움에 과감히 뛰어들어도 좋아요.",
         "conflict": "생각이 많아져 의심부터 앞서기 쉬운 날이니 일단 믿고 한 걸음 내디뎌 보세요.",
         "adjustment": "혼자 끌어안던 고민을 누군가와 나눠보면 정리가 되는 하루예요.",
-        "friction": "감(感)이 평소와 살짝 어긋날 수 있으니 중요한 판단은 한 번 더 검증하세요.",
+        "friction": "감이 평소와 살짝 어긋날 수 있으니 중요한 판단은 한 번 더 검증하세요.",
         "repeat": "익숙한 방식·감각을 믿고 가도 되는 편안한 하루예요.",
         "neutral": "번뜩이는 영감 없이도 무난하게 흘러가는 하루예요.",
     },
@@ -540,6 +543,8 @@ def _resolve_today_energy(
         worst = min(sinsal_hits, key=lambda h: h["penalty"])  # penalty가 가장 큰(가장 음수인) 것
         suffix = SINSAL_HEADLINE_SUFFIX.get(worst["name"])
         if suffix:
+            if not any(hint in base for hint in _SINSAL_ALREADY_CAUTION):
+                suffix = "다만 " + suffix.replace("까지 겹치니", "이 함께 있으니", 1)
             return f"{base} {suffix}"
     return base
 

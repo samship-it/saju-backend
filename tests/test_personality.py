@@ -20,11 +20,20 @@ def test_verdict_key_falls_back_to_neutral_for_unknown_values():
 
 def test_character_bridge_mentions_the_elem_and_verdict_trait():
     bridge = _character_bridge("금", "신강")
-    assert _ELEM_TRAIT["금"] in bridge
-    assert _VERDICT_TRAIT["신강"] in bridge
-    assert "판단" in bridge
+    assert "맞는지 아닌지를 먼저 가른 뒤에 결정합니다" in bridge
+    assert "남이 정해주기 전에 내가 일정과 역할을 먼저 정하고 움직입니다" in bridge
+    assert "아래 성격은" in bridge
+    assert _ELEM_TRAIT["금"] not in bridge
+    assert _VERDICT_TRAIT["신강"] not in bridge
     assert "일간" not in bridge
     assert "원국" not in bridge
+
+
+def test_character_bridge_water_weak_states_the_action():
+    bridge = _character_bridge("수", "신약")
+    assert "상황과 상대의 반응을 보고 말과 일정을 바꿔 결정합니다" in bridge
+    assert "주변 사람의 반응을 확인한 뒤에" in bridge
+    assert "유연하게 흐르려는" not in bridge
 
 
 def test_aptitude_bridge_uses_work_language_not_the_character_bridge():

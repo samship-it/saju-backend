@@ -85,24 +85,40 @@ SEASON_DESC: Dict[str, str] = {
 
 # 사용자 문장용. 오행 이름 대신, 그 오행이 삶에서 하는 일을 말한다.
 _ELEM_LIFE = {
-    "목": "뻗어 자라려는 힘",
-    "화": "드러내며 달아오르는 힘",
-    "토": "자리를 잡고 형태를 만드는 힘",
-    "금": "가리고 매듭짓는 힘",
-    "수": "스며들어 식혀 주는 힘",
+    "목": "배우고 일의 범위를 넓히는 쪽",
+    "화": "느낀 것을 말로 드러내는 쪽",
+    "토": "한번 정한 일과 자리를 지키는 쪽",
+    "금": "정리하고 끝을 내는 쪽",
+    "수": "서두르지 않고 한 번 더 생각한 뒤에 움직이는 쪽",
 }
 
 
 def _life_force(elem: str) -> str:
-    return _ELEM_LIFE.get(elem, "삶의 결을 이루는 힘")
+    return _ELEM_LIFE.get(elem, "내가 납득한 기준")
+
+
+def _has_batchim(word: str) -> bool:
+    if not word:
+        return False
+    code = ord(word[-1])
+    return 0xAC00 <= code <= 0xD7A3 and (code - 0xAC00) % 28 != 0
+
+
+def _subject_particle(phrase: str) -> str:
+    return "이" if _has_batchim(phrase) else "가"
+
+
+def _object_particle(phrase: str) -> str:
+    return "을" if _has_batchim(phrase) else "를"
 
 
 def _join_forces(names: List[str]) -> str:
     if len(names) == 1:
         return names[0]
+    link = "과" if _has_batchim(names[-2] if len(names) > 2 else names[0]) else "와"
     if len(names) == 2:
-        return f"{names[0]}과 {names[1]}"
-    return ", ".join(names[:-1]) + f"과 {names[-1]}"
+        return f"{names[0]}{link} {names[1]}"
+    return ", ".join(names[:-1]) + f"{link} {names[-1]}"
 
 
 def build_reason(saju: Dict[str, Any], env_elem: str, yongsin: List[str]) -> Optional[str]:
@@ -127,27 +143,29 @@ def build_reason(saju: Dict[str, Any], env_elem: str, yongsin: List[str]) -> Opt
     season_desc = SEASON_DESC[season]
 
     sentences = [
-        f"태어난 계절은 {season_desc}이라, 그 계절의 온도가 삶의 기본 결로 남아 있습니다."
+        f"태어난 계절은 {season_desc}이라, 일과 사람을 대할 때도 그 계절의 속도로 먼저 움직입니다."
     ]
 
     if birth_time_known and len(time_ganji) >= 2:
         hour_branch = time_ganji[1]
         hour_elem = JI_ELEM.get(hour_branch, "")
         if hour_elem:
+            hour_force = _life_force(hour_elem)
             sentences.append(
-                f"태어난 시각에는 {_life_force(hour_elem)}이 더해져, 삶의 흐름이 더 또렷해집니다."
+                f"태어난 시각에는 {hour_force}{_object_particle(hour_force)} 더합니다. "
+                "그래서 하루의 일정과 말의 순서가 더 분명해집니다."
             )
 
     if env_elem:
         main = _life_force(env_elem)
         needed = [_life_force(e) for e in yongsin if e]
+        choice = f"삶을 길게 보면 {main}{_object_particle(main)} 가장 자주 고릅니다."
         if needed:
-            sentences.append(
-                f"삶의 긴 흐름에서는 {main}이 가장 크게 자리하고, "
-                f"그 힘을 오래 쓰려면 {_join_forces(needed)}이 방향을 잡아 줍니다."
+            balance = _join_forces(needed)
+            choice += (
+                f" 그 선택을 오래 지키려면 {balance}{_subject_particle(balance)} 균형을 잡아 줍니다."
             )
-        else:
-            sentences.append(f"삶의 긴 흐름에서는 {main}이 가장 크게 자리합니다.")
+        sentences.append(choice)
 
     return " ".join(sentences)
 

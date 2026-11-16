@@ -288,6 +288,33 @@ def test_resolve_today_energy_prefers_pool_over_static_table(monkeypatch):
     assert wm._resolve_today_energy("비견", "harmony", [], 5) == "풀 기반 오늘의 기운"
 
 
+def test_today_energy_sinsal_does_not_treat_a_good_day_as_already_bad(monkeypatch):
+    """이득·평화 문장 뒤에 신살을 '까지 겹치니'로 붙이면 앞 문장을 나쁜 일로 포갠다."""
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(
+        wm, "pick_today_energy",
+        lambda *a, **k: "오늘 일진의 도움으로 알뜰하게 챙긴 이득이 주머니를 두둑하게 해요.",
+    )
+    text = wm._resolve_today_energy("정재", "harmony", [{"name": "겁살", "penalty": -8}])
+    assert text.startswith("오늘 일진의 도움으로")
+    assert "다만 겁살(劫煞)이 함께 있으니" in text
+    assert "까지 겹치니" not in text
+    assert "지출·손실에 유의하세요." in text
+
+
+def test_today_energy_sinsal_keeps_overlap_when_base_already_warns(monkeypatch):
+    import domains.daily.woon_modifier as wm
+
+    monkeypatch.setattr(
+        wm, "pick_today_energy",
+        lambda *a, **k: "오늘 일진이 예상치 못한 지출을 키울 수 있어요.",
+    )
+    text = wm._resolve_today_energy("정재", "conflict", [{"name": "겁살", "penalty": -8}])
+    assert "겁살(劫煞)까지 겹치니 지출·손실에 유의하세요." in text
+    assert "다만" not in text
+
+
 def test_resolve_today_energy_falls_back_via_sipsin_group_when_pool_empty(monkeypatch):
     """today_energy_pool 이 없으면 개별 십신(예: 겁재)을 십신군(비겁)으로 변환해
     TODAY_ENERGY_TABLE(5종 키)에서 찾는다 — 이 표는 여전히 십신군 단위로 남아있다."""
