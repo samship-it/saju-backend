@@ -38,12 +38,18 @@ CHARM_DB_PATH = {
     "crush": os.environ.get("CRUSH_CHARM_DB_PATH", os.path.join(DATA_DIR, "crush_charm_db.json")),
 }
 _CHARM_TYPES = tuple(CHARM_DB_PATH)
+# 단독 짝사랑 종합운. 키는 세운 5분류 15개(단일 5, 순서 없는 조합 10).
+SEWOON_DB_PATH = os.environ.get(
+    "CRUSH_SEWOON_DB_PATH", os.path.join(DATA_DIR, "crush_sewoon_db.json"),
+)
+SEWOON_GROUP_ORDER = ("비겁", "식상", "재성", "관성", "인성")
 
 _VALID_TYPES = ("reunion", "crush", "marriage")
 
 _lock = threading.Lock()
 _cache: Optional[Dict[str, Any]] = None
 _charm_cache: Dict[str, Dict[str, Any]] = {}
+_sewoon_cache: Optional[Dict[str, Any]] = None
 
 
 def make_key(self_ganji: str, partner_ganji: Optional[str], rtype: str) -> str:
@@ -98,10 +104,46 @@ def charm_lookup(self_ganji: str, rtype: str = "reunion") -> Optional[str]:
     return entry if isinstance(entry, str) and entry.strip() else None
 
 
+def load_crush_sewoon_db(force: bool = False) -> Dict[str, Any]:
+    """crush_sewoon_db.json 을 최초 1회 읽어 캐시한다."""
+    global _sewoon_cache
+    if _sewoon_cache is not None and not force:
+        return _sewoon_cache
+    with _lock:
+        if _sewoon_cache is not None and not force:
+            return _sewoon_cache
+        try:
+            with open(SEWOON_DB_PATH, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            _sewoon_cache = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError):
+            _sewoon_cache = {}
+        return _sewoon_cache
+
+
+def crush_sewoon_key(gan_group: str, ji_group: str) -> Optional[str]:
+    """세운 천간·지지 5분류를 단일 또는 순서 없는 조합 키로 만든다."""
+    if gan_group not in SEWOON_GROUP_ORDER or ji_group not in SEWOON_GROUP_ORDER:
+        return None
+    if gan_group == ji_group:
+        return gan_group
+    ordered = tuple(sorted((gan_group, ji_group), key=SEWOON_GROUP_ORDER.index))
+    return "+".join(ordered)
+
+
+def crush_sewoon_lookup(key: str) -> Optional[str]:
+    """단독 짝사랑 종합운 문장. 없는 키는 None. 일주 종합운으로 대체하지 않는다."""
+    entry = load_crush_sewoon_db().get((key or "").strip())
+    if isinstance(entry, dict):
+        entry = entry.get("overall")
+    return entry if isinstance(entry, str) and entry.strip() else None
+
+
 def reload() -> Dict[str, Any]:
     """DB 파일을 다시 생성한 뒤 메모리 캐시를 갱신할 때 호출(테스트/재생성용)."""
     for _t in _CHARM_TYPES:
         load_charm_db(_t, force=True)
+    load_crush_sewoon_db(force=True)
     return load_db(force=True)
 
 

@@ -149,7 +149,11 @@ PRODUCTS = (
         ("/api/v1/relationship/crush",),
         ("총운", "매력", "3개월 전략"),
         "any",
-        ("domains/relationship/data/relationship_db.json", "domains/relationship/data/crush_charm_db.json"),
+        (
+            "domains/relationship/data/relationship_db.json",
+            "domains/relationship/data/crush_charm_db.json",
+            "domains/relationship/data/crush_sewoon_db.json",
+        ),
         ("domains/relationship/service.py",),
     ),
     _p(
