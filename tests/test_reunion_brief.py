@@ -90,7 +90,8 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "재회가 성사되는 기한이 아니에요" in bond["strategy"]["intro"]
     assert "붙는 관계" in bond["strategy"]["intro"]
     assert "고정 장면" in none["strategy"]["intro"]
-    assert "이별 원인이었는지는 사주가 몰라요" in clash["sections"][2]["text"]
+    assert "이별의 원인이었어요" not in clash["sections"][2]["text"]
+    assert "사주가 몰라요" not in clash["sections"][2]["text"]
 
 
 def test_new_sections_are_long_and_change_with_the_pair():
