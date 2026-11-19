@@ -5,7 +5,8 @@
 이 파일에서 일주쌍 키로 즉시 조회만 하며 Gemini 를 호출하지 않는다.
 
 점수·한줄평·관계 요소(positive/negative factors 등)는 런타임 엔진
-(`calculate_compatibility_interactions`)이 두 사람의 전체 사주로 계산하고,
+(`calculate_compatibility_interactions`)이 두 사람의 전체 사주로 계산한다.
+점수는 글자 쌍 1건이고 일간·일지 합충만 무겁다. 이 파일의 서술은 일주쌍 키로 조회하고,
 여기 저장된 것은 일주쌍 기준의 순수 AI 서술뿐이다. (daily/personality/relationship 과
 동일한 '일주 중심' 트레이드오프.)
 

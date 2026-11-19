@@ -1,7 +1,8 @@
 """궁합 — 두 원국 계산 → 관계 엔진 → 세부/종합 점수 + 8단계 한줄평 + AI 해석.
 
 점수·한줄평·관계 요소는 런타임 엔진(`calculate_compatibility_interactions`)이 두 사람의
-전체 사주로 계산한다(결정적, API 호출 없음). AI 서술부(report 7필드)는 사전 생성 정적 DB
+전체 사주로 계산한다. 합충 점수는 글자 쌍 1건이고, 일간·일지끼리만 무겁다.
+AI 서술부(report 7필드)는 사전 생성 정적 DB
 (`domains/compatibility/data/compatibility_db.json`)에서 일주쌍 키로 조회만 한다.
 런타임 Gemini 호출 없음. DB 생성은 `scripts/generate_content_db.py --domain compatibility` 참고.
 일주쌍이 DB 에 없으면(일주 계산 실패 등) 사주와 무관한 고정 폴백을 반환한다(is_fallback=True).

@@ -1,7 +1,7 @@
-"""상단 전체 점수의 집계 규칙을 고정한다.
+"""궁합 점수 규칙을 고정한다.
 
-애정·소통·갈등·경제의 기둥 조합 횟수 공식은 바꾸지 않는다.
-같은 글자 쌍이 여러 기둥에 있어도 전체 점수는 1건이다. 기둥 위치는 나누지 않는다.
+같은 글자 쌍은 1건이다. 일간끼리·일지끼리의 합충만 무겁고, 그 외 기둥은 가볍다.
+애정·소통·갈등·경제도 이 점수표를 쓴다. 기둥에 글자가 반복돼도 점수는 곱하지 않는다.
 """
 import random
 from itertools import product
@@ -51,10 +51,11 @@ def test_repeated_branch_pair_adds_once():
 
     assert result["counts"]["지지육합"] == 16
     assert result["overall_basis"]["지지육합"] == 1
+    assert result["score_events"]["일지육합"] == 1
+    assert result["score_events"]["지지육합"] == 0
     assert result["sub_scores"]["overall"] == 70
     assert _legacy_raw(result) == 190
-    # 애정은 여전히 조합 횟수(16 × 4)를 쓰므로 상한에 닿는다.
-    assert result["sub_scores"]["love"] == 100
+    assert result["sub_scores"]["love"] == 70
 
 
 def test_yukhap_and_pa_both_count_once():
@@ -65,7 +66,9 @@ def test_yukhap_and_pa_both_count_once():
 
     assert basis["지지육합"] == 1
     assert basis["지지파"] == 1
-    assert result["sub_scores"]["overall"] == 63
+    assert result["score_events"]["일지육합"] == 1
+    assert result["score_events"]["파"] == 1
+    assert result["sub_scores"]["overall"] == 69
 
 
 def test_samhap_without_wangji_is_not_an_event():
@@ -89,7 +92,7 @@ def test_rarest_present_element_is_not_complement():
     assert result["오행보완"] == 2
     assert result["overall_basis"]["오행보완"] == 0
     assert result["sub_scores"]["overall"] == 62
-    assert result["sub_scores"]["economy"] == 71
+    assert result["sub_scores"]["economy"] == 62
 
 
 def test_sample_pair_keeps_other_axes_and_drops_repeated_counts():
@@ -103,12 +106,51 @@ def test_sample_pair_keeps_other_axes_and_drops_repeated_counts():
     assert result["counts"]["지지충"] == 2
     assert result["overall_basis"]["지지충"] == 1
     assert result["overall_basis"]["지지파"] == 1
-    assert scores["love"] == 53
-    assert scores["communication"] == 67
-    assert scores["conflict"] == 65
-    assert scores["economy"] == 71
-    assert scores["overall"] == 96
+    assert scores["love"] == 68
+    assert scores["communication"] == 65
+    assert scores["conflict"] == 64
+    assert scores["economy"] == 67
+    assert scores["overall"] == 70
     assert _legacy_raw(result) == 105
+
+
+def test_repeated_day_stem_clash_with_another_pillar_counts_once():
+    """정화가 세 번 있어도 계수와의 충은 1건이고, 두 일간이 같으면 일간충이 아니다."""
+    woman = calculate_saju(2002, 7, 8, 14, 0, gender="female")
+    man = calculate_saju(1983, 12, 15, 10, 0, gender="male")
+    result = calculate_compatibility_interactions(woman, man)
+    events = result["score_events"]
+
+    assert result["counts"]["천간충"] == 3
+    assert result["counts"]["지지충"] == 3
+    assert events["일간충"] == 0
+    assert events["일지충"] == 0
+    assert events["일간합"] == 0
+    assert events["천간충"] == 1
+    assert events["지지충"] == 2
+    assert events["해"] == 2
+    assert events["천간합"] == 1
+    assert events["지지육합"] == 1
+    assert result["sub_scores"] == {
+        "overall": 56,
+        "love": 58,
+        "communication": 60,
+        "conflict": 56,
+        "economy": 56,
+    }
+    assert result["total_score"] == 57
+
+
+def test_day_master_and_day_branch_clash_use_the_heavy_weight():
+    left = _chart(["丁丑", "丁丑", "丁丑"], "丁", "丑")
+    right = _chart(["癸未"], "癸", "未")
+    result = calculate_compatibility_interactions(left, right)
+
+    assert result["counts"]["천간충"] == 3
+    assert result["score_events"]["일간충"] == 1
+    assert result["score_events"]["천간충"] == 0
+    assert result["score_events"]["일지충"] == 1
+    assert result["sub_scores"]["overall"] == 48
 
 
 def _occurrence_counts(left, right):
@@ -144,7 +186,7 @@ def _occurrence_counts(left, right):
 
 
 def test_same_letter_pair_on_different_pillars_is_one_event():
-    # 午가 월주와 일주에 있어도 午未는 한 관계다. 기둥 위치는 점수에 나누지 않는다.
+    # 午가 월주와 일주에 있어도 午未는 한 관계다. 두 일지가 그 쌍이면 일지 점수만 쓴다.
     left = _chart(["甲子", "乙午", "丙午"], "丙", "午")
     right = _chart(["丁未", "戊申", "己酉"], "己", "酉")
     result = calculate_compatibility_interactions(left, right)
@@ -194,7 +236,7 @@ def test_only_inhae_and_sashin_are_both_hap_and_pa():
     result = calculate_compatibility_interactions(left, right)
     assert result["overall_basis"]["지지육합"] == 1
     assert result["overall_basis"]["지지파"] == 1
-    assert result["sub_scores"]["overall"] == 63
+    assert result["sub_scores"]["overall"] == 69
 
 
 def test_samhap_accepts_cross_banhap_once_per_group():
@@ -276,16 +318,16 @@ def test_unknown_birth_time_drops_the_hour_pillar():
 
 # 시드 7, 400쌍 재실행에서 점수 변화가 가장 큰 10쌍.
 _REVIEWED = [
-    ((1976, 1, 9, 6, 0, "male"), (1982, 4, 11, 20, 0, "female"), 110, 100, 74),
-    ((1985, 9, 2, 4, 0, "female"), (1975, 7, 22, 10, 0, "male"), 82, 82, 56),
-    ((1983, 12, 23, 4, 0, "male"), (1978, 11, 18, 14, 0, "female"), 84, 84, 60),
-    ((1972, 7, 18, None, 0, "female"), (1995, 6, 25, 14, 0, "male"), 97, 97, 73),
-    ((1965, 5, 8, 20, 0, "female"), (1987, 5, 28, 0, 0, "male"), 104, 100, 80),
-    ((2000, 12, 9, 0, 0, "male"), (2002, 7, 28, 8, 0, "male"), 1, 1, 58),
-    ((1961, 4, 4, 14, 0, "female"), (1976, 7, 27, 14, 0, "male"), 2, 2, 43),
-    ((1994, 3, 18, 6, 0, "male"), (1983, 6, 7, 12, 0, "male"), 37, 37, 72),
-    ((2004, 2, 5, 10, 0, "female"), (1983, 9, 8, 12, 0, "female"), 43, 43, 74),
-    ((1980, 3, 13, 2, 0, "male"), (1983, 10, 2, 6, 0, "male"), 53, 53, 82),
+    ((1976, 1, 9, 6, 0, "male"), (1982, 4, 11, 20, 0, "female"), 110, 100, 65),
+    ((1985, 9, 2, 4, 0, "female"), (1975, 7, 22, 10, 0, "male"), 82, 82, 65),
+    ((1983, 12, 23, 4, 0, "male"), (1978, 11, 18, 14, 0, "female"), 84, 84, 61),
+    ((1972, 7, 18, None, 0, "female"), (1995, 6, 25, 14, 0, "male"), 97, 97, 69),
+    ((1965, 5, 8, 20, 0, "female"), (1987, 5, 28, 0, 0, "male"), 104, 100, 66),
+    ((2000, 12, 9, 0, 0, "male"), (2002, 7, 28, 8, 0, "male"), 1, 1, 60),
+    ((1961, 4, 4, 14, 0, "female"), (1976, 7, 27, 14, 0, "male"), 2, 2, 56),
+    ((1994, 3, 18, 6, 0, "male"), (1983, 6, 7, 12, 0, "male"), 37, 37, 67),
+    ((2004, 2, 5, 10, 0, "female"), (1983, 9, 8, 12, 0, "female"), 43, 43, 69),
+    ((1980, 3, 13, 2, 0, "male"), (1983, 10, 2, 6, 0, "male"), 53, 53, 60),
 ]
 
 
@@ -339,7 +381,7 @@ def test_seed7_four_hundred_pairs_reproduce():
         )
 
     assert summary(old_scores) == (69.2, 72.0, 97.0, 75, 30)
-    assert summary(new_scores) == (70.6, 72.0, 90.0, 45, 18)
-    assert sum(n < o for o, n in zip(old_scores, new_scores)) == 184
-    assert sum(n == o for o, n in zip(old_scores, new_scores)) == 63
-    assert sum(n > o for o, n in zip(old_scores, new_scores)) == 153
+    assert summary(new_scores) == (63.4, 64.0, 72.0, 0, 0)
+    assert sum(n < o for o, n in zip(old_scores, new_scores)) == 249
+    assert sum(n == o for o, n in zip(old_scores, new_scores)) == 14
+    assert sum(n > o for o, n in zip(old_scores, new_scores)) == 137

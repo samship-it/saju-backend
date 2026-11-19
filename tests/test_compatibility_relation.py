@@ -35,9 +35,9 @@ def test_romantic_headline_uses_existing_total():
     expected = compat_band(scores["total"])
     assert body["relation_type_label"] == expected["relation_type"]
     assert body["one_liner"] == expected["one_liner"]
-    assert scores["overall"] == 96
-    assert scores["love"] == 53
-    assert scores["total"] == 72
+    assert scores["overall"] == 70
+    assert scores["love"] == 68
+    assert scores["total"] == 67
     assert body["report"]["love"].strip()
     assert "안정적인 사랑" in body["report"]["overall"]
 
@@ -58,9 +58,9 @@ def test_other_relations_reuse_day_pillar_without_romance_premise(relation):
     body = _analyze(relation)
     assert body["relation_type_label"] == "성향 궁합"
     assert body["scores"] == romantic["scores"]
-    assert body["scores"]["overall"] == 96
-    assert body["scores"]["total"] == 72
-    assert body["scores"]["love"] == 53
+    assert body["scores"]["overall"] == 70
+    assert body["scores"]["total"] == 67
+    assert body["scores"]["love"] == 68
     assert body["report"]["love"] == ""
     assert body["report"]["economy"].strip()
     assert body["report"]["overall"].strip()
@@ -80,11 +80,11 @@ def test_relation_voice_changes_only_awkward_words():
     business = _analyze("business")
     coworker = _analyze("coworker")
     acquaintance = _analyze("acquaintance")
-    assert friend["one_liner"] == "이런 친구, 평생 옆에 둬야지! 🤝"
-    assert family["one_liner"] == "역시 가족은 가족이네! 🏡"
-    assert business["one_liner"] == "이 조합이면 판을 키울 수 있겠는데? 🚀"
-    assert coworker["one_liner"] == "같이 일하면 시너지가 제대로 나겠어! 💪"
-    assert acquaintance["one_liner"] == "처음부터 왠지 통하는 사람! ✨"
+    assert friend["one_liner"] == "우리 은근히 잘 맞는 조합인데?"
+    assert family["one_liner"] == "우리 가족, 생각보다 합이 좋은데?"
+    assert business["one_liner"] == "역할만 잘 나누면 꽤 괜찮은 조합."
+    assert coworker["one_liner"] == "호흡만 맞추면 일하기 편하겠는데?"
+    assert acquaintance["one_liner"] == "생각보다 대화가 잘 통하는 사이."
     for body in (friend, family, business, coworker, acquaintance):
         blob = "\n".join(body["report"].values())
         for bad in ("관계을", "집를", "일를", "기준를", "가족로", "지인로", "비용와"):
@@ -118,8 +118,8 @@ def test_romantic_economy_restores_day_pillar_copy_without_score_change():
     spouse = _analyze("spouse")
     business = _analyze("business")
     assert romantic["scores"] == spouse["scores"] == business["scores"]
-    assert romantic["scores"]["economy"] == 71
-    assert romantic["scores"]["total"] == 72
+    assert romantic["scores"]["economy"] == 67
+    assert romantic["scores"]["total"] == 67
     assert romantic["one_liner"] == spouse["one_liner"]
     economy = romantic["report"]["economy"]
     assert economy == spouse["report"]["economy"]
@@ -170,7 +170,7 @@ def test_section_leads_drop_title_echo_and_keep_the_point():
     from domains.compatibility.relation_voice import trim_section_lead
 
     romantic = _analyze("romantic")
-    assert romantic["scores"]["economy"] == 71
+    assert romantic["scores"]["economy"] == 67
     assert not romantic["report"]["conflict"].startswith("갈등")
     assert not romantic["report"]["economy"].startswith("경제")
     assert "꼼꼼" in romantic["report"]["economy"]
@@ -211,8 +211,8 @@ def test_nonromantic_scenes_follow_the_relation_without_score_change():
     assert "든든함을 안겨" in kept
     assert "참아내" in kept
     body = _analyze("friend")
-    assert body["scores"]["total"] == 72
-    assert body["scores"]["economy"] == 71
+    assert body["scores"]["total"] == 67
+    assert body["scores"]["economy"] == 67
     blob = "\n".join(body["report"].values())
     for word in ("안식처", "짝꿍", "손잡고", "연애", "사랑"):
         assert word not in blob
@@ -318,13 +318,13 @@ def test_one_liners_use_eight_bands_and_keep_scores():
 
     romantic = _analyze("romantic")
     spouse = _analyze("spouse")
-    assert romantic["scores"]["total"] == spouse["scores"]["total"] == 72
-    assert romantic["one_liner"] == spouse["one_liner"] == "생각보다 우리, 잘 맞는데?"
-    assert romantic["relation_type_label"] == spouse["relation_type_label"] == "🧩 찰떡짝꿍"
+    assert romantic["scores"]["total"] == spouse["scores"]["total"] == 67
+    assert romantic["one_liner"] == spouse["one_liner"] == "조금만 맞추면 더 좋아질 거야."
+    assert romantic["relation_type_label"] == spouse["relation_type_label"] == "💕 짝꿍연습중"
     friend = _analyze("friend")
     assert friend["scores"] == romantic["scores"]
-    assert friend["scores"]["overall"] == 96
-    assert friend["one_liner"] == "이런 친구, 평생 옆에 둬야지! 🤝"
+    assert friend["scores"]["overall"] == 70
+    assert friend["one_liner"] == "우리 은근히 잘 맞는 조합인데?"
     assert friend["relation_type_label"] == "성향 궁합"
-    assert friend["score_band"] == "90-100"
+    assert friend["score_band"] == "70-79"
 
