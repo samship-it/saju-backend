@@ -153,6 +153,7 @@ PRODUCTS = (
             "domains/relationship/data/relationship_db.json",
             "domains/relationship/data/crush_charm_db.json",
             "domains/relationship/data/crush_sewoon_db.json",
+            "domains/relationship/data/crush_year_reading_db.json",
         ),
         ("domains/relationship/service.py",),
     ),

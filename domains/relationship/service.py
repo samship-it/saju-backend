@@ -3,8 +3,8 @@
 날짜 의존 로직(다가오는 3개월, 결혼 10년 강도 창, 커플 최적 연도)은 런타임 엔진이 계산한다.
 AI 서술부는 사전 생성 정적 DB에서 조회만 한다. 런타임 Gemini 호출 없음.
 재회·결혼·상대가 있는 짝사랑은 `relationship_db.json`의 일주 키를 유지한다.
-상대가 없는 짝사랑 종합운만 `crush_sewoon_db.json`에서 요청 연도의 세운 5분류로 고른다.
-그 키가 없으면 일주 종합운으로 대체하지 않고 고정 폴백을 반환한다(is_fallback=True).
+상대가 없는 짝사랑 종합운만 `crush_year_reading_db.json`에서 요청 연도와 일주로 고른다.
+그 칸이 없으면 일주 종합운이나 15개 세운 문장으로 대체하지 않고 고정 폴백을 반환한다(is_fallback=True).
 
 3개월 전략은 DB 에 "1/2/3개월차" 순번으로 저장돼 있고, 여기서 엔진이 계산한 실제 월 라벨에 매핑한다.
 """
@@ -13,7 +13,6 @@ from typing import Dict, Any, Optional
 
 from config import KST
 from core.saju_base import calculate_saju
-from core.sipsin import sipsin_group
 from core.constants import CHUNG
 from core.timeframe import next_3_months, marriage_10year_window
 from shared.public import person_summary
@@ -86,20 +85,19 @@ def _love_fallback(kind: str, months, partner_exists: bool) -> dict:
 
 
 def _solo_crush_sewoon_text(saju: Dict[str, Any]) -> Optional[str]:
-    """요청 연도 세운의 천간·지지 5분류 하나. 일지·년주·월주·용신·합충·대운은 읽지 않는다.
+    """요청 연도·일주의 종합운. 저장된 세운 간지가 계산값과 다르면 없다.
 
-    세운 간지는 calculate_saju가 target_date의 양력 연도로 이미 고른 sewoon_sipsin이다.
+    년주·월주·시주·신강·대운은 이 키에 없다. 15개 문장이나 일주 문단으로 대체하지 않는다.
     """
-    raw = saju.get("sewoon_sipsin") if isinstance(saju, dict) else None
-    if not isinstance(raw, dict):
+    if not isinstance(saju, dict):
         return None
-    key = content_db.crush_sewoon_key(
-        sipsin_group(str(raw.get("gan") or "")),
-        sipsin_group(str(raw.get("ji") or "")),
-    )
-    if not key:
+    years = saju.get("seewoon_10years") or []
+    sewoon = years[0].get("ganji") if years else ""
+    year = saju.get("target_year")
+    day = saju.get("day_ganji") or ""
+    if not year or not day or not sewoon:
         return None
-    return content_db.crush_sewoon_lookup(key)
+    return content_db.crush_year_lookup(str(year), day, sewoon)
 
 
 def _love_flow(kind: str, self_info, partner_info, target_date):

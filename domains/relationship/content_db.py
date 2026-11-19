@@ -43,6 +43,10 @@ SEWOON_DB_PATH = os.environ.get(
     "CRUSH_SEWOON_DB_PATH", os.path.join(DATA_DIR, "crush_sewoon_db.json"),
 )
 SEWOON_GROUP_ORDER = ("비겁", "식상", "재성", "관성", "인성")
+# 단독 짝사랑 종합운. 연도 → 60갑자. 15개 세운 문장 파일은 그대로 둔다.
+YEAR_DB_PATH = os.environ.get(
+    "CRUSH_YEAR_READING_DB_PATH", os.path.join(DATA_DIR, "crush_year_reading_db.json"),
+)
 
 _VALID_TYPES = ("reunion", "crush", "marriage")
 
@@ -50,6 +54,7 @@ _lock = threading.Lock()
 _cache: Optional[Dict[str, Any]] = None
 _charm_cache: Dict[str, Dict[str, Any]] = {}
 _sewoon_cache: Optional[Dict[str, Any]] = None
+_year_cache: Optional[Dict[str, Any]] = None
 
 
 def make_key(self_ganji: str, partner_ganji: Optional[str], rtype: str) -> str:
@@ -132,11 +137,43 @@ def crush_sewoon_key(gan_group: str, ji_group: str) -> Optional[str]:
 
 
 def crush_sewoon_lookup(key: str) -> Optional[str]:
-    """단독 짝사랑 종합운 문장. 없는 키는 None. 일주 종합운으로 대체하지 않는다."""
+    """15개 세운 문장. 단독 조회 경로는 이 함수를 쓰지 않는다."""
     entry = load_crush_sewoon_db().get((key or "").strip())
     if isinstance(entry, dict):
         entry = entry.get("overall")
     return entry if isinstance(entry, str) and entry.strip() else None
+
+
+def load_crush_year_db(force: bool = False) -> Dict[str, Any]:
+    """연도별 60갑자 종합운. 파일이 없으면 빈 딕셔너리."""
+    global _year_cache
+    if _year_cache is not None and not force:
+        return _year_cache
+    with _lock:
+        if _year_cache is not None and not force:
+            return _year_cache
+        try:
+            with open(YEAR_DB_PATH, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            _year_cache = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError):
+            _year_cache = {}
+        return _year_cache
+
+
+def crush_year_lookup(year: str, day_ganji: str, sewoon_ganji: str) -> Optional[str]:
+    """해당 연도의 일주 종합운. 저장된 세운 간지가 계산값과 다르면 None."""
+    bucket = load_crush_year_db().get(str(year or "").strip())
+    if not isinstance(bucket, dict):
+        return None
+    entry = bucket.get((day_ganji or "").strip())
+    if not isinstance(entry, dict):
+        return None
+    stored = str(entry.get("sewoon") or "")
+    if sewoon_ganji and stored and stored != sewoon_ganji:
+        return None
+    text = entry.get("overall")
+    return text if isinstance(text, str) and text.strip() else None
 
 
 def reload() -> Dict[str, Any]:
@@ -144,6 +181,7 @@ def reload() -> Dict[str, Any]:
     for _t in _CHARM_TYPES:
         load_charm_db(_t, force=True)
     load_crush_sewoon_db(force=True)
+    load_crush_year_db(force=True)
     return load_db(force=True)
 
 

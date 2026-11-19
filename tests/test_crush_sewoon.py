@@ -1,38 +1,21 @@
-"""단독 짝사랑 종합운은 요청 연도의 세운 5분류 한 문장만 고른다."""
+"""단독 짝사랑 종합운은 요청 연도와 일주의 문장을 읽는다."""
 import datetime
 
-from core.daewoon import GAN_H, get_seewoon_list
-from core.saju_base import calculate_saju, sipsin_of_ganji
-from core.sipsin import sipsin_group
+from core.daewoon import GAN_H, JI_H, get_seewoon_list
+from core.saju_base import calculate_saju
 from domains.relationship import content_db
 from domains.relationship.crush_brief import build_crush_brief
 from domains.relationship.service import (
-    _solo_crush_sewoon_text,
     analyze_crush,
     analyze_marriage,
     analyze_reunion,
 )
 
+def _pillars():
+    return [f"{GAN_H[i % 10]}{JI_H[i % 12]}" for i in range(60)]
+
 _PERSON = {"year": 1992, "month": 7, "day": 8, "hour": 14, "minute": 0, "gender": "female"}
 _PARTNER = {"year": 1990, "month": 3, "day": 15, "hour": 10, "minute": 30, "gender": "male"}
-
-
-def _key(stem, ganji):
-    raw = sipsin_of_ganji(stem, ganji)
-    return content_db.crush_sewoon_key(
-        sipsin_group(raw["gan"]), sipsin_group(raw["ji"]),
-    )
-
-
-def _text(stem, ganji, day_branch="子"):
-    raw = sipsin_of_ganji(stem, ganji)
-    return _solo_crush_sewoon_text({
-        "day_master": stem,
-        "day_ganji": stem + day_branch,
-        "year_ganji": "甲子",
-        "month_ganji": "丙寅",
-        "sewoon_sipsin": raw,
-    })
 
 
 def test_db_has_fifteen_sentences():
@@ -56,35 +39,18 @@ def test_key_ignores_stem_branch_order():
     assert content_db.crush_sewoon_key("미정", "비겁") is None
 
 
-def test_six_hundred_stem_year_pairs_cover_every_sentence():
-    years = get_seewoon_list(1984, 60)
-    assert len({row["ganji"] for row in years}) == 60
-    seen = set()
-    by_stem = {stem: {} for stem in GAN_H}
-    for stem in GAN_H:
-        for row in years:
-            key = _key(stem, row["ganji"])
-            text = _text(stem, row["ganji"], "子")
-            other_branch = _text(stem, row["ganji"], "午")
-            assert key
-            assert text == content_db.crush_sewoon_lookup(key)
-            assert text == other_branch
-            seen.add(key)
-            by_stem[stem][row["year"]] = text
-    assert seen == set(content_db.load_crush_sewoon_db())
-    assert len(seen) == 15
-    pairs = (("甲", "乙"), ("丙", "丁"), ("戊", "己"), ("庚", "辛"), ("壬", "癸"))
-    for left, right in pairs:
-        assert by_stem[left] == by_stem[right]
-    changed = False
-    for stem in GAN_H:
-        texts = set(by_stem[stem].values())
-        assert len(texts) > 1
-        changed = True
-    assert changed
+def test_2026_has_sixty_unique_day_pillars():
+    bucket = content_db.load_crush_year_db(force=True)["2026"]
+    pillars = _pillars()
+    assert set(bucket) == set(pillars)
+    assert len(bucket) == 60
+    texts = [bucket[ganji]["overall"] for ganji in pillars]
+    assert len(set(texts)) == 60
+    assert {bucket[ganji]["sewoon"] for ganji in pillars} == {"丙午"}
+    assert get_seewoon_list(2026, 1)[0]["ganji"] == "丙午"
 
 
-def test_target_date_year_selects_the_sentence_and_day_branch_does_not():
+def test_target_date_year_selects_the_sentence_and_day_branch_does_too():
     births = {}
     day = datetime.date(1990, 1, 1)
     while len(births) < 10 and day.year == 1990:
@@ -118,13 +84,15 @@ def test_target_date_year_selects_the_sentence_and_day_branch_does_not():
     assert fallback_second is False
     assert fallback_early is False
     assert fallback_late is False
-    assert first["overall"] == second["overall"] == early["overall"] == late["overall"]
-    assert first["overall"] != previous["overall"]
-    assert fallback_previous is False
-    expected = _text("甲", calculate_saju(
+    assert first["overall"] == early["overall"] == late["overall"]
+    assert first["overall"] != second["overall"]
+    chart = calculate_saju(
         birth.year, birth.month, birth.day, 12, 0, target_date=datetime.date(2026, 6, 1),
-    )["seewoon_10years"][0]["ganji"])
-    assert expected.replace(" ", "") in first["overall"].replace(" ", "").replace("\n", "")
+    )
+    stored = content_db.crush_year_lookup("2026", chart["day_ganji"], chart["seewoon_10years"][0]["ganji"])
+    assert stored.replace(" ", "") in first["overall"].replace(" ", "").replace("\n", "")
+    assert fallback_previous is True
+    assert stored[:24] not in previous["overall"]
     assert previous["target_date"] == "2025-06-01"
     assert first["target_date"] == "2026-06-01"
 
@@ -164,8 +132,19 @@ def test_partner_crush_reunion_marriage_and_other_sections_stay():
     assert marriage_stored["overall"][:24] in marriage["overall"].replace("\n", "")
 
 
-def test_missing_sewoon_key_uses_generic_fallback(monkeypatch):
-    monkeypatch.setattr(content_db, "crush_sewoon_lookup", lambda key: None)
+def test_other_year_routes_separately(monkeypatch):
+    def lookup(year, day_ganji, sewoon_ganji):
+        return f"{year}:{day_ganji}:{sewoon_ganji}" if str(year) == "2030" else None
+
+    monkeypatch.setattr(content_db, "crush_year_lookup", lookup)
+    data, is_fallback = analyze_crush(_PERSON, None, "2030-06-01")
+    chart = calculate_saju(1992, 7, 8, 14, 0, gender="female", target_date=datetime.date(2030, 6, 1))
+    assert is_fallback is False
+    assert data["overall"].replace("\n", "") == f"2030:{chart['day_ganji']}:{chart['seewoon_10years'][0]['ganji']}"
+
+
+def test_missing_year_key_uses_generic_fallback(monkeypatch):
+    monkeypatch.setattr(content_db, "crush_year_lookup", lambda year, day, sewoon: None)
     data, is_fallback = analyze_crush(_PERSON, None, "2026-06-01")
     assert is_fallback is True
     assert "흐름이 크게 요동" in data["overall"]
