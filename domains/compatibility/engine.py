@@ -2,8 +2,9 @@
 
 문장은 만들지 않는다. 점수와 관계 요소만 산출한다.
 
-상단 전체 점수만 관계 요소를 '글자 쌍 1건'으로 센다. 애정·소통·갈등·경제는
-기존 기둥 조합 횟수를 그대로 쓴다.
+합·충·형·해·파·삼합은 글자 쌍 1건이다. 같은 글자가 여러 기둥에 있어도 한 번만 센다.
+일간끼리·일지끼리의 합충만 무거운 점수를 쓰고, 그 외 기둥은 가벼운 점수를 쓴다.
+오행 보완·배우자성·도화·일간 상생은 점수에 넣지 않는다.
 """
 from typing import Dict, Any, List, Set
 from itertools import product
@@ -76,6 +77,62 @@ def _absence_complement(fa: Dict[str, int], fb: Dict[str, int]) -> int:
         return {e for e, c in f.items() if c >= 2}
 
     return len(absent(fa) & strong(fb)) + len(absent(fb) & strong(fa))
+
+
+# 기본 62. 사건이 없으면 모든 축이 62다.
+# 일지·일간끼리만 무겁고, 다른 기둥의 같은 관계는 가볍다. 형·해·파는 자리를 나누지 않는다.
+_SCORE_BASE = 62
+_SCORE_WEIGHT = {
+    "일지충": -8,
+    "일간충": -6,
+    "지지충": -4,
+    "천간충": -3,
+    "형": -3,
+    "해": -1,
+    "파": -1,
+    "일지육합": 8,
+    "일간합": 6,
+    "지지육합": 4,
+    "천간합": 3,
+    "삼합": 3,
+}
+# 성향은 표 전체. 애정은 일간·일지와 지지 합충·삼합.
+# 소통은 천간 합충과 형·해. 갈등은 삼합을 뺀 합충형해파(높은 점수 = 부딪힘이 적음).
+# 경제는 지지 합충과 해·파·삼합. 삼합은 갈등을 지우는 합이 아니라 방향이 같다는 신호다.
+_AXIS_KEYS = {
+    "overall": tuple(_SCORE_WEIGHT),
+    "love": ("일지충", "일지육합", "일간충", "일간합", "지지충", "지지육합", "삼합"),
+    "communication": ("일간충", "일간합", "천간충", "천간합", "해", "형"),
+    "conflict": (
+        "일지충", "일간충", "지지충", "천간충", "형", "해", "파",
+        "일지육합", "일간합", "지지육합", "천간합",
+    ),
+    "economy": ("일지충", "일지육합", "지지충", "지지육합", "파", "해", "삼합"),
+}
+
+
+def _split_day_pair(chars_a: List[str], chars_b: List[str], day_a: str, day_b: str, table) -> tuple:
+    """표에 있는 글자 쌍을 일간·일지끼리 1건과 그 외 기둥 1건으로 나눈다.
+
+    두 일간 또는 두 일지가 그 쌍이면 무거운 칸만 쓴다. 다른 기둥에 같은 글자가 더 있어도 다시 세지 않는다.
+    """
+    found = set()
+    for x, y in product(chars_a, chars_b):
+        key = frozenset((x, y))
+        if len(key) == 2 and key in table:
+            found.add(key)
+    day_key = None
+    if day_a and day_b and day_a != day_b:
+        candidate = frozenset((day_a, day_b))
+        if candidate in found:
+            day_key = candidate
+    other = found - ({day_key} if day_key else set())
+    return (1 if day_key else 0), len(other)
+
+
+def _axis_score(events: Dict[str, int], keys) -> int:
+    points = sum(events[key] * _SCORE_WEIGHT[key] for key in keys)
+    return _clamp(_SCORE_BASE + points)
 
 
 def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[str, Any]) -> Dict[str, Any]:
@@ -174,18 +231,10 @@ def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[st
 
     dohwa = saju_a.get("sinsal", {}).get("has_dohwa") or saju_b.get("sinsal", {}).get("has_dohwa")
 
-    # ---- 세부 점수 ----
-    # 애정·소통·갈등·경제는 아래 기둥 조합 횟수를 유지한다.
-    harmony = gan_hap + ji_yukhap + ji_samhap + complement
-
-    # 전체 점수(overall)는 충합 기반 성향 점수다. 연애 대표 점수가 아니다.
-    # 같은 글자 쌍은 기둥이 달라도 1건이다. 년주와 일주를 따로 가중하지 않는다.
-    # 삼합은 왕지 반합만, 국마다 1건. 생지·고지만 겹치면 넣지 않고, 완전 삼합도 가산하지 않는다.
-    # 오행 보완은 개수 0을 상대가 2개 이상 채울 때만. 가장 적은 오행은 여기 넣지 않는다.
-    # 가산·감산 폭(건당 +8/−7, 기본 62, 일간 보정)은 그대로다.
+    # 같은 글자 쌍은 기둥이 달라도 1건이다. 삼합은 왕지 반합만, 국마다 1건.
+    # 생지·고지만 겹치면 넣지 않는다. 오행 보완은 개수 0을 상대가 2개 이상 채울 때만 센다.
+    # 이 보완 건수는 문장용이고 점수에는 넣지 않는다.
     # 육합이면서 파인 쌍(寅亥, 巳申)은 합과 파를 모두 1건씩 반영한다. 어느 쪽도 지우지 않는다.
-    # 알려진 한계: 기둥 역할을 구분하지 않고, 반합 조건은 육합의 중복 제거와 다르다.
-    # 건당 +8이면 서로 다른 합이 몇 건만 있어도 100에 닿을 수 있다.
     u_gan_hap = _unique_relations(gans_a, gans_b, _CHEONGAN_HAP)
     u_gan_chung = _unique_relations(gans_a, gans_b, _CHEONGAN_CHUNG)
     u_yukhap = _unique_relations(jis_a, jis_b, YUKHAP)
@@ -195,32 +244,26 @@ def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[st
     u_hae = _unique_relations(jis_a, jis_b, HAE)
     u_samhap = _cross_samhap(jis_a, jis_b)
     u_complement = _absence_complement(fa, fb)
-    overall_harmony = u_gan_hap + u_yukhap + u_samhap + u_complement
-    overall_discord = u_gan_chung + u_chung + u_hyeong + u_pa + u_hae
-    overall = 62 + 8 * overall_harmony - 7 * overall_discord + (8 if dm_relation in ("상생", "비화(같은 기운)") else 0) \
-        + (6 if dm_hap else 0) - (8 if dm_chung else 0)
 
-    love = 60 + (14 if day_ji_relation in ("육합", "삼합") else 0) \
-        - (16 if day_ji_relation in ("충", "형") else 0) \
-        + (10 if (b_is_spouse_for_a or a_is_spouse_for_b) else 0) \
-        + (5 if dohwa else 0) + 4 * ji_yukhap - 4 * ji_chung
-
-    communication = 60 + (12 if dm_relation == "상생" else 0) + (6 if dm_relation == "비화(같은 기운)" else 0) \
-        - (10 if dm_relation == "상극" else 0) + 5 * gan_hap + 4 * ji_yukhap - 5 * gan_chung - 3 * ji_hae
-
-    conflict = 78 - 12 * (gan_chung + ji_chung) - 10 * ji_hyeong - 5 * (ji_pa + ji_hae) \
-        + 4 * (gan_hap + ji_yukhap)
-
-    economy = 60 + 6 * complement + 4 * ji_yukhap - 6 * ji_chung \
-        - (6 if dm_relation == "상극" else 0) + (5 if harmony >= 2 else 0)
-
-    sub = {
-        "overall": _clamp(overall),
-        "love": _clamp(love),
-        "communication": _clamp(communication),
-        "conflict": _clamp(conflict),
-        "economy": _clamp(economy),
+    day_yuk, other_yuk = _split_day_pair(jis_a, jis_b, dji_a, dji_b, YUKHAP)
+    day_chung, other_chung = _split_day_pair(jis_a, jis_b, dji_a, dji_b, CHUNG)
+    day_hap, other_hap = _split_day_pair(gans_a, gans_b, dm_a, dm_b, _CHEONGAN_HAP)
+    day_gchung, other_gchung = _split_day_pair(gans_a, gans_b, dm_a, dm_b, _CHEONGAN_CHUNG)
+    events = {
+        "일지충": day_chung,
+        "일간충": day_gchung,
+        "지지충": other_chung,
+        "천간충": other_gchung,
+        "형": u_hyeong,
+        "해": u_hae,
+        "파": u_pa,
+        "일지육합": day_yuk,
+        "일간합": day_hap,
+        "지지육합": other_yuk,
+        "천간합": other_hap,
+        "삼합": u_samhap,
     }
+    sub = {name: _axis_score(events, keys) for name, keys in _AXIS_KEYS.items()}
     total = _clamp(
         sub["overall"] * 0.30 + sub["love"] * 0.25 + sub["communication"] * 0.20
         + sub["conflict"] * 0.15 + sub["economy"] * 0.10
@@ -268,6 +311,7 @@ def calculate_compatibility_interactions(saju_a: Dict[str, Any], saju_b: Dict[st
         },
         "배우자성_교차": {"b_is_spouse_for_a": b_is_spouse_for_a, "a_is_spouse_for_b": a_is_spouse_for_b},
         "도화": bool(dohwa),
+        "score_events": events,
         "sub_scores": sub,
         "total_score": total,
         "positive_factors": positives,
