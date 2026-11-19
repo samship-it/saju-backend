@@ -3,14 +3,13 @@
 요청 중에 LLM을 부르지 않는다. 재회 콘텐츠 키와 같은 일간·일지만 본다.
 시주, 신강약, 용신은 쓰지 않는다. 재회 점수는 이 도메인에 없으므로 좋고 나쁨 등급을 만들지 않는다.
 
-한줄평은 한 문장이다. 근거와 주의는 구획으로 보낸다.
-구획은 서로 다른 질문에 답한다.
-- 우리는 왜: 두 사주에서 확인되는 강점과 그 근거. 강점이 없으면 만들지 않는다.
-- 종합운: 재회를 판단할 때의 기준. 강점 설명을 반복하지 않는다.
-- 갈등: 반복될 수 있는 패턴과, 현실에서 확인할 조건. 이별 원인으로 단정하지 않는다.
-- 유리한 점과 걸림돌: 재회를 검토할 때 확인할 조건.
-- 매력: 관계에서 쓸 수 있는 강점, 표현, 주의.
-- 3개월: 확인된 신호에 맞춰 행동·주의·멈춤 기준을 둔다. 신호가 없으면 장면을 만들지 않는다.
+한줄평은 한 문장이다. 구획은 서로 다른 말에 답한다.
+- 우리는 왜: 잘 안 맞았던 장면.
+- 종합운: 다시 만나면 그 장면이 어떻게 이어지는지.
+- 갈등: 반복되는 순간과, 그때 할 행동 하나.
+- 유리한 점과 걸림돌: 그 행동이 관계를 움직이는 이유와, 예전으로 돌아가는 조건.
+- 매력: 연락할 때의 말과, 그 말이 지나칠 때의 한계.
+- 3개월: 같은 행동의 순서. 답이 없으면 만남을 늘리지 않는다.
 
 두 사람 문장에서 쓰는 근거는 일간 오행 관계와 일지 합·충·파·해·형뿐이다.
 일간마다 붙인 속도 형용사는 두 사람 해석에 쓰지 않는다. 내 사주만 볼 때의 습관 설명에만 쓴다.
@@ -22,6 +21,7 @@ from core.constants import (
     CHUNG, FIVE_ELEMENT_RELATIONS, GAN_ELEM, HAE, PA, SAMHYEONG,
     SANGHYEONG, SELF_HYEONG, YUKHAP,
 )
+from domains.relationship.reunion_couple_prose import couple_piece, strategy_intro
 
 # 사용자 문장에 십신 이름을 넣지 않는다. 키는 오행 관계 조립용이다.
 _ROLE = {
@@ -76,23 +76,24 @@ _ROLE = {
     "재성": {
         "basis": "당신의 일간 기운이 상대의 현실 조건을 다루는 쪽이라",
         "seat": "당신은 상대의 현실과 조건을 챙기는 쪽에 서기 쉬워요",
-        "use": "현실적인 다음 수를 챙기는 힘",
-        "express": "감정 대신, 지금 가능한 조건 한 가지만 말로 꺼내 보세요",
-        "caution": "주의할 점은 상대의 선택을 대신 확정하지 않는 것이에요.",
-        "burden": "챙겨 주는 말이 상대의 선택을 대신하면 부담이 돼요.",
-        "headline": "현실의 조건을 누가 챙기느냐가 재회를 고민할 때의 핵심이에요.",
-        "focus": "현실의 조건을 누가 챙길지",
-        "hinge": "현실적인 결정을 상대 대신 정하지 않을지",
+        "use": "만남을 먼저 꺼내는 힘",
+        "express": "감정만 두지 말고 만남을 먼저 꺼낸 다음, 약속은 상대에게 물어보세요",
+        "caution": "주의할 점은 그 만남을 상대의 뜻보다 먼저 확정하지 않는 것이에요.",
+        "burden": "만남을 상대에게 묻기 전에 정해 버리면 상대는 따라가기만 해요.",
+        "headline": "만남은 당신이 먼저 꺼내되, 약속은 상대의 뜻을 듣고 정해야 해요.",
+        "focus": "만남을 먼저 꺼내되 약속은 같이 정할지",
+        "hinge": "약속을 상대에게 묻고 정할지",
         "pull": (
-            "당신은 감정만 남은 관계를 실제 만남으로 이어 주는 편이에요. "
-            "마음만 오갈 때 그 마음을 받쳐 주는 점이, 이 관계를 덜 흔들리게 하는 매력이 돼요. "
-            "같이 있으면 감정의 말은 상대가 맡고, 그 감정을 현실의 다음 걸음으로 만드는 말은 당신이 맡아요. "
-            "그래서 다음에 언제 볼지 이야기가 나오면, 마음만 오가던 사이도 덜 흐려져요."
+            "같이 있으면 상대는 감정적인 부분을 맡고, 그 감정을 만남으로 만드는 일은 당신이 해요. "
+            "마음이 남아 있을 때 당신이 먼저 만남을 꺼내면, 감정만 오가던 사이가 다시 움직일 수 있어요. "
+            "잘 안 맞았던 지점은 만남을 꺼내는 쪽이 아니라, 약속을 상대에게 묻기 전에 정해 버린 쪽이에요. "
+            "그 결정이 반복되면 상대는 고르지 못하고 따라가기만 해요."
         ),
         "why_extra": {},
         "knot": (
-            "당신이 만나는 날과 돈 쓰는 방식을 상대보다 먼저 정하면, 상대는 따라가다가 한참 뒤에야 다른 뜻을 말해요. "
-            "그때의 만남은 둘이 고른 일이 아니라 당신이 정해 둔 일이 돼요."
+            "약속을 묻기 전에 정하면, 상대는 따라가다가 한참 뒤에야 다른 뜻을 말해요. "
+            "약속을 정하기 전에 상대에게 원하는 날을 물어보세요. "
+            "그렇지 않으면 만남은 둘이 정한 일이 아니라, 당신이 정해 둔 일이 돼요."
         ),
         "advantage": "현실적인 다음 단계를 말로 정리하는 점은, 감정만 오가던 대화를 구체적인 약속으로 바꾸는 데 도움이 돼요.",
         "obstacle": "그 약속을 상대의 동의 없이 끝내면, 상대는 결정에서 빠지고 같은 부담이 반복돼요.",
@@ -197,15 +198,15 @@ _HEAD = {
         "open": "상대의 막힌 말을 당신이 풀어 주는 쪽이, 이 관계를 다시 열 수 있는 지점이에요.",
     },
     "재성": {
-        "hap": "다시 만나면 서로 금방 붙지만, 시간이나 비용을 당신이 대신 정하지 않는지가 관건이에요.",
+        "hap": "다시 만나면 서로 금방 붙지만, 약속을 당신이 대신 정하지 않는지가 관건이에요.",
         "mixed": "다시 만날 기회가 생겨도 약속이 어긋났던 이유부터 짚어야 해요.",
-        "chung": "만나는 시간이나 비용을 당신이 먼저 정하다가 상대와 정면으로 부딪히기 쉽고, 그 결정을 상대 대신 하지 않는 것이 재회의 관건이에요.",
-        "hyung": "말이 끝나기 전에 감정이 먼저 나오고, 시간이나 비용을 그 감정 중에 정하면 상대의 의사는 뒤로 밀려요.",
-        "hae": "큰 다툼 없이 답장이나 약속이 어긋나는 사이인데, 시간이나 비용을 당신이 먼저 확정하면 그 어긋남이 커져요.",
+        "chung": "만나는 약속을 당신이 먼저 정하다가 상대와 정면으로 부딪히기 쉽고, 그 결정을 상대 대신 하지 않는 것이 재회의 관건이에요.",
+        "hyung": "말이 끝나기 전에 감정이 먼저 나오고, 약속을 그 감정 중에 정하면 상대의 의사는 뒤로 밀려요.",
+        "hae": "큰 다툼 없이 답장이나 약속이 어긋나는 사이인데, 약속을 당신이 먼저 확정하면 그 어긋남이 커져요.",
         "self": "같은 습관이 서로를 누르고, 현실적인 일정을 누가 정하는지가 재회의 관건이에요.",
-        "same": "생활 방식이 비슷해 편하지만, 시간이나 비용을 당신이 혼자 정하면 상대의 선택은 줄어들어요.",
-        "pa": "괜찮아 보이던 약속이 한 대화에서 깨지기 쉽고, 시간이나 비용을 다시 같이 정할 수 있는지가 핵심이에요.",
-        "open": "만나는 시간이나 비용을 누가 정하는지가 재회를 고민할 때의 핵심이에요.",
+        "same": "생활 방식이 비슷해 편하지만, 약속을 당신이 혼자 정하면 상대의 선택은 줄어들어요.",
+        "pa": "괜찮아 보이던 약속이 한 대화에서 깨지기 쉽고, 약속을 다시 같이 정할 수 있는지가 핵심이에요.",
+        "open": "만남은 당신이 먼저 꺼내되, 약속은 상대의 뜻을 듣고 정해야 해요.",
     },
     "관성": {
         "hap": "다시 만나면 서로 금방 붙지만, 맞춘 뒤에도 내 일정이 남는지가 관건이에요.",
@@ -258,12 +259,12 @@ _BAL = {
         "hap": "다시 만날 때 쓸 수 있는 점은, 무엇을 할 수 있는지가 말로 분명해지는 점이에요. 걸림돌은 그 분명함이 상대의 고른 뜻이 아니라 당신의 판단으로 끝나는 점이에요.",
         "mixed": "다시 만날 때 쓸 수 있는 점은, 흐린 마음을 다음 만남으로 만들 수 있는 점이에요. 걸림돌은 새 만남만 보고 예전에 깨진 약속을 없었던 일로 넘기는 점이에요. 만남만 기억하면 그 약속이 지워지고, 약속만 기억하면 다시 만날 이유까지 닫혀요.",
         "chung": "다시 만날 때 쓸 수 있는 점은, 흔들린 뒤에 무엇을 할지 말로 남기는 점이에요. 그 말이 있으면 다툰 내용이 감정 이야기로만 남지 않아요. 걸림돌은 그 말을 상대가 고르기 전에 당신이 정해 버리는 점이에요. 그러면 상대의 뜻은 또 뒤로 밀려요.",
-        "hyung": "유리한 점은 감정이 나온 뒤에 가능한 일정 하나를 말할 수 있다는 거예요. 감정과 일정을 다른 말로 나누면, 서운함이 일정 전체를 대신하지 않아요. 걸림돌은 감정 중에 시간이나 비용을 혼자 확정하는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
-        "hae": "유리한 점은 어긋난 약속의 시간과 비용을 집어 낼 수 있다는 거예요. 그 항목 하나만 다시 말하면, 작은 어긋남이 관계 전체로 번지기 전에 다룰 수 있어요. 걸림돌은 그 항목을 당신이 먼저 확정해 버리는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
+        "hyung": "유리한 점은 감정이 나온 뒤에 가능한 일정 하나를 말할 수 있다는 거예요. 감정과 일정을 다른 말로 나누면, 서운함이 일정 전체를 대신하지 않아요. 걸림돌은 감정 중에 약속을 혼자 확정하는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
+        "hae": "유리한 점은 어긋난 약속을 집어 낼 수 있다는 거예요. 그 항목 하나만 다시 말하면, 작은 어긋남이 관계 전체로 번지기 전에 다룰 수 있어요. 걸림돌은 그 항목을 당신이 먼저 확정해 버리는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
         "self": "유리한 점은 반복되는 일정 문제를 알아보기 쉽다는 거예요. 그 일정을 누구의 습관으로만 두지 않고 같이 말하면, 다음 만남의 시간을 나눌 수 있어요. 걸림돌은 그 일정을 당신이 혼자 고치려는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
-        "same": "유리한 점은 비슷한 생활 덕분에 시간 맞추기가 수월하다는 거예요. 그 안에 비용이나 일정 하나를 같이 정하면, 편함이 상대의 선택을 지우지 않아요. 걸림돌은 그 항목을 당신이 혼자 정하는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
-        "pa": "유리한 점은 깨진 약속의 시간과 비용을 다시 말할 수 있다는 거예요. 괜찮아 보였던 기억과 그 조건을 나누면, 다음 약속을 어디에 둘지 정할 수 있어요. 걸림돌은 괜찮았던 기억만 보고 조건을 다시 정하지 않는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
-        "open": "다시 만날 때 쓸 수 있는 점은 흐린 관계를 다음 만남으로 이어 주는 성향이에요. 그 성향이 있으면 감정만 남은 관계가 다시 움직일 수 있어요. 걸림돌은 그 만남을 상대의 선택보다 먼저 정하는 점이에요. 그러면 상대가 따라가기만 하던 예전이 다시 나와요.",
+        "same": "유리한 점은 비슷한 생활 덕분에 시간 맞추기가 수월하다는 거예요. 그 안에 약속 하나를 같이 정하면, 편함이 상대의 선택을 지우지 않아요. 걸림돌은 그 항목을 당신이 혼자 정하는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
+        "pa": "유리한 점은 깨진 약속을 다시 말할 수 있다는 거예요. 괜찮아 보였던 기억과 그 조건을 나누면, 다음 약속을 어디에 둘지 정할 수 있어요. 걸림돌은 괜찮았던 기억만 보고 조건을 다시 정하지 않는 일이에요. 다시 시작하려면, 상대가 그 일정에 자기 말로 동의해야 해요.",
+        "open": "유리한 점은 만남을 먼저 꺼낼 수 있다는 거예요. 그 적극성 때문에 감정만 남았던 관계가 다시 움직여요. 걸림돌은 약속을 상대에게 묻기 전에 정해 버리는 일이에요. 그러면 상대는 고르지 못한 채 따라가게 돼요.",
     },
     "관성": {
         "hap": "유리한 점은 다시 만나도 속도를 말로 맞출 수 있다는 거예요. 상대의 기준을 들은 뒤에 내가 지킬 일정 하나를 말하면, 맞춤이 내 하루를 지우지 않아요. 걸림돌은 그 일정을 말하지 않은 채 상대 속도만 따르는 일이에요. 다시 시작하려면, 맞춘 뒤에도 내 일정이 남아 있어야 해요.",
@@ -632,12 +633,33 @@ def _branch_plain(flags: Dict[str, bool]) -> str:
     return ""
 
 
-def _roles(self_ganji: str, partner_ganji: str):
-    mine = GAN_ELEM.get(self_ganji[:1])
-    theirs = GAN_ELEM.get(partner_ganji[:1])
+def _role_name(self_ganji: str, partner_ganji: str) -> Optional[str]:
+    mine = GAN_ELEM.get((self_ganji or "")[:1])
+    theirs = GAN_ELEM.get((partner_ganji or "")[:1])
     if not mine or not theirs:
         return None
-    return _ROLE[FIVE_ELEMENT_RELATIONS[(mine, theirs)]]
+    return FIVE_ELEMENT_RELATIONS[(mine, theirs)]
+
+
+def _couple_text(flags, role_name: Optional[str], field: str) -> str:
+    if flags.get("missing") or not role_name:
+        missing = {
+            "headline": "생년월일이 부족해서, 재회 여부는 헤어진 이유와 상대가 보인 의사만으로 봐요.",
+            "why": "생년월일이 부족해서, 두 사람이 서로에게 주는 역할을 만들지 않았어요.",
+            "overall": "생년월일이 부족해서 재회 기준을 만들지 않았어요. 헤어진 이유와 상대가 보인 의사만 보면 돼요.",
+            "conflict": "생년월일이 부족해서, 반복될 패턴을 정하지 않았어요. 헤어진 이유가 아직도 같은 이야기인지만 확인해 보세요.",
+            "balance": "유리한 조건과 걸림돌을 여기서 만들지 않았어요. 상대가 보인 의사만 다음 조건으로 보세요.",
+            "charm": "이 조합만의 매력을 만들지 않았어요. 상대의 말을 끝까지 듣고, 상대의 몫까지 대신 정하지 않는 선에서만 대화를 이어 보세요.",
+            "m1": "짧은 안부로 먼저 연락하기 전에, 헤어진 이유와 상대가 한 말을 나눠 보세요.",
+            "m2": "답이 있을 때만, 그 말이 아직도 같은지 물어보세요.",
+            "m3": "같이 정한 말이 없으면 다음 만남을 늘리지 마세요.",
+        }
+        return missing[field]
+    return couple_piece(role_name, _kind(flags), field)
+
+
+def _headline_couple(flags: Dict[str, bool], role_name: Optional[str]) -> str:
+    return _couple_text(flags, role_name, "headline")
 
 
 def _names(labels: List[str]) -> List[str]:
@@ -647,110 +669,30 @@ def _names(labels: List[str]) -> List[str]:
     return names
 
 
-def _hinge(role) -> str:
-    if not role:
-        return "두 사람이 실제로 나눈 말"
-    return role.get("hinge") or role["focus"]
-
-
-def _headline_couple(flags: Dict[str, bool], role) -> str:
-    if flags.get("missing") or role is None:
-        return "생년월일이 부족해서, 재회 여부는 헤어진 이유와 상대가 보인 의사만으로 봐요."
-    kind = _kind(flags)
-    text = _HEAD.get(_role_key(role), {}).get(kind)
-    if text:
-        return text
-    return role["headline"]
-
-
 def _headline_solo(me: Dict[str, str]) -> str:
     if me.get("line"):
         return me["line"]
     return f"과거 인연 앞에서 당신은 {me['you']} 쉬운 편이에요."
 
 
-def _why(flags, role) -> str:
-    if flags.get("missing") or role is None:
-        return "생년월일이 부족해서, 두 사람이 서로에게 주는 역할을 만들지 않았어요."
-    extra = role.get("why_extra", {}).get(_kind(flags), "")
-    if extra:
-        return f"{role['pull']} {extra}"
-    return role["pull"]
+def _why(flags, role_name) -> str:
+    return _couple_text(flags, role_name, "why")
 
 
-def _overall(flags, point: str) -> str:
-    del point
-    if flags.get("missing"):
-        return "생년월일이 부족해서 재회 기준을 만들지 않았어요. 헤어진 이유와 상대가 보인 의사만 보면 돼요."
-    if flags["hap"] and not _friction(flags):
-        return "다시 만나면 대화는 금방 편해져요. 그 편함 뒤에 덮어 둔 문제가 있으면, 말하지 않은 채 재회로 넘어가기 쉬워요."
-    if flags["hap"] and _friction(flags):
-        return "다시 가까워지는 힘과, 한번 틀어지면 멈추는 힘이 같이 있어요. 어느 쪽이 재회를 정해 주지는 않으니, 상대가 실제로 보인 반응만 다음에 쓰세요."
-    if flags["chung"]:
-        return "다시 만나도 그때 부딪힌 문제는 참는 동안만 잠잠해요. 만남이 늘면 같은 말이 다음 대화에 다시 올라와요."
-    if flags["hyung"]:
-        return "말이 끝나기 전에 감정이 먼저 나오면, 이유는 뒤로 밀려요. 그 감정이 가라앉기 전에 다음 인사가 시작되면 같은 첫마디가 반복돼요."
-    if flags["hae"]:
-        return "큰 다툼 없이도 답장이나 약속이 조금씩 어긋나요. 그 어긋남을 한 번씩 넘기면, 나중에는 관계 전체가 그 일로 읽혀요."
-    if flags["self_hyung"]:
-        return "같은 습관이 서로를 누르는 날이 있어요. 고치자는 말이 상대만 향한 지적이 되면, 그 습관은 다음 만남에 그대로 남아요."
-    if flags["same"]:
-        return "익숙한 생활은 다시 만나도 금방 맞춰져요. 늘 하던 일 밖의 제안 앞에서는 둘 다 멈추기 쉬워요."
-    if flags["pa"]:
-        return "괜찮아 보이던 약속도 한 대화에서 깨지기 쉬워요. 그때의 합의를 다시 말하지 않으면, 괜찮아진 느낌 뒤에 같은 자리에서 또 갈라져요."
-    return "두 사람 사이에 반복된다고 정해 둔 싸움은 없어요. 재회는 헤어진 이유와, 그 뒤에 상대가 보인 태도를 보고 가늠하면 돼요."
+def _overall(flags, role_name) -> str:
+    return _couple_text(flags, role_name, "overall")
 
 
-def _scene(flags, point: str) -> str:
-    del point
-    if flags["hap"] and _friction(flags):
-        return "편해진 뒤에 예전에 어긋난 약속이 다시 나오면, 한쪽은 그 약속을 말하고 다른 쪽은 지금 편함을 말하게 돼요."
-    if flags["chung"]:
-        return "그 문제가 이번만 참는 것으로 끝나지 않으면, 다음 대화에 같은 내용이 다시 나와요. 참는 동안에는 괜찮아 보여도, 만남이 늘수록 그 말이 다시 올라와요."
-    if flags["hyung"]:
-        return "서운한 감정이 말보다 먼저 나오면, 이유가 정리되기 전에 그 감정이 다음 인사의 첫마디가 되기 쉬워요."
-    if flags["hae"]:
-        return "답장이 늦거나 약속이 어긋나는 일을 한 번씩 넘기면, 나중에는 관계 전체가 그 어긋남으로 읽혀요."
-    if flags["self_hyung"]:
-        return "고치자고 한 말이 오히려 같은 습관을 한 번 더 보여 주는 날이 생겨요."
-    if flags["same"]:
-        return "익숙한 생활만 지키면 일상은 맞춰지지만, 늘 하던 일과 다른 제안은 둘 다 멈추기 쉬워요."
-    if flags["pa"]:
-        return "한번 갈라진 약속을 새로 말하지 않으면, 괜찮아진 느낌 뒤에도 같은 약속에서 다시 갈라지기 쉬워요."
-    if flags["hap"]:
-        return "다시 가까워진 뒤에는 서운한 말이 다음 만남으로 밀리기 쉬워요."
-    return ""
+def _conflict(flags, role_name) -> str:
+    return _couple_text(flags, role_name, "conflict")
 
 
-def _conflict(flags, role, point: str) -> str:
-    if flags.get("missing"):
-        return "생년월일이 부족해서, 반복될 패턴을 정하지 않았어요. 헤어진 이유가 아직도 같은 이야기인지만 확인해 보세요."
-    scene = _scene(flags, point)
-    if scene:
-        knot = f" {role['knot']}" if role else ""
-        return f"{scene}{knot}"
-    if role is None:
-        return "반복되는 싸움의 모양을 정해 두지는 않았어요. 없는 장면을 이별의 이유로 만들지 마세요."
-    return role["knot"]
+def _balance(flags, role_name) -> str:
+    return _couple_text(flags, role_name, "balance")
 
 
-def _balance(flags, role) -> str:
-    if flags.get("missing") or role is None:
-        return "유리한 조건과 걸림돌을 여기서 만들지 않았어요. 상대가 보인 의사만 다음 조건으로 보세요."
-    text = _BAL.get(_role_key(role), {}).get(_kind(flags))
-    if text:
-        return text
-    return "유리한 조건과 걸림돌을 여기서 만들지 않았어요. 상대가 보인 의사만 다음 조건으로 보세요."
-
-
-def _charm_couple(role) -> str:
-    if role is None:
-        return "이 조합만의 매력을 만들지 않았어요. 상대의 말을 끝까지 듣고, 상대의 몫까지 대신 정하지 않는 선에서만 대화를 이어 보세요."
-    return (
-        f"이 관계에서 강점으로 보일 수 있는 점은 {_ieyo(role['use'])}. "
-        f"표현할 때는 {role['express']}. "
-        f"{role['caution']}"
-    )
+def _charm_couple(flags, role_name) -> str:
+    return _couple_text(flags, role_name, "charm")
 
 
 def _charm_solo(me) -> str:
@@ -996,38 +938,18 @@ def _months_solo(labels: List[str], me: Dict[str, str]) -> List[Dict[str, str]]:
     ]
 
 
-def _strategy_couple(labels: List[str], track: str, point: str) -> Dict[str, object]:
-    if track == "talk":
-        intro = (
-            "세 달은 재회가 성사되는 기한이 아니에요. "
-            "다시 만나면 금방 붙는 관계라, 이 기간에는 편함이 덮어 둔 문제가 있는지만 봐요. "
-            "대화가 없으면 연락을 반복하지 않아요."
-        )
-    elif track == "review":
-        intro = (
-            "세 달은 재회가 성사되는 기한이 아니에요. "
-            f"이 기간에는 {_REVIEW_PLAN[point]['look']} 봐요. "
-            "대화가 없으면 연락을 반복하지 않아요."
-        )
-    elif track == "mixed":
-        intro = (
-            "세 달은 재회가 성사되는 기한이 아니에요. "
-            "다시 가까워지기 쉬우면서도 한번 틀어지면 멈추는 사이라, 이 기간에는 어느 쪽이 더 큰지 정하지 않아요. "
-            "대화가 없으면 연락을 반복하지 않아요."
-        )
-    elif track == "pa":
-        intro = (
-            "세 달은 재회가 성사되는 기한이 아니에요. "
-            "괜찮아 보이던 약속이 깨지기 쉬운 사이라, 이 기간에는 그 약속을 다시 같이 정할 수 있는지만 봐요. "
-            "대화가 없으면 연락을 반복하지 않아요."
-        )
-    else:
-        intro = (
-            "세 달은 재회가 성사되는 기한이 아니에요. "
-            "두 사람 사이에 정해 둔 고정 장면이 없어서, 없는 다툼으로 이번 달의 행동을 만들지 않아요. "
-            "대화가 없으면 연락을 반복하지 않아요."
-        )
-    return {"title": "앞으로 3개월 전략", "intro": intro, "months": _months_couple(labels, track, point)}
+def _strategy_couple(labels: List[str], track: str, flags, role_name) -> Dict[str, object]:
+    names = _names(labels)
+    months = []
+    for name, field in ((names[0], "m1"), (names[1], "m2"), (names[2], "m3")):
+        months.append({
+            "month": name,
+            "focus": name,
+            "action": _couple_text(flags, role_name, field),
+            "caution": "",
+            "criterion": "",
+        })
+    return {"title": "앞으로 3개월 전략", "intro": strategy_intro(track), "months": months}
 
 
 def _strategy_solo(labels: List[str], me: Dict[str, str]) -> Dict[str, object]:
@@ -1043,7 +965,7 @@ def _strategy_solo(labels: List[str], me: Dict[str, str]) -> Dict[str, object]:
 
 
 def build_reunion_brief(self_ganji: str, partner_ganji: Optional[str], month_labels: List[str]) -> Dict[str, object]:
-    """재회운 화면에 올릴 한줄평과 구획. 저장된 종합운 문장은 바꾸지 않는다."""
+    """재회운 화면에 올릴 한줄평과 구획."""
     me = _stem(self_ganji or "")
     if not partner_ganji:
         return {
@@ -1065,21 +987,20 @@ def build_reunion_brief(self_ganji: str, partner_ganji: Optional[str], month_lab
         partner_ganji[1:2] if len(partner_ganji) >= 2 else "",
     )
     flags = _pair_flags(branches[0], branches[1])
-    point = _point(flags)
-    role = _roles(self_ganji or "", partner_ganji or "")
+    role_name = _role_name(self_ganji or "", partner_ganji or "")
     track = _track(flags)
     return {
-        "headline": _headline_couple(flags, role),
+        "headline": _headline_couple(flags, role_name),
         "frame": {
             "title": "두 사람의 관계 분석",
             "subtitle": "",
         },
         "sections": [
-            {"title": "우리는 왜", "text": _why(flags, role)},
-            {"title": "종합운", "text": _overall(flags, point)},
-            {"title": "갈등이 생기는 원인과 반복될 수 있는 패턴", "text": _conflict(flags, role, point)},
-            {"title": "재회를 고려할 때 유리한 점과 걸림돌", "text": _balance(flags, role)},
-            {"title": "상대에게 어필할 당신의 매력", "text": _charm_couple(role)},
+            {"title": "우리는 왜", "text": _why(flags, role_name)},
+            {"title": "종합운", "text": _overall(flags, role_name)},
+            {"title": "갈등이 생기는 원인과 반복될 수 있는 패턴", "text": _conflict(flags, role_name)},
+            {"title": "재회를 고려할 때 유리한 점과 걸림돌", "text": _balance(flags, role_name)},
+            {"title": "상대에게 어필할 당신의 매력", "text": _charm_couple(flags, role_name)},
         ],
-        "strategy": _strategy_couple(month_labels, track, point),
+        "strategy": _strategy_couple(month_labels, track, flags, role_name),
     }

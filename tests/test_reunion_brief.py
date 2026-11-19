@@ -123,7 +123,7 @@ def test_new_sections_are_long_and_change_with_the_pair():
     wealth_clash = build_reunion_brief("乙酉", "己卯", _LABELS)
     assert peer_clash["headline"] != wealth_clash["headline"]
     assert "양보" in peer_clash["headline"]
-    assert "시간" in wealth_clash["headline"] or "비용" in wealth_clash["headline"]
+    assert "약속" in wealth_clash["headline"]
     assert "답을 내가 미리" not in solo_gap["sections"][0]["text"]
 
 

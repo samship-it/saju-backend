@@ -144,7 +144,7 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
         else:
             out["strategy_3months"] = _love_fallback(kind, months, True)["strategy_3months"]
     if kind == "reunion":
-        # 저장된 종합운은 그대로 두고, 화면용 한줄평·구획만 일간·일지로 조립한다.
+        # 상대가 있으면 종합운·매력·3개월도 같은 45개 글에서 채운다. 저장된 원문은 응답에 다시 붙이지 않는다.
         from domains.relationship.reunion_brief import build_reunion_brief
         brief = build_reunion_brief(
             g1, g2 if partner_exists else None, [m["label"] for m in months],
@@ -153,6 +153,14 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
         out["reunion_frame"] = brief["frame"]
         out["reunion_sections"] = brief["sections"]
         out["reunion_strategy"] = brief["strategy"]
+        if partner_exists:
+            by_title = {section["title"]: section["text"] for section in brief["sections"]}
+            out["overall"] = paragraphize(by_title["종합운"])
+            out["your_charm"] = paragraphize(by_title["상대에게 어필할 당신의 매력"])
+            out["strategy_3months"] = [
+                {"month": month["month"], "strategy": paragraphize(month["action"])}
+                for month in brief["strategy"]["months"]
+            ]
     if kind == "crush":
         # 한줄평·구획·매력은 일주 기준 그대로다. 단독 종합운만 위에서 세운 문장으로 바뀐다.
         from domains.relationship.crush_brief import build_crush_brief
