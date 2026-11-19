@@ -69,13 +69,15 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "가까워" in mixed["headline"] and "틀어" in mixed["headline"]
     assert "아물" not in mixed["headline"]
     assert "고정 신호" not in none["headline"]
-    assert "막힌 말" in none["headline"]
+    assert "말이 끝난 뒤" in none["headline"]
     assert "서두르" not in _blob(none)
     assert "늦추" not in _blob(gap)
     assert "고정 신호" not in gap["headline"]
-    assert "막힌 말" in gap["headline"]
+    assert "말이 끝난 뒤" in gap["headline"]
     why, overall = none["sections"][0]["text"], none["sections"][1]["text"]
-    assert "풀어 주는" in why
+    assert "끝을 맺" in why
+    assert "매력" not in why
+    assert "풀어" not in why
     assert "다툼의 장면" not in none["sections"][2]["text"]
     assert "유리한 날짜" not in none["sections"][3]["text"]
     assert "밖으로 꺼내는" not in overall
@@ -151,6 +153,13 @@ def test_every_day_pillar_brief_is_speakable_and_unscored():
             assert is_valid_headline(brief["headline"]), brief["headline"]
             assert _sentence_count(brief["headline"]) == 1, brief["headline"]
             _assert_clean(brief)
+            text = _blob(brief)
+            for banned in ("풀어", "쓸 수 있는", "스케일", "툭", "만나고 싶어 한다는"):
+                assert banned not in text, (self_ganji, partner_ganji, banned)
+            why = next(section["text"] for section in brief["sections"] if section["title"] == "우리는 왜")
+            balance = next(section["text"] for section in brief["sections"] if "유리한 점" in section["title"])
+            assert "매력" not in why
+            assert "당신이 가진 장점은" in balance
 
 
 def _assert_clean(brief):
