@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 import main
 from core.constants import GAN, JI
-from core.saju_base import calculate_saju
 from domains.relationship.reunion_brief import build_reunion_brief
 from shared.text_format import is_valid_headline
 from shared.prose_quality import repeated_sentence_count, voice_flag
@@ -224,8 +223,9 @@ def test_solo_reunion_overall_follows_the_year_without_a_trailing_denial():
         "/api/v1/relationship/reunion",
         json={"person": weak_person, "target_date": "2026-11-20"},
     ).json()
-    ganji = calculate_saju(1984, 2, 7, 12, 0, gender="female")["day_ganji"]
-    brief = build_reunion_brief(ganji, None, _LABELS)
+    stay = next(row["text"] for row in this_year["reunion_sections"] if "먼저 연락" in row["title"])
+    hold = next(row["text"] for row in next_year["reunion_sections"] if "먼저 연락" in row["title"])
+    weak_contact = next(row["text"] for row in weak["reunion_sections"] if "먼저 연락" in row["title"])
     assert "그 사람이 다시 마음에 머무는 해예요" in this_year["overall"]
     assert "그 관계가 더 분명해지기 어려운 해예요" in next_year["overall"]
     assert "다만 올해는" not in this_year["overall"]
@@ -235,5 +235,14 @@ def test_solo_reunion_overall_follows_the_year_without_a_trailing_denial():
     assert "다만 올해는" not in weak["overall"]
     assert "연락이 오거나" not in weak["overall"]
     assert weak["overall"].strip().endswith("그뿐이에요!") or "그뿐" in weak["overall"]
-    contact = next(row["text"] for row in this_year["reunion_sections"] if "먼저 연락" in row["title"])
-    assert contact == next(row["text"] for row in brief["sections"] if "먼저 연락" in row["title"])
+    outward = client.post(
+        "/api/v1/relationship/reunion",
+        json={"person": {"year": 1990, "month": 1, "day": 11, "hour": 12, "minute": 0, "gender": "female"}, "target_date": "2026-06-01"},
+    ).json()
+    outward_contact = next(row["text"] for row in outward["reunion_sections"] if "먼저 연락" in row["title"])
+    assert "먼저 안부를 건네도 괜찮아요" in stay
+    assert "조금 더 기다려보는 편이 좋아요" in hold
+    assert "애쓰지 않아도 괜찮아요" in outward_contact
+    assert stay != hold
+    assert "상대의 소식을 기다려보는 편이 좋아요" in weak_contact
+    assert weak_contact != hold
