@@ -39,6 +39,17 @@ def test_key_ignores_stem_branch_order():
     assert content_db.crush_sewoon_key("미정", "비겁") is None
 
 
+def test_new_person_year_stays_a_possibility():
+    bucket = content_db.load_crush_year_db(force=True)["2026"]
+    hits = [entry["overall"] for entry in bucket.values() if entry.get("leaning") == "새인연"]
+    assert len(hits) == 30
+    for text in hits:
+        assert "가능성" in text
+        assert "사람" in text
+        for banned in ("벗어나", "눈을 돌려", "옮겨가", "눈에 들어오기 시작", "이미 그쪽"):
+            assert banned not in text, text
+
+
 def test_2026_has_sixty_unique_day_pillars():
     bucket = content_db.load_crush_year_db(force=True)["2026"]
     pillars = _pillars()
