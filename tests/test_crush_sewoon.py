@@ -1,7 +1,6 @@
-"""단독 짝사랑 종합운은 요청 연도와 일주의 문장을 읽는다."""
+"""단독 짝사랑 종합운은 원국과 그해 세운으로 연애운을 가른다."""
 import datetime
 
-from core.daewoon import GAN_H, JI_H, get_seewoon_list
 from core.saju_base import calculate_saju
 from domains.relationship import content_db
 from domains.relationship.crush_brief import build_crush_brief
@@ -10,9 +9,6 @@ from domains.relationship.service import (
     analyze_marriage,
     analyze_reunion,
 )
-
-def _pillars():
-    return [f"{GAN_H[i % 10]}{JI_H[i % 12]}" for i in range(60)]
 
 _PERSON = {"year": 1992, "month": 7, "day": 8, "hour": 14, "minute": 0, "gender": "female"}
 _PARTNER = {"year": 1990, "month": 3, "day": 15, "hour": 10, "minute": 30, "gender": "male"}
@@ -39,26 +35,43 @@ def test_key_ignores_stem_branch_order():
     assert content_db.crush_sewoon_key("미정", "비겁") is None
 
 
-def test_new_person_year_stays_a_possibility():
-    bucket = content_db.load_crush_year_db(force=True)["2026"]
-    hits = [entry["overall"] for entry in bucket.values() if entry.get("leaning") == "새인연"]
-    assert len(hits) == 30
-    for text in hits:
-        assert "가능성" in text
-        assert "사람" in text
-        for banned in ("벗어나", "눈을 돌려", "옮겨가", "눈에 들어오기 시작", "이미 그쪽"):
-            assert banned not in text, text
+def test_two_factors_pick_one_of_five_and_one_factor_stays_weak():
+    from domains.relationship.crush_year_flow import HOLD, OUTWARD, STAY, _TEXT, assess
+
+    seen = {STAY: set(), HOLD: set(), OUTWARD: set()}
+    weak = 0
+    for year, month, day, gender in (
+        (1990, 1, 9, "female"),
+        (1990, 1, 9, "male"),
+        (1988, 11, 2, "female"),
+        (1983, 5, 14, "male"),
+        (1992, 7, 8, "female"),
+    ):
+        for target in (datetime.date(2026, 6, 1), datetime.date(2032, 6, 1)):
+            saju = calculate_saju(
+                year, month, day, 14, 0, gender=gender, target_date=target,
+            )
+            reading = assess(saju)
+            assert reading is not None
+            assert sum(reading["factors"].values()) >= 2 or reading["love"] is False
+            if reading["love"]:
+                assert reading["text"] in _TEXT[reading["flow"]]
+                assert sum(reading["factors"].values()) >= 2
+                seen[reading["flow"]].add(reading["text"])
+            else:
+                weak += 1
+                assert reading["text"] is None
+    assert weak
+    assert any(seen.values())
 
 
-def test_2026_has_sixty_unique_day_pillars():
-    bucket = content_db.load_crush_year_db(force=True)["2026"]
-    pillars = _pillars()
-    assert set(bucket) == set(pillars)
-    assert len(bucket) == 60
-    texts = [bucket[ganji]["overall"] for ganji in pillars]
-    assert len(set(texts)) == 60
-    assert {bucket[ganji]["sewoon"] for ganji in pillars} == {"丙午"}
-    assert get_seewoon_list(2026, 1)[0]["ganji"] == "丙午"
+def test_same_chart_keeps_the_sentence_inside_a_year():
+    from domains.relationship.crush_year_flow import assess
+
+    early = calculate_saju(1992, 7, 8, 14, 0, gender="female", target_date=datetime.date(2026, 1, 1))
+    late = calculate_saju(1992, 7, 8, 14, 0, gender="female", target_date=datetime.date(2026, 12, 31))
+    assert assess(early)["text"] == assess(late)["text"]
+    assert assess(early)["love"] == assess(late)["love"]
 
 
 def test_target_date_year_selects_the_sentence_and_day_branch_does_too():
@@ -96,14 +109,30 @@ def test_target_date_year_selects_the_sentence_and_day_branch_does_too():
     assert fallback_early is False
     assert fallback_late is False
     assert first["overall"] == early["overall"] == late["overall"]
-    assert first["overall"] != second["overall"]
     chart = calculate_saju(
         birth.year, birth.month, birth.day, 12, 0, target_date=datetime.date(2026, 6, 1),
     )
-    stored = content_db.crush_year_lookup("2026", chart["day_ganji"], chart["seewoon_10years"][0]["ganji"])
-    assert stored.replace(" ", "") in first["overall"].replace(" ", "").replace("\n", "")
-    assert fallback_previous is True
-    assert stored[:24] not in previous["overall"]
+    other_chart = calculate_saju(
+        other.year, other.month, other.day, 12, 0, target_date=datetime.date(2026, 6, 1),
+    )
+    from domains.relationship.crush_year_flow import assess
+
+    stored = assess(chart)
+    other_stored = assess(other_chart)
+    assert stored["text"] is None or stored["text"].replace(" ", "") in first["overall"].replace(" ", "").replace("\n", "")
+    if not stored["love"]:
+        assert "흐름이 크게 요동" in first["overall"]
+    assert other_stored is not None
+    previous_chart = calculate_saju(
+        birth.year, birth.month, birth.day, 12, 0, target_date=datetime.date(2025, 6, 1),
+    )
+    previous_stored = assess(previous_chart)
+    assert fallback_previous is False
+    if previous_stored["love"]:
+        assert previous_stored["text"].replace(" ", "") in previous["overall"].replace(" ", "").replace("\n", "")
+    else:
+        assert "흐름이 크게 요동" in previous["overall"]
+    assert previous_chart["seewoon_10years"][0]["ganji"] != chart["seewoon_10years"][0]["ganji"]
     assert previous["target_date"] == "2025-06-01"
     assert first["target_date"] == "2026-06-01"
 
@@ -143,24 +172,29 @@ def test_partner_crush_reunion_marriage_and_other_sections_stay():
     assert marriage_stored["overall"][:24] in marriage["overall"].replace("\n", "")
 
 
-def test_other_year_routes_separately(monkeypatch):
-    def lookup(year, day_ganji, sewoon_ganji):
-        return f"{year}:{day_ganji}:{sewoon_ganji}" if str(year) == "2030" else None
+def test_weak_year_uses_the_existing_sentence_without_a_type():
+    from domains.relationship.crush_year_flow import assess
 
-    monkeypatch.setattr(content_db, "crush_year_lookup", lookup)
-    data, is_fallback = analyze_crush(_PERSON, None, "2030-06-01")
-    chart = calculate_saju(1992, 7, 8, 14, 0, gender="female", target_date=datetime.date(2030, 6, 1))
+    found = None
+    day = datetime.date(1990, 1, 1)
+    while found is None and day.year == 1990:
+        saju = calculate_saju(day.year, day.month, day.day, 12, 0, gender="female", target_date=datetime.date(2026, 6, 1))
+        reading = assess(saju)
+        if reading and not reading["love"]:
+            found = day
+        day += datetime.timedelta(days=1)
+    assert found is not None
+    data, is_fallback = analyze_crush(
+        {"year": found.year, "month": found.month, "day": found.day, "hour": 12, "minute": 0, "gender": "female"},
+        None,
+        "2026-06-01",
+    )
     assert is_fallback is False
-    assert data["overall"].replace("\n", "") == f"2030:{chart['day_ganji']}:{chart['seewoon_10years'][0]['ganji']}"
-
-
-def test_missing_year_key_uses_generic_fallback(monkeypatch):
-    monkeypatch.setattr(content_db, "crush_year_lookup", lambda year, day, sewoon: None)
-    data, is_fallback = analyze_crush(_PERSON, None, "2026-06-01")
-    assert is_fallback is True
     assert "흐름이 크게 요동" in data["overall"]
     stored = content_db.lookup(
-        calculate_saju(1992, 7, 8, 14, 0, gender="female")["day_ganji"], None, "crush",
+        calculate_saju(found.year, found.month, found.day, 12, 0, gender="female")["day_ganji"],
+        None,
+        "crush",
     )
     assert stored["overall"][:24] not in data["overall"]
     couple, couple_fallback = analyze_crush(_PERSON, _PARTNER, "2026-06-01")
