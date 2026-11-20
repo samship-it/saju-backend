@@ -35,7 +35,7 @@ def owned_partner(user_id: Optional[str], partner_id: Optional[str], api_key: Op
 
 
 def birth_from_row(row: dict) -> dict:
-    return {
+    birth = {
         "year": int(row["year"]),
         "month": int(row["month"]),
         "day": int(row["day"]),
@@ -44,3 +44,7 @@ def birth_from_row(row: dict) -> dict:
         "gender": row["gender"] or "female",
         "is_lunar": bool(row["is_lunar"]),
     }
+    nickname = str(row.get("nickname") or "").strip()
+    if nickname:
+        birth["name"] = nickname
+    return birth

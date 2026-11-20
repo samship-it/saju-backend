@@ -19,6 +19,7 @@ class PersonInput(BaseModel):
     minute: Optional[int] = Field(0)
     gender: Optional[str] = Field("female")
     is_lunar: Optional[bool] = Field(False)
+    name: Optional[str] = Field(None, description="입력한 이름 또는 닉네임")
 
 
 class LoveRequest(BaseModel):

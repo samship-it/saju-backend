@@ -87,6 +87,30 @@ def test_unknown_birth_time_does_not_use_the_hour_pillar():
     assert "거슬립니다" not in data["marriage_disposition"]
 
 
+def test_couple_joint_table_uses_the_lower_score_for_five_years():
+    person = {
+        "year": 2002, "month": 7, "day": 8, "hour": 14, "minute": 0,
+        "gender": "female", "is_lunar": False, "name": "새하",
+    }
+    partner = {
+        "year": 1983, "month": 12, "day": 15, "hour": 10, "minute": 0,
+        "gender": "male", "is_lunar": False, "name": "민경",
+    }
+    data, _ = analyze_marriage(person, partner, 2026, "2026-11-20")
+    assert data["overall_score"] == 80
+    assert data["self_name"] == "새하"
+    assert data["partner_name"] == "민경"
+    assert data["joint_years"] == [
+        {"year": 2026, "self_score": 56, "partner_score": 56, "joint_score": 56},
+        {"year": 2027, "self_score": 36, "partner_score": 36, "joint_score": 36},
+        {"year": 2028, "self_score": 58, "partner_score": 74, "joint_score": 58},
+        {"year": 2029, "self_score": 70, "partner_score": 86, "joint_score": 70},
+        {"year": 2030, "self_score": 58, "partner_score": 74, "joint_score": 58},
+    ]
+    assert data["joint_best_year"] == 2029
+    assert "joint_years" not in analyze_marriage(person, None, 2026, "2026-11-20")[0]
+
+
 def test_couple_response_does_not_gain_the_solo_sections():
     person = {
         "year": 1996, "month": 5, "day": 20,

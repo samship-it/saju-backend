@@ -335,6 +335,11 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
         out["person2"] = _info(s2)
         out["partner_best_years"] = w2["best"]
         out["couple_best_year"] = best_year
+        joint_rows, joint_best = _joint_timing(w1, w2)
+        out["self_name"] = _entered_name(self_info)
+        out["partner_name"] = _entered_name(partner_info)
+        out["joint_years"] = joint_rows
+        out["joint_best_year"] = joint_best
         couple_overall = data.get("couple_overall") or _marriage_fallback(w1, w2, True)["couple_overall"]
         out["couple_overall"] = paragraphize(str(couple_overall))
 
@@ -362,6 +367,27 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
         for key, text in build_marriage_depth(s1, w1["years"]).items():
             out[key] = paragraphize(text)
     return finish_reading(out, is_fallback)
+
+
+def _entered_name(info) -> str:
+    return str((info or {}).get("name") or (info or {}).get("nickname") or "").strip()
+
+
+def _joint_timing(w1, w2) -> tuple:
+    """앞선 5년. 공동 점수는 그 해 두 점수 중 낮은 쪽. 가장 높은 공동 점수의 해를 고른다."""
+    partner_by_year = {row["year"]: int(row["strength"]) for row in w2["years"]}
+    rows = []
+    for row in w1["years"][:5]:
+        mine = int(row["strength"])
+        theirs = int(partner_by_year.get(row["year"], 0))
+        rows.append({
+            "year": int(row["year"]),
+            "self_score": mine,
+            "partner_score": theirs,
+            "joint_score": min(mine, theirs),
+        })
+    best = max(rows, key=lambda row: (row["joint_score"], -row["year"]))
+    return rows, best["year"]
 
 
 def _couple_best_year(w1, w2) -> int:
