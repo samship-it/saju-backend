@@ -1,12 +1,13 @@
-"""혼자 보는 결혼운 뒤에 붙는 세 문단.
+"""혼자 보는 결혼운의 성향과 배우자 운.
 
-기존 본문·점수·사유 라벨은 그대로이고, 새 문단만 원국과 이미 계산된 연도 사유로 조립한다.
+기존 본문·점수·사유 라벨은 그대로이고, 두 문단만 원국으로 조립한다.
+시기 심층 분석은 응답에 넣지 않는다.
 """
 from domains.relationship import content_db
 from domains.relationship.service import analyze_marriage
 from shared.text_format import paragraphize
 
-_KEYS = ("marriage_disposition", "spouse_fortune", "timing_depth")
+_KEYS = ("marriage_disposition", "spouse_fortune")
 _BANNED = (
     "십신", "오행", "천간", "지지", "일간", "일지", "원국", "용신", "신강", "신약",
     "도화", "육합", "삼합", "배우자성", "정관", "편관", "정재", "편재", "재성", "관성",
@@ -72,10 +73,7 @@ def test_jeongsa_female_depth_uses_chart_facts_without_jargon():
     for word in _PLACE:
         assert word not in disposition
         assert word not in spouse
-    assert "2033년은 86점입니다" in data["timing_depth"]
-    assert "한 번만 더합니다" in data["timing_depth"]
-    assert "확정된다는 뜻은 아닙니다" in data["timing_depth"]
-    assert "나쁜 해로 본 것은 아닙니다" in data["timing_depth"]
+    assert "timing_depth" not in data
     for word in _BANNED:
         assert word not in text
 
@@ -84,9 +82,10 @@ def test_same_birth_male_is_not_the_female_text():
     female, _ = _solo(gender="female")
     male, _ = _solo(gender="male")
     assert female["marriage_disposition"] != male["marriage_disposition"]
-    assert female["timing_depth"] != male["timing_depth"]
-    assert "2033년은 86점입니다" not in male["timing_depth"]
-    assert "2028년은 88점입니다" in male["timing_depth"]
+    assert "timing_depth" not in female
+    assert "timing_depth" not in male
+    assert male["overall_score"] == 88
+    assert male["best_year"] == 2028
     assert "매일의 생활이 서로에게 편한지" in male["marriage_disposition"]
     assert "책임감과 현실적인 조건" not in male["marriage_disposition"]
     assert "책임과 명분" not in _new_text(male)
@@ -101,8 +100,9 @@ def test_unknown_birth_time_does_not_use_the_hour_pillar():
     data, _ = _solo(hour=None, minute=None)
     text = _new_text(data)
     assert "시각" not in text
-    assert "2033년은 78점입니다" in data["timing_depth"]
-    assert "86점" not in data["timing_depth"]
+    assert "timing_depth" not in data
+    assert data["overall_score"] == 78
+    assert data["best_year"] == 2033
     assert "거슬립니다" not in data["marriage_disposition"]
 
 
