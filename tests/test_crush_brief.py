@@ -71,6 +71,56 @@ def test_relations_change_the_reading_and_same_relation_stays():
         assert voice_flag(brief["headline"], "haeyo") == ""
 
 
+def _sentences(text: str):
+    return [
+        re.sub(r"\s+", "", piece)
+        for piece in re.findall(r"[^.!?…]+[.!?…]", text)
+        if len(re.sub(r"\s+", "", piece)) >= 12
+    ]
+
+
+def test_couple_sections_each_hold_one_point():
+    """구획을 이어 붙이지 않는다. 끌림 칸에 조언이나 마음 단정이 붙지 않는다."""
+    # 일간은 木으로 고정하고, 상대 천간으로 역할만 바꾼다.
+    yang = {"비겁": "甲", "식상": "丙", "재성": "戊", "관성": "庚", "인성": "壬"}
+    yin = {"비겁": "乙", "식상": "丁", "재성": "己", "관성": "辛", "인성": "癸"}
+    shapes = (
+        ("hap", "子", "丑", "mix"),
+        ("mixed", "寅", "亥", "mix"),
+        ("chung", "子", "午", "yang"),
+        ("hyung", "子", "卯", "mix"),
+        ("hae", "子", "未", "mix"),
+        ("self", "午", "午", "yang"),
+        ("same", "丑", "丑", "yin"),
+        ("pa", "子", "酉", "mix"),
+        ("open", "子", "寅", "yang"),
+    )
+    for role in yang:
+        headlines = []
+        for kind, mine_b, their_b, polarity in shapes:
+            if polarity == "yang":
+                me, them = "甲", yang[role]
+            elif polarity == "yin":
+                me, them = "乙", yin[role]
+            else:
+                me, them = "甲", yin[role]
+            brief = build_crush_brief(me + mine_b, them + their_b)
+            texts = [brief["headline"], *(section["text"] for section in brief["sections"])]
+            blob = "\n".join(texts)
+            assert "마음이 있다는 뜻은 아니에요" not in blob
+            attract = brief["sections"][0]["text"]
+            assert "마세요" not in attract
+            assert "해보세요" not in attract
+            keys = []
+            for text in texts:
+                keys.extend(_sentences(text))
+            assert len(keys) == len(set(keys)), (role, kind, keys)
+            for banned in _BANNED:
+                assert banned not in blob
+            headlines.append(brief["headline"])
+        assert len(headlines) == len(set(headlines)), role
+
+
 def test_crush_api_keeps_stored_prose_and_adds_sections():
     couple = client.post(
         "/api/v1/relationship/crush",
