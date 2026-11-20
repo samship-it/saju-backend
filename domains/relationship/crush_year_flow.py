@@ -11,6 +11,7 @@
 문장 15개는 이미 쓰인 종합운이다. 여기서 고치거나 새로 만들지 않는다.
 같은 유형은 연애 월운과 같이 슬롯을 순환한다.
 """
+import re
 from typing import Dict, Optional
 
 from core.constants import PA, SAMHAP, YUKHAP
@@ -133,6 +134,89 @@ def _flow(relation: str, samhap: bool, yukhap_and_pa: bool, charm_on: bool) -> O
     if charm_on:
         return OUTWARD
     return None
+
+
+_SENTENCE = re.compile(r"[^.!?…]+[.!?…]+|[^.!?…]+$")
+_OPENER = re.compile(r"^(하지만|그런데|그래서|그럼에도|다만|오히려|그리고|또)\s*")
+_OTHER_ACT = (
+    "연락이 오", "연락이 와", "연락을 해", "연락해 올", "연락이 닿", "연락이 올",
+    "마주치", "재회를 원", "다가오도록", "해프닝", "구애", "기다리고 있", "반전이 기다",
+)
+_NEW_PERSON = ("새로운 인연", "새 인연", "다른 인연", "새로운 사람", "새 사람")
+_APPROACH = ("그림자", "다가오는 시기", "다가옵니다", "다가오는 때")
+_RETURN = (
+    "눈앞에 나타", "다시 다가", "다가올", "다시 나타", "손을 내밀",
+    "안부를 건네", "먼저 연락",
+)
+
+
+def _sentences(text: str) -> list:
+    return [part.strip() for part in _SENTENCE.findall(text or "") if part.strip()]
+
+
+def _drops_event(sentence: str, flow: Optional[str]) -> bool:
+    """상대의 행동이나, 그해 흐름과 반대인 사건 문장만 뺀다."""
+    if any(word in sentence for word in _OTHER_ACT):
+        return True
+    if any(word in sentence for word in _NEW_PERSON):
+        return flow != OUTWARD
+    if any(word in sentence for word in _APPROACH):
+        return flow != STAY
+    if flow != STAY and any(word in sentence for word in _RETURN):
+        return True
+    return False
+
+
+def _through_close(sentences: list) -> list:
+    kept = []
+    for sentence in sentences:
+        kept.append(sentence)
+        if "그뿐" in sentence:
+            break
+    return kept
+
+
+def reunion_year_note(reading: Optional[Dict]) -> str:
+    """연애운이 있는 해에만 쓰는 앞문장. 약한 해는 빈 문자열이다."""
+    if not reading or not reading.get("love"):
+        return ""
+    if reading.get("flow") == HOLD:
+        return "올해는 그 마음이 있어도, 그 관계가 더 분명해지기 어려운 해예요."
+    if reading.get("flow") == OUTWARD:
+        return (
+            "올해는 그 사람 밖으로도 관심이 갈 여지가 있어요. "
+            "다른 사람과 사귀게 된다는 뜻은 아니에요."
+        )
+    return "올해는 그 사람이 다시 마음에 머무는 해예요. 그 사람이 같은 마음인지는 알 수 없어요."
+
+
+def with_reunion_year(essay: str, reading: Optional[Dict]) -> str:
+    """일주 글에서 그해 흐름과 어긋나는 사건만 빼고, 약한 해는 문장을 더하지 않는다."""
+    text = (essay or "").strip()
+    if not text:
+        return text
+    flow = reading.get("flow") if reading and reading.get("love") else None
+    body = []
+    for sentence in _through_close(_sentences(text)):
+        if _drops_event(sentence, flow):
+            continue
+        body.append(sentence)
+    if body:
+        body[0] = _OPENER.sub("", body[0]).strip()
+        if body[0].startswith("이 감정"):
+            body[0] = "헤어진 사람이 떠오를 때, 그 감정" + body[0][len("이 감정"):]
+        elif body[0].startswith("이 미련"):
+            body[0] = "헤어진 사람이 떠오를 때, 그 미련" + body[0][len("이 미련"):]
+        elif body[0].startswith("이게"):
+            body[0] = "헤어진 사람이 떠오를 때, 그게" + body[0][len("이게"):]
+        body = [sentence for sentence in body if sentence]
+    kept = " ".join(body).strip()
+    note = reunion_year_note(reading)
+    if not note:
+        return kept or text
+    if not kept:
+        return note
+    return note + " " + kept
 
 
 def assess(saju: Dict) -> Optional[Dict]:

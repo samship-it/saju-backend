@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.constants import GAN, JI
+from core.saju_base import calculate_saju
 from domains.relationship.reunion_brief import build_reunion_brief
 from shared.text_format import is_valid_headline
 from shared.prose_quality import repeated_sentence_count, voice_flag
@@ -206,3 +207,33 @@ def test_reunion_api_adds_headline_without_replacing_stored_overall():
     assert crush["headline"]
     assert crush["crush_sections"]
     assert "우리는 왜" not in [section["title"] for section in crush["crush_sections"]]
+
+
+def test_solo_reunion_overall_follows_the_year_without_a_trailing_denial():
+    person = {"year": 1984, "month": 2, "day": 7, "hour": 12, "minute": 0, "gender": "female"}
+    weak_person = {"year": 1983, "month": 5, "day": 14, "hour": 14, "minute": 0, "gender": "female"}
+    this_year = client.post(
+        "/api/v1/relationship/reunion",
+        json={"person": person, "target_date": "2026-06-01"},
+    ).json()
+    next_year = client.post(
+        "/api/v1/relationship/reunion",
+        json={"person": person, "target_date": "2032-06-01"},
+    ).json()
+    weak = client.post(
+        "/api/v1/relationship/reunion",
+        json={"person": weak_person, "target_date": "2026-11-20"},
+    ).json()
+    ganji = calculate_saju(1984, 2, 7, 12, 0, gender="female")["day_ganji"]
+    brief = build_reunion_brief(ganji, None, _LABELS)
+    assert "그 사람이 다시 마음에 머무는 해예요" in this_year["overall"]
+    assert "그 관계가 더 분명해지기 어려운 해예요" in next_year["overall"]
+    assert "다만 올해는" not in this_year["overall"]
+    assert "다만 올해는" not in next_year["overall"]
+    assert this_year["overall"] != next_year["overall"]
+    assert weak["is_fallback"] is False
+    assert "다만 올해는" not in weak["overall"]
+    assert "연락이 오거나" not in weak["overall"]
+    assert weak["overall"].strip().endswith("그뿐이에요!") or "그뿐" in weak["overall"]
+    contact = next(row["text"] for row in this_year["reunion_sections"] if "먼저 연락" in row["title"])
+    assert contact == next(row["text"] for row in brief["sections"] if "먼저 연락" in row["title"])

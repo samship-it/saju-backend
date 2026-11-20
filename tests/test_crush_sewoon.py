@@ -163,7 +163,10 @@ def test_partner_crush_reunion_marriage_and_other_sections_stay():
     reunion, reunion_fallback = analyze_reunion(_PERSON, None, "2026-06-01")
     reunion_stored = content_db.lookup(self_saju["day_ganji"], None, "reunion")
     assert reunion_fallback is False
-    assert reunion_stored["overall"][:24] in reunion["overall"].replace("\n", "")
+    assert "아름답게 추억으로 남겨두는" in reunion["overall"]
+    assert "연락을" not in reunion["overall"][:30]
+    assert "다만 올해는" not in reunion["overall"]
+    assert reunion_stored["overall"] != reunion["overall"].replace("\n", "")
     assert "crush_sections" not in reunion
 
     marriage, marriage_fallback = analyze_marriage(_PERSON, None, 2026, "2026-06-01")

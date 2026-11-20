@@ -3,6 +3,7 @@
 날짜 의존 로직(다가오는 3개월, 결혼 10년 강도 창, 커플 최적 연도)은 런타임 엔진이 계산한다.
 AI 서술부는 사전 생성 정적 DB에서 조회만 한다. 런타임 Gemini 호출 없음.
 재회·결혼·상대가 있는 짝사랑은 `relationship_db.json`의 일주 키를 유지한다.
+상대가 없는 재회 종합운은 일주 글에서 그해 흐름과 어긋나는 사건만 뺀다. 약한 해는 문장을 더하지 않는다.
 상대가 없는 짝사랑 종합운만 원국과 그해 세운으로 연애운을 가른다.
 연애운이 있으면 저장된 15문장 중 하나를 고르고, 약하면 아래 고정 문장으로 둔다.
 세운이나 일지를 못 읽으면 그 고정 문장과 함께 is_fallback=True다. 일주 종합운으로 대체하지 않는다.
@@ -96,7 +97,17 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
     g1 = s1.get("day_ganji") or ""
     g2 = (s2.get("day_ganji") or "") if partner_exists else None
     solo_crush = kind == "crush" and not partner_exists
-    if solo_crush:
+    solo_reunion = kind == "reunion" and not partner_exists
+    if solo_reunion:
+        entry = content_db.lookup(g1, None, "reunion")
+        is_fallback = entry is None
+        if is_fallback:
+            data = _love_fallback(kind, months, False)
+        else:
+            from domains.relationship.crush_year_flow import assess, with_reunion_year
+
+            data = {"overall": with_reunion_year(str(entry.get("overall", "")), assess(s1))}
+    elif solo_crush:
         from domains.relationship.crush_year_flow import assess
 
         reading = assess(s1)
