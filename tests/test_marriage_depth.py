@@ -116,7 +116,7 @@ def test_couple_joint_table_uses_the_lower_score_for_five_years():
         "gender": "male", "is_lunar": False, "name": "민경",
     }
     data, _ = analyze_marriage(person, partner, 2026, "2026-11-20")
-    assert data["overall_score"] == 80
+    assert data["overall_score"] == 70
     assert data["self_name"] == "새하"
     assert data["partner_name"] == "민경"
     assert data["joint_years"] == [
@@ -127,6 +127,9 @@ def test_couple_joint_table_uses_the_lower_score_for_five_years():
         {"year": 2030, "self_score": 58, "partner_score": 74, "joint_score": 58},
     ]
     assert data["joint_best_year"] == 2029
+    assert data["overall_score"] == next(
+        row["joint_score"] for row in data["joint_years"] if row["year"] == data["joint_best_year"]
+    )
     assert "joint_years" not in analyze_marriage(person, None, 2026, "2026-11-20")[0]
 
 

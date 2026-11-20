@@ -307,7 +307,7 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
     is_fallback = entry is None
     data = _marriage_fallback(w1, w2, partner_exists) if is_fallback else entry
 
-    # 점수는 AI 가 아니라 엔진의 10년 강도(BEST 1위)에서 결정 — 결정적(deterministic).
+    # 혼자 보는 점수는 본인 10년 최고점. 두 사람은 아래 공동 점수로 바꾼다.
     score = w1["best"][0]["strength"] if w1["best"] else 60
     score = max(0, min(100, int(round(float(score)))))
 
@@ -339,6 +339,9 @@ def analyze_marriage(self_info, partner_info=None, target_year: Optional[int] = 
         out["partner_best_years"] = w2["best"]
         out["couple_best_year"] = best_year
         joint_rows, joint_best = _joint_timing(w1, w2)
+        matched = next(row for row in joint_rows if row["year"] == joint_best)
+        out["overall_score"] = matched["joint_score"]
+        out["headline"] = _marriage_headline(matched["joint_score"], True, day_ji_chung)
         out["self_name"] = _entered_name(self_info)
         out["partner_name"] = _entered_name(partner_info)
         out["joint_years"] = joint_rows
