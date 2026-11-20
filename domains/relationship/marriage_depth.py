@@ -1,13 +1,12 @@
 """혼자 보는 결혼운 뒤에 붙는 세 문단.
 
 점수는 marriage_10year_window 결과를 그대로 읽고, 다시 매기지 않는다.
-원국에서 쓰는 사실은 배우자 글자의 위치, 그 글자의 정·편 차이,
-함께 사는 생활을 읽는 글자(일지)의 기질, 지지의 해, 용신 두 글자와의 겹침뿐이다.
-시주를 모르면 시각 기둥은 문장에 넣지 않는다.
+성향과 배우자 운은 배우자성의 정·편, 일지 기질, 오행 강약을 내부 근거로만 쓰고
+기둥·글자 위치·용어는 문장에 넣지 않는다.
+시주를 모르면 시각 기둥은 시기 문장에도 넣지 않는다.
 """
 from typing import Any, Dict, List, Optional, Sequence
 
-from core.constants import GAN_ELEM, JI_ELEM
 from core.sipsin import calculate_sipsin, sipsin_group
 
 _POS = {
@@ -22,45 +21,69 @@ _POS = {
 _POS_ORDER = (
     "year_gan", "year_ji", "month_gan", "month_ji", "day_ji", "hour_gan", "hour_ji",
 )
-_BRANCH_POS = {
-    "year": "태어난 해의 기둥에서 아래쪽 글자",
-    "month": "태어난 달의 기둥에서 아래쪽 글자",
-    "day": "태어난 날의 기둥에서 아래쪽 글자",
-    "hour": "태어난 시각의 기둥에서 아래쪽 글자",
-}
-_TONE = {
-    "정관": "책임과 명분을 맞춰 가는 쪽",
-    "편관": "압박이 먼저 닿고 속도가 빠른 쪽",
-    "정재": "살림과 현실 조건을 안정적으로 맞춰 가는 쪽",
-    "편재": "바깥일과 변동이 먼저 오는 쪽",
-}
-_LIFE = {
-    "비겁": (
-        "거기에는 본인과 같은 기질이 있습니다.",
-        "생활의 리듬을 스스로 지키려는 힘이 있습니다.",
-        "내가 정한 속도가 상대의 방식보다 먼저 나오기 쉽습니다.",
+_TONE_ORDER = ("정관", "편관", "정재", "편재")
+_DECIDE_BOTH = {
+    ("정관", "편관"): (
+        "결혼을 결정할 때 상대에 대한 감정뿐 아니라 책임감과 현실적인 조건도 중요하게 생각합니다."
     ),
-    "식상": (
-        "거기에는 풀어내고 만들어 내는 기질이 있습니다.",
-        "하고 싶은 말을 생활 안으로 끌어오는 힘이 있습니다.",
-        "내 표현이 상대의 속도보다 먼저 나오기 쉽습니다.",
-    ),
-    "재성": (
-        "거기에는 현실 조건과 살림을 챙기는 기질이 있습니다.",
-        "생활을 구체적인 조건으로 정리하려는 힘이 있습니다.",
-        "조건부터 맞추려다 상대의 감정을 뒤로 두기 쉽습니다.",
-    ),
-    "관성": (
-        "거기에는 책임과 명분을 세우는 기질이 있습니다.",
-        "생활을 약속과 책임으로 정리하려는 힘이 있습니다.",
-        "명분을 먼저 세우다 상대가 숨 쉴 틈을 좁히기 쉽습니다.",
-    ),
-    "인성": (
-        "거기에는 받아들이고 배우려는 기질이 있습니다.",
-        "생활을 이해와 돌봄으로 지키려는 힘이 있습니다.",
-        "맞추는 데 익숙해져 내 쪽 의사를 늦게 꺼내기 쉽습니다.",
+    ("정재", "편재"): (
+        "결혼을 결정할 때 마음만이 아니라, 살림이 안정되고 각자의 일도 이어질 수 있는지를 중요하게 생각합니다."
     ),
 }
+_DECIDE_ONE = {
+    "정관": "결혼을 결정할 때 감정이 좋은지만이 아니라, 약속을 지키고 책임을 질 수 있는지를 중요하게 생각합니다.",
+    "편관": "결혼을 결정할 때 지금 편한지만이 아니라, 힘든 일이 생겨도 같이 버틸 수 있는지를 중요하게 생각합니다.",
+    "정재": "결혼을 결정할 때 마음만이 아니라, 살림과 생활이 안정적인지를 중요하게 생각합니다.",
+    "편재": "결혼을 결정할 때 마음만이 아니라, 각자 일을 하면서도 같이 살 수 있는지를 중요하게 생각합니다.",
+}
+_DECIDE_NONE = "결혼을 결정할 때 설레는 감정만이 아니라, 매일의 생활이 서로에게 편한지를 중요하게 생각합니다."
+_WITH = {
+    "비겁": "배우자와 서로의 방식대로 생활하면서도 같이 지내기를 바랍니다.",
+    "식상": "배우자에게 하고 싶은 말을 숨기지 않고, 그 이야기를 나누며 가까워집니다.",
+    "재성": "배우자와 생활의 현실적인 부분을 먼저 맞추고, 그 안에서 마음을 나누기를 바랍니다.",
+    "관성": "배우자와 서로의 역할이 분명한 관계를 더 편하게 느낍니다.",
+    "인성": "배우자의 마음을 먼저 살피고, 자신의 마음은 천천히 전합니다.",
+}
+_WITH_ROLE = "배우자와 서로 맡은 역할을 존중하고 안정적인 생활을 꾸려가기를 바랍니다."
+_PALACE_WITH = {
+    "정관": "같이 사는 생활에서 서로의 역할이 분명할 때 관계도 편해집니다.",
+    "편관": "같이 사는 생활에서 힘든 일을 같이 견딜 수 있을 때 관계도 편해집니다.",
+    "정재": "같이 사는 생활이 안정적일 때 마음도 따라옵니다.",
+    "편재": "같이 사는 생활이 맞으면 마음도 따라오고, 맞지 않으면 관계도 멀어지기 쉽습니다.",
+}
+_WEAK = {
+    "비겁": "다만 자신의 생각과 방식이 분명해 상대와 의견이 다를 때 타협하는 데 시간이 걸릴 수 있습니다.",
+    "식상": "다만 하고 싶은 말이 앞서 상대가 생각할 시간을 놓칠 수 있습니다.",
+    "재성": "다만 현실적인 조건을 맞추느라 상대의 서운함을 나중에야 알아볼 수 있습니다.",
+    "관성": "다만 역할을 지키려다 상대가 편하게 쉴 시간을 주지 못할 수 있습니다.",
+    "인성": "다만 상대에게 맞추느라 자신의 불편을 너무 늦게 말할 수 있습니다.",
+}
+_STRONG = {
+    "목": "하고 싶은 일의 방향을 분명하게 정하는 편",
+    "화": "자신의 감정과 생각을 분명하게 표현하는 편",
+    "토": "한번 시작한 생활을 쉽게 그만두지 않는 편",
+    "금": "해야 할 일을 기준에 맞춰 정리하는 편",
+    "수": "상대의 상황과 기분을 먼저 살피는 편",
+}
+_COMPLEMENT = {
+    "목": "앞으로의 계획을 같이 정하는",
+    "화": "감정을 숨기지 않고 표현하는",
+    "토": "생활을 꾸준히 챙겨 주는",
+    "금": "현실적인 문제를 차분하게 해결하는",
+    "수": "말이 막힐 때 상대의 마음을 먼저 헤아리는",
+}
+_TOGETHER = {
+    "비겁": "서로의 생활 방식과 독립성을 존중하는 사람이라면 좋은 관계를 만들어 갈 수 있습니다.",
+    "식상": "내가 꺼낸 이야기를 끝까지 들어 주는 사람이라면 같이 지내기 좋습니다.",
+    "재성": "생활의 조건만 보지 않고 상대의 마음도 살피는 사람이라면 같이 지내기 좋습니다.",
+    "관성": "역할이 달라도 다정하게 대해 주는 사람이라면 같이 지내기 좋습니다.",
+    "인성": "나의 의견도 물어 보는 사람이라면 같이 지내기 좋습니다.",
+}
+_TOGETHER_TRUST = (
+    "생각에 그치지 않고 행동으로 신뢰를 보여주며, "
+    "서로의 생활 방식과 독립성을 존중하는 사람이라면 좋은 관계를 만들어 갈 수 있습니다."
+)
+_ELEM_ORDER = ("목", "화", "토", "금", "수")
 _FLAG = {
     "배우자성 세운": "인연이 들어오는 표시",
     "일지 육합": "손발이 맞는 표시",
@@ -112,106 +135,83 @@ def _facts(saju: Dict[str, Any]) -> Dict[str, Any]:
         "female": (spouse.get("spouse_star_group") == "관성"),
         "positions": positions,
         "sipsin": sipsin,
-        "life_group": group if group in _LIFE else "",
+        "life_group": group if group in _WITH else "",
         "day_branch": saju.get("day_branch") or "",
         "yongsin": list((saju.get("strength") or {}).get("yongsin") or [])[:2],
         "has_dohwa": bool((saju.get("sinsal") or {}).get("has_dohwa")),
         "day_master": saju.get("day_master") or "",
         "spouse_group": spouse.get("spouse_star_group") or "",
+        "tones": _tones(sipsin, positions),
+        "elem_power": dict((saju.get("strength") or {}).get("elem_power") or {}),
+        "on_palace": "day_ji" in positions,
     }
 
 
+def _tones(sipsin: Dict[str, Any], positions: Sequence[str]) -> List[str]:
+    found = {sipsin.get(pos, "") for pos in positions}
+    return [name for name in _TONE_ORDER if name in found]
+
+
 def _disposition(facts: Dict[str, Any]) -> str:
-    positions: List[str] = facts["positions"]
-    sentences: List[str] = []
-    if not positions:
-        sentences.append(
-            "결혼 상대를 가리키는 글자는 지금 읽는 기둥에는 없습니다. "
-            "없다고 해서 결혼이 어렵다는 뜻은 아닙니다."
-        )
+    tones: List[str] = facts["tones"]
+    life = facts["life_group"]
+    pair = tuple(tones[:2])
+    if pair in _DECIDE_BOTH:
+        decide = _DECIDE_BOTH[pair]
+    elif tones:
+        decide = _DECIDE_ONE[tones[0]]
     else:
-        same = _same_element(facts)
-        opener = f"결혼 상대를 가리키는 글자가 {_place(len(positions))}에 있습니다."
-        if same and len(positions) > 1:
-            opener += " 그 글자들은 같은 성질입니다."
-        elif len({_elem(facts, pos) for pos in positions}) > 1:
-            opener += " 그 글자들의 성질은 서로 다릅니다."
-        sentences.append(opener)
-        sentences.extend(_tone_sentences(facts))
-
-    life = _life_fact(facts)
-    if life:
-        sentences.append(life)
-    copied = _copied_glyph(facts)
-    if copied:
-        sentences.append(copied)
-    if _yongsin_overlap(facts):
-        noun = "그 글자가" if len(positions) == 1 else "그 글자들이"
-        sentences.append(
-            f"{noun} 가리키는 성질은, 연도 점수가 나에게 유리한 조건으로 더하는 성질과 겹칩니다."
-        )
-    for line in _hae_lines(facts, hedge=False):
-        sentences.append(line)
-
-    reading = _disposition_reading(facts)
-    if reading:
-        sentences.append("이렇게 읽힐 수 있습니다. " + reading)
-    return " ".join(sentences)
+        decide = _DECIDE_NONE
+    if facts["on_palace"] and tones:
+        together = _PALACE_WITH[tones[0]]
+    elif "정관" in tones and life == "비겁":
+        together = _WITH_ROLE
+    else:
+        together = _WITH.get(life, "배우자와 매일의 생활이 서로에게 편한 관계를 바랍니다.")
+    weak = _WEAK.get(life, "다만 기준이 늦게 정해져 결정을 미루기 쉽습니다.")
+    return " ".join((decide, together, weak))
 
 
 def _spouse_fortune(facts: Dict[str, Any], rows: Sequence[Dict[str, Any]]) -> str:
-    positions: List[str] = facts["positions"]
-    sentences: List[str] = []
-    if not positions:
-        where = "태어난 해의 기둥과 태어난 달의 기둥, 태어난 날의 기둥"
-        if facts["time_known"]:
-            where += ", 태어난 시각의 기둥"
-        sentences.append(f"결혼 상대를 가리키는 글자는 {where}에서 확인되지 않습니다.")
-        sentences.append("없다고 해서 결혼이 어렵다는 뜻은 아닙니다.")
-        lit = [r["year"] for r in rows if "배우자성 세운" in (r.get("reasons") or [])]
-        if lit:
-            sentences.append(f"그 표시가 켜지는 해는 {_years(lit)}입니다.")
-        else:
-            sentences.append("이 10년 안에는 그 표시가 켜지는 해가 없습니다.")
+    del rows
+    power = {elem: float(facts["elem_power"].get(elem, 0)) for elem in _ELEM_ORDER}
+    yong = set(facts["yongsin"])
+    ranked = sorted(power, key=lambda elem: (power[elem], 0 if elem in yong else 1, elem))
+    primary = ranked[0]
+    strong = max(power, key=lambda elem: (power[elem], elem))
+    secondary = ""
+    if power[ranked[1]] - power[primary] <= 0.5 and ranked[1] != strong:
+        secondary = ranked[1]
+    gap = {primary, secondary} if secondary else {primary}
+    if gap == {"목", "금"}:
+        lack = "관계를 안정적으로 이끌고 현실적인 문제를 차분하게 해결하는"
     else:
-        labels = [_POS[pos] for pos in positions]
-        if len(labels) == 1:
-            sentences.append(f"결혼 상대를 가리키는 글자는 {labels[0]}에 있습니다.")
-        else:
-            sentences.append(
-                f"결혼 상대를 가리키는 글자는 {_join(labels)}, 이 {_place(len(labels))}입니다."
-            )
-        if "day_ji" in positions:
-            sentences.append("함께 사는 생활을 읽는 글자에도 있습니다. 그 글자는 태어난 날의 기둥에서 아래쪽입니다.")
-        else:
-            tail = "함께 사는 생활을 읽는 글자, 곧 태어난 날의 기둥에서 아래쪽에는 없습니다."
-            if facts["life_group"] == "비겁":
-                tail += " 거기에는 본인과 같은 기질이 있습니다."
-            sentences.append(tail)
-        if facts["time_known"]:
-            hour_hit = [pos for pos in ("hour_gan", "hour_ji") if pos in positions]
-            if not hour_hit:
-                sentences.append("태어난 시각의 기둥 위쪽과 아래쪽에는 없습니다.")
-            elif len(hour_hit) == 2:
-                sentences.append("태어난 시각의 기둥 위쪽과 아래쪽에도 있습니다.")
-            else:
-                sentences.append(f"{_POS[hour_hit[0]]}에도 있습니다.")
-        if "day_ji" not in positions:
-            if facts["female"]:
-                sentences.append(
-                    "함께 사는 생활의 감각과 결혼 상대 조건이 한 글자에 붙어 있지 않습니다. "
-                    "가깝다는 느낌과, 책임과 명분이 맞는지를 따로 보게 됩니다."
-                )
-            else:
-                sentences.append(
-                    "함께 사는 생활의 감각과 결혼 상대 조건이 한 글자에 붙어 있지 않습니다. "
-                    "가깝다는 느낌과, 살림과 현실 조건이 맞는지를 따로 보게 됩니다."
-                )
-        sentences.append(
-            "어느 기둥에 있는지는 어디서 만나는지를 알려 주지 않습니다. "
-            "가족 안에서나 일터에서 만난다는 뜻으로 쓰지 않습니다."
-        )
+        lack = _COMPLEMENT[primary]
+    if power[strong] - power[primary] >= 0.8:
+        opening = f"{_STRONG[strong]}이므로, 상대에게는 {lack} 성향이 잘 어울립니다."
+    else:
+        opening = f"상대에게는 {lack} 성향이 잘 어울립니다."
+    sentences = [opening]
+    if secondary and gap != {"목", "금"}:
+        sentences.append(f"{_COMPLEMENT[secondary]} 사람이라면 같이 살 때 도움이 됩니다.")
+    if gap == {"목", "금"} and not _trust_pair(facts):
+        sentences.append("감정의 표현은 내가 맡고, 계획과 현실적인 정리는 상대가 맡아 주면 잘 맞습니다.")
+    else:
+        sentences.append(_together_line(facts))
     return " ".join(sentences)
+
+
+def _trust_pair(facts: Dict[str, Any]) -> bool:
+    return "정관" in facts["tones"] and facts["life_group"] == "비겁" and not facts["on_palace"]
+
+
+def _together_line(facts: Dict[str, Any]) -> str:
+    if _trust_pair(facts):
+        return _TOGETHER_TRUST
+    return _TOGETHER.get(
+        facts["life_group"],
+        "같이 사는 생활을 현실적으로 함께 만드는 사람이라면 같이 지내기 좋습니다.",
+    )
 
 
 def _timing(facts: Dict[str, Any], rows: Sequence[Dict[str, Any]]) -> str:
@@ -422,138 +422,6 @@ def _both_spouse(facts: Dict[str, Any], row: Dict[str, Any]) -> bool:
     return gan_group == group and ji_group == group
 
 
-def _tone_sentences(facts: Dict[str, Any]) -> List[str]:
-    grouped: Dict[str, List[str]] = {}
-    order: List[str] = []
-    for pos in facts["positions"]:
-        tone = _TONE.get(facts["sipsin"].get(pos, ""))
-        if not tone:
-            continue
-        if tone not in grouped:
-            grouped[tone] = []
-            order.append(tone)
-        grouped[tone].append(_POS[pos])
-    lines = []
-    for tone in order:
-        labels = grouped[tone]
-        lines.append(f"{_join(labels)}{_un(labels[-1])} {tone}입니다.")
-    return lines
-
-
-def _life_fact(facts: Dict[str, Any]) -> str:
-    if not facts["day_branch"]:
-        return ""
-    head = "함께 사는 생활을 읽는 글자는 태어난 날의 기둥에서 아래쪽입니다."
-    if "day_ji" in facts["positions"]:
-        return head + " 그 글자가 결혼 상대를 가리킵니다."
-    life = _LIFE.get(facts["life_group"])
-    if not life:
-        return head
-    return head + " " + life[0]
-
-
-def _copied_glyph(facts: Dict[str, Any]) -> str:
-    day = facts["day_branch"]
-    if not day:
-        return ""
-    pillars = (facts["saju"].get("birth_ganji") or {})
-    labels = []
-    for slot, label in (("year", "태어난 해의 기둥에서 아래쪽"), ("month", "태어난 달의 기둥에서 아래쪽")):
-        gz = pillars.get(slot) or ""
-        if len(gz) > 1 and gz[1] == day:
-            labels.append(label)
-    if facts["time_known"]:
-        gz = pillars.get("time") or ""
-        if len(gz) > 1 and gz != "미정" and gz[1] == day:
-            labels.append("태어난 시각의 기둥에서 아래쪽")
-    if not labels:
-        return ""
-    return f"{_join(labels)}에도 같은 글자가 있어, 그 기질이 한 칸에만 있지 않습니다."
-
-
-def _disposition_reading(facts: Dict[str, Any]) -> str:
-    parts: List[str] = []
-    tones = []
-    for pos in facts["positions"]:
-        tone = _TONE.get(facts["sipsin"].get(pos, ""))
-        if tone and tone not in tones:
-            tones.append(tone)
-    if facts["female"] and len(tones) == 2:
-        parts.append(
-            "결혼을 저울질할 때 이 사주가 더 보는 것은, 책임과 명분이 서는가와 "
-            "속도가 빠른 압박을 감당할 수 있는가입니다."
-        )
-    elif facts["female"] and tones == ["책임과 명분을 맞춰 가는 쪽"]:
-        parts.append("결혼을 저울질할 때 이 사주가 더 보는 것은, 책임과 명분이 서는가입니다.")
-    elif facts["female"] and tones == ["압박이 먼저 닿고 속도가 빠른 쪽"]:
-        parts.append("결혼을 저울질할 때 이 사주가 더 보는 것은, 속도가 빠른 압박을 감당할 수 있는가입니다.")
-    elif (not facts["female"]) and tones == ["살림과 현실 조건을 안정적으로 맞춰 가는 쪽"]:
-        parts.append("결혼을 저울질할 때 이 사주가 더 보는 것은, 살림과 현실 조건이 서는가입니다.")
-    elif (not facts["female"]) and tones == ["바깥일과 변동이 먼저 오는 쪽"]:
-        parts.append("결혼을 저울질할 때 이 사주가 더 보는 것은, 바깥일과 변동을 감당할 수 있는가입니다.")
-    elif (not facts["female"]) and len(tones) == 2:
-        parts.append(
-            "결혼을 저울질할 때 이 사주가 더 보는 것은, 살림과 현실 조건이 서는가와 "
-            "바깥일의 변동을 감당할 수 있는가입니다."
-        )
-    life = _LIFE.get(facts["life_group"])
-    if life and "day_ji" not in facts["positions"]:
-        parts.append(life[1])
-        if _copied_glyph(facts) and facts["life_group"] == "비겁":
-            parts.append("그 힘은 같은 글자가 앉은 칸까지 이어집니다.")
-        parts.append(life[2])
-    elif life and "day_ji" in facts["positions"]:
-        parts.append(life[1])
-        parts.append(life[2])
-    for line in _hae_lines(facts, hedge=True):
-        parts.append(line)
-    return " ".join(parts)
-
-
-def _hae_lines(facts: Dict[str, Any], hedge: bool) -> List[str]:
-    relations = ((facts["saju"].get("branch_relations") or {}).get("relations") or {})
-    lines = []
-    for item in relations.get("해") or []:
-        pair = str(item.get("pair") or "")
-        slots = pair.split("-")
-        if len(slots) != 2 or any(slot not in _BRANCH_POS for slot in slots):
-            continue
-        if (not facts["time_known"]) and "hour" in slots:
-            continue
-        if hedge:
-            if slots == ["year", "hour"] or slots == ["hour", "year"]:
-                lines.append(
-                    "큰 일정과 둘만의 시간이 한 박자로 붙지 않을 수는 있습니다. "
-                    "실제 가족 일정은 이 사주만으로 확인되지 않습니다."
-                )
-            else:
-                lines.append("한 박자로 붙지 않을 수는 있으나, 실제 일정은 이 사주만으로 확인되지 않습니다.")
-        else:
-            lines.append(f"{_BRANCH_POS[slots[0]]}와 {_BRANCH_POS[slots[1]]}는 서로 거슬립니다.")
-    return lines
-
-
-def _yongsin_overlap(facts: Dict[str, Any]) -> bool:
-    if not facts["positions"] or not facts["yongsin"]:
-        return False
-    elems = {_elem(facts, pos) for pos in facts["positions"]}
-    elems.discard("")
-    return bool(elems) and elems <= set(facts["yongsin"])
-
-
-def _same_element(facts: Dict[str, Any]) -> bool:
-    elems = {_elem(facts, pos) for pos in facts["positions"]}
-    elems.discard("")
-    return len(elems) == 1
-
-
-def _elem(facts: Dict[str, Any], pos: str) -> str:
-    glyph = _glyph(facts["saju"], pos)
-    if not glyph:
-        return ""
-    table = GAN_ELEM if pos.endswith("gan") else JI_ELEM
-    return table.get(glyph, "")
-
 
 def _glyph(saju: Dict[str, Any], pos: str) -> str:
     slot = _PILLAR_KEY.get(pos.split("_")[0], "")
@@ -565,10 +433,6 @@ def _glyph(saju: Dict[str, Any], pos: str) -> str:
 
 def _raw(reasons: Sequence[str]) -> int:
     return 50 + sum(_WEIGHT.get(code, 0) for code in reasons)
-
-
-def _place(n: int) -> str:
-    return {1: "한 곳", 2: "두 곳", 3: "세 곳", 4: "네 곳"}.get(n, f"{n}곳")
 
 
 def _years(years: Sequence[int]) -> str:
@@ -589,10 +453,6 @@ def _batchim(word: str) -> bool:
 
 def _subject(word: str) -> str:
     return "이" if _batchim(word) else "가"
-
-
-def _un(word: str) -> str:
-    return "은" if _batchim(word) else "는"
 
 
 def _wa(word: str) -> str:

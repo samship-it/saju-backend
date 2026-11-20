@@ -47,19 +47,35 @@ def test_jeongsa_female_keeps_stored_prose_and_scores():
     ]
 
 
+_PLACE = ("기둥", "글자", "위쪽", "아래쪽", "태어난 해", "태어난 달", "태어난 날", "태어난 시각")
+
+
+def _sentences(text):
+    return {part.strip() for part in text.replace("\n", " ").split(".") if part.strip()}
+
+
 def test_jeongsa_female_depth_uses_chart_facts_without_jargon():
     data, _ = _solo()
     text = _new_text(data)
     for key in _KEYS:
         assert data[key].strip()
-    assert "태어난 해의 기둥에서 아래쪽 글자" in data["marriage_disposition"]
-    assert "태어난 달의 기둥에서 위쪽 글자" in data["marriage_disposition"]
-    assert "태어난 시각의 기둥" in text
+    disposition = data["marriage_disposition"]
+    spouse = data["spouse_fortune"]
+    assert "책임감과 현실적인 조건도 중요하게 생각합니다" in disposition
+    assert "서로 맡은 역할을 존중하고 안정적인 생활을 꾸려가기를 바랍니다" in disposition
+    assert "타협하는 데 시간이 걸릴 수 있습니다" in disposition
+    assert "자신의 감정과 생각을 분명하게 표현하는 편" in spouse
+    assert "현실적인 문제를 차분하게 해결하는 성향이 잘 어울립니다" in spouse
+    assert "행동으로 신뢰를 보여주며" in spouse
+    assert "생활 방식과 독립성을 존중하는 사람" in spouse
+    assert not _sentences(disposition) & _sentences(spouse)
+    for word in _PLACE:
+        assert word not in disposition
+        assert word not in spouse
     assert "2033년은 86점입니다" in data["timing_depth"]
     assert "한 번만 더합니다" in data["timing_depth"]
     assert "확정된다는 뜻은 아닙니다" in data["timing_depth"]
     assert "나쁜 해로 본 것은 아닙니다" in data["timing_depth"]
-    assert "어디서 만나는지를 알려 주지 않습니다" in data["spouse_fortune"]
     for word in _BANNED:
         assert word not in text
 
@@ -71,9 +87,12 @@ def test_same_birth_male_is_not_the_female_text():
     assert female["timing_depth"] != male["timing_depth"]
     assert "2033년은 86점입니다" not in male["timing_depth"]
     assert "2028년은 88점입니다" in male["timing_depth"]
-    assert "결혼이 어렵다는 뜻은 아닙니다" in male["marriage_disposition"]
+    assert "매일의 생활이 서로에게 편한지" in male["marriage_disposition"]
+    assert "책임감과 현실적인 조건" not in male["marriage_disposition"]
     assert "책임과 명분" not in _new_text(male)
-    assert "2028년, 2029년, 2030년과 2031년" in male["spouse_fortune"]
+    assert "2028년" not in male["spouse_fortune"]
+    assert male["spouse_fortune"] != female["spouse_fortune"]
+    assert "계획과 현실적인 정리는 상대가 맡아 주면" in male["spouse_fortune"]
     for word in _BANNED:
         assert word not in _new_text(male)
 
@@ -137,6 +156,11 @@ def test_other_charts_stay_plain_and_skip_unknown_hour():
         data, _ = _solo(gender=gender, hour=hour, minute=0, year=year, month=month, day=day)
         text = _new_text(data)
         assert data["overall"]
+        assert data["marriage_disposition"] != data["spouse_fortune"]
+        assert not _sentences(data["marriage_disposition"]) & _sentences(data["spouse_fortune"])
+        for word in _PLACE:
+            assert word not in data["marriage_disposition"]
+            assert word not in data["spouse_fortune"]
         for word in _BANNED:
             assert word not in text, (gender, year, word)
         if hour is None:
