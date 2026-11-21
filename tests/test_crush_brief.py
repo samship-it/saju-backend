@@ -1,10 +1,15 @@
-"""짝사랑운 한줄평과 신규 구획. 저장된 종합운·매력·3개월은 바꾸지 않는다."""
+"""짝사랑운 한줄평과 신규 구획. 저장 파일은 그대로 두고, 비겁·해 응답만 카드 문장을 쓴다."""
+import datetime
 import re
 
 from fastapi.testclient import TestClient
 
 import main
-from domains.relationship.crush_brief import build_crush_brief
+from core.daewoon import get_wolwoon_list
+from core.saju_base import calculate_saju
+from domains.relationship import content_db
+from domains.relationship.crush_brief import _flags, build_crush_brief
+from domains.relationship.service import analyze_crush
 from shared.prose_quality import repeated_sentence_count, voice_flag
 from shared.text_format import is_valid_headline
 
@@ -160,3 +165,54 @@ def test_crush_api_keeps_stored_prose_and_adds_sections():
     ).json()
     assert "crush_sections" not in reunion
     assert "crush_frame" not in reunion
+
+
+def test_peer_harm_reading_changes_only_the_month_that_meets_the_partner():
+    """癸酉·壬戌은 비겁·해다. 저장 문장 대신 카드 문장을 내고, 상대 일지와 닿는 달만 전략을 바꾼다."""
+    person = {"year": 1983, "month": 6, "day": 14, "hour": 15, "minute": 0, "gender": "male"}
+    partner = {"year": 1987, "month": 9, "day": 10, "hour": 10, "minute": 0, "gender": "female"}
+    data, is_fallback = analyze_crush(person, partner, "2026-11-21")
+    assert is_fallback is False
+    assert data["combo_key"] == "癸酉_壬戌_crush"
+    stored = content_db.lookup("癸酉", "壬戌", "crush")
+    stored_charm = content_db.charm_lookup("癸酉", "crush")
+    assert stored["overall"][:24] not in data["overall"].replace("\n", "")
+    assert stored_charm[:24] not in data["your_charm"].replace("\n", "")
+    assert "시적" in stored["overall"]
+
+    caution = next(section["text"] for section in data["crush_sections"] if "주의" in section["title"])
+    strategy = [item["strategy"] for item in data["strategy_3months"]]
+    assert [item["month"] for item in data["strategy_3months"]] == ["2026년 12월", "2027년 1월", "2027년 2월"]
+    assert strategy[0] == strategy[2]
+    assert strategy[0] != strategy[1]
+    assert "고백" not in " ".join(strategy)
+    assert "속마음" not in " ".join(strategy)
+    fields = [data["headline"], data["overall"], data["your_charm"], caution, strategy[0], strategy[1]]
+    blob = "\n".join(fields)
+    for banned in ("비겁", "식상", "재성", "관성", "인성", "신강", "신약", "용신", "십신", "일간", "일지", "밀당"):
+        assert banned not in blob
+    assert _sentence_count(data["headline"]) == 1
+    assert is_valid_headline(data["headline"])
+    assert 1 <= _sentence_count(caution) <= 2
+    assert "타이밍" not in data["headline"]
+    keys = []
+    for text in fields:
+        keys.extend(_sentences(text.replace("\n", "")))
+    assert len(keys) == len(set(keys))
+
+    me = calculate_saju(1983, 6, 14, 15, 0, gender="male", target_date=datetime.date(2026, 11, 21))
+    them = calculate_saju(1987, 9, 10, 10, 0, gender="female", target_date=datetime.date(2026, 11, 21))
+    assert "couple_reading" in build_crush_brief(me["day_ganji"], them["day_ganji"])
+    assert "couple_reading" not in build_crush_brief("甲子", "乙丑")
+    branches = {
+        month: next(row["ganji"][1] for row in get_wolwoon_list(year) if row["solar_month_approx"] == month)
+        for year, month in ((2026, 12), (2027, 1), (2027, 2))
+    }
+    dec_partner = _flags(branches[12], them["day_branch"])
+    dec_self = _flags(branches[12], me["day_branch"])
+    jan_partner = _flags(branches[1], them["day_branch"])
+    feb_partner = _flags(branches[2], them["day_branch"])
+    assert dec_self["pa"]
+    assert not any(dec_partner[name] for name in ("hap", "chung", "pa", "hae", "hyung", "same"))
+    assert jan_partner["hyung"]
+    assert not any(feb_partner[name] for name in ("hap", "chung", "pa", "hae", "hyung", "same"))

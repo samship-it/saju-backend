@@ -176,12 +176,28 @@ def _love_flow(kind: str, self_info, partner_info, target_date):
                 for month in brief["strategy"]["months"]
             ]
     if kind == "crush":
-        # 한줄평·구획·매력은 일주 기준 그대로다. 단독 종합운만 위에서 세운 문장으로 바뀐다.
+        # 한줄평과 구획은 일간·일지 관계 카드다. 단독 종합운만 위에서 세운 문장으로 바뀐다.
+        # 카드에 종합운·매력·전략이 있으면 그 짝의 응답만 바꾼다. 저장 파일과 폴백은 그대로다.
         from domains.relationship.crush_brief import build_crush_brief
         brief = build_crush_brief(g1, g2 if partner_exists else None)
         out["headline"] = brief["headline"]
         out["crush_frame"] = brief["frame"]
         out["crush_sections"] = brief["sections"]
+        reading = brief.get("couple_reading") if partner_exists else None
+        if reading:
+            from domains.relationship.crush_brief import strategies_for_months
+
+            month_texts = strategies_for_months(
+                str(reading["strategy"]),
+                s2.get("day_branch") or "",
+                months,
+            )
+            out["overall"] = paragraphize(str(reading["overall"]))
+            out["your_charm"] = paragraphize(str(reading["charm"]))
+            out["strategy_3months"] = [
+                {"month": months[i]["label"], "strategy": paragraphize(month_texts[i])}
+                for i in range(3)
+            ]
     return finish_reading(out, is_fallback)
 
 
