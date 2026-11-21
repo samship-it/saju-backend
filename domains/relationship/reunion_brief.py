@@ -4,7 +4,6 @@
 시주, 신강약, 용신은 쓰지 않는다. 재회 점수는 이 도메인에 없으므로 좋고 나쁨 등급을 만들지 않는다.
 
 한줄평은 한 문장이다. 구획은 서로 다른 말에 답한다.
-- 우리는 왜: 서로 다른 방식 때문에 같이 있기 어려워진 지점.
 - 종합운: 다시 만나면 그 차이가 어떻게 이어지는지.
 - 갈등: 반복되는 순간과, 그때 할 행동 하나.
 - 유리한 점과 걸림돌: 당신이 가진 장점과, 예전으로 돌아가는 조건.
@@ -675,10 +674,6 @@ def _headline_solo(me: Dict[str, str]) -> str:
     return f"과거 인연 앞에서 당신은 {me['you']} 쉬운 편이에요."
 
 
-def _why(flags, role_name) -> str:
-    return _couple_text(flags, role_name, "why")
-
-
 def _overall(flags, role_name) -> str:
     return _couple_text(flags, role_name, "overall")
 
@@ -996,7 +991,6 @@ def build_reunion_brief(self_ganji: str, partner_ganji: Optional[str], month_lab
             "subtitle": "",
         },
         "sections": [
-            {"title": "우리는 왜", "text": _why(flags, role_name)},
             {"title": "종합운", "text": _overall(flags, role_name)},
             {"title": "갈등이 생기는 원인과 반복될 수 있는 패턴", "text": _conflict(flags, role_name)},
             {"title": "재회를 고려할 때 유리한 점과 걸림돌", "text": _balance(flags, role_name)},
