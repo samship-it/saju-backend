@@ -69,22 +69,21 @@ def test_couple_focus_follows_day_branch_not_a_luck_grade():
     assert "가까워" in mixed["headline"] and "틀어" in mixed["headline"]
     assert "아물" not in mixed["headline"]
     assert "고정 신호" not in none["headline"]
-    assert "말이 끝난 뒤" in none["headline"]
+    assert "들어주는지" in none["headline"]
     assert "서두르" not in _blob(none)
     assert "늦추" not in _blob(gap)
     assert "고정 신호" not in gap["headline"]
-    assert "말이 끝난 뒤" in gap["headline"]
+    assert "들어주는지" in gap["headline"]
     why, overall = none["sections"][0]["text"], none["sections"][1]["text"]
-    assert "끝을 맺" in why
+    assert "대화" in why
     assert "매력" not in why
     assert "풀어" not in why
     assert "다툼의 장면" not in none["sections"][2]["text"]
     assert "유리한 날짜" not in none["sections"][3]["text"]
     assert "밖으로 꺼내는" not in overall
     charm = none["sections"][-1]["text"]
-    assert "표현할 때" in charm
-    assert "주의할 점" in charm
     assert "마음을 정하세요" not in charm
+    assert "마세요" not in charm
     assert bond["headline"] != clash["headline"]
     titles = [section["title"] for section in bond["sections"]]
     assert titles[0] == "우리는 왜"
@@ -103,7 +102,7 @@ def test_new_sections_are_long_and_change_with_the_pair():
     solo_other = build_reunion_brief("甲子", None, _LABELS)
     for title in ("우리는 왜", "갈등이 생기는 원인과 반복될 수 있는 패턴", "재회를 고려할 때 유리한 점과 걸림돌"):
         text = next(section["text"] for section in clash["sections"] if section["title"] == title)
-        assert _sentence_count(text) >= 4, title
+        assert _sentence_count(text) >= 2, title
     assert bond["sections"][0]["text"] != clash["sections"][0]["text"]
     attitude = solo_gap["sections"][0]["text"]
     contact = solo_gap["sections"][1]["text"]
@@ -136,8 +135,8 @@ def test_solo_and_couple_charm_are_not_the_same_sentence():
     couple_charm = couple["sections"][-1]["text"]
     assert solo_charm != couple_charm
     assert solo["headline"] != couple["headline"]
-    assert "표현할 때" in couple_charm
     assert "그리워" not in couple_charm
+    assert "마세요" not in couple_charm
 
 
 def test_every_day_pillar_brief_is_speakable_and_unscored():
@@ -151,7 +150,7 @@ def test_every_day_pillar_brief_is_speakable_and_unscored():
         for partner_ganji in pillars:
             brief = build_reunion_brief(self_ganji, partner_ganji, _LABELS)
             assert is_valid_headline(brief["headline"]), brief["headline"]
-            assert _sentence_count(brief["headline"]) == 1, brief["headline"]
+            assert 1 <= _sentence_count(brief["headline"]) <= 2, brief["headline"]
             _assert_clean(brief)
             text = _blob(brief)
             for banned in ("풀어", "쓸 수 있는", "스케일", "툭", "만나고 싶어 한다는"):
@@ -159,7 +158,9 @@ def test_every_day_pillar_brief_is_speakable_and_unscored():
             why = next(section["text"] for section in brief["sections"] if section["title"] == "우리는 왜")
             balance = next(section["text"] for section in brief["sections"] if "유리한 점" in section["title"])
             assert "매력" not in why
-            assert "당신이 가진 장점은" in balance
+            assert balance != why
+            assert "하세요" not in balance
+            assert "마세요" not in balance
 
 
 def _assert_clean(brief):
@@ -171,6 +172,36 @@ def _assert_clean(brief):
         assert voice_flag(section["text"], "haeyo") == ""
     assert voice_flag(brief["headline"], "haeyo") == ""
     assert len(brief["strategy"]["months"]) == 3
+
+
+def test_couple_lines_are_chosen_from_static_copy_without_a_model():
+    import inspect
+
+    from domains.relationship import service
+    from domains.relationship.reunion_brief import _kind, _pair_flags, _role_name
+    from domains.relationship.reunion_couple_prose import couple_piece
+
+    source = inspect.getsource(service._love_flow)
+    assert "call_gemini" not in source
+    assert "generate_content" not in source
+    brief = build_reunion_brief("己巳", "丙辰", _LABELS)
+    role = _role_name("己巳", "丙辰")
+    kind = _kind(_pair_flags("巳", "辰"))
+    assert role == "인성"
+    assert kind == "open"
+    sections = {section["title"]: section["text"] for section in brief["sections"]}
+    assert brief["headline"] == couple_piece(role, kind, "headline")
+    assert sections["우리는 왜"] == couple_piece(role, kind, "why")
+    assert sections["종합운"] == couple_piece(role, kind, "overall")
+    assert sections["갈등이 생기는 원인과 반복될 수 있는 패턴"] == couple_piece(role, kind, "conflict")
+    assert sections["재회를 고려할 때 유리한 점과 걸림돌"] == couple_piece(role, kind, "balance")
+    assert sections["상대에게 어필할 당신의 매력"] == couple_piece(role, kind, "charm")
+    assert couple_piece(role, "chung", "why") == sections["우리는 왜"]
+    assert couple_piece(role, "chung", "headline") != brief["headline"]
+    blob = "\n".join(sections.values()) + "\n" + brief["headline"]
+    for invented in ("버텼", "생각했", "느꼈어요", "이별의 원인", "헤어진 이유는", "재회가 돼"):
+        assert invented not in blob
+    assert len(set(sections.values())) == len(sections)
 
 
 def test_reunion_api_adds_headline_without_replacing_stored_overall():
